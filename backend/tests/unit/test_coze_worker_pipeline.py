@@ -1,0 +1,265 @@
+from __future__ import annotations
+
+import uuid
+from collections.abc import Mapping
+from typing import Any
+
+import pytest
+from pydantic import SecretStr
+from sqlalchemy import func, select
+
+from app.config import Settings
+from app.crawler.providers import CrawlContract, CrawlProviderConnection, CrawlProviderResult
+from app.models import CozeInvocation, CrawlTask, CrawlTaskFailure, Document, Source, SourceColumn
+from app.repositories.crawl import CrawlRepository
+from app.schemas.coze import BatchCrawlResponse, parse_batch_crawl_response
+from app.services.crawl import CrawlService
+
+
+class UnusedFetcher:
+    async def fetch(self, _url: str) -> Any:
+        raise AssertionError("local fetcher must not run for a Coze task")
+
+
+class NormalizationCrash(BaseException):
+    """Simulate a process-level normalization crash after raw persistence."""
+
+
+class FixtureProvider:
+    def __init__(self, raw: dict[str, Any], *, crash_on_normalize: bool = False) -> None:
+        self.raw = raw
+        self.crash_on_normalize = crash_on_normalize
+
+    async def start_crawl(
+        self, payload: Mapping[str, Any], *, contract: CrawlContract | None = None
+    ) -> CrawlProviderResult:
+        assert payload["task_id"]
+        assert contract == "batch_crawl"
+        return CrawlProviderResult(
+            contract="batch_crawl",
+            status="completed",
+            status_code=200,
+            attempts=1,
+            duration_ms=12,
+            raw_response=self.raw,
+        )
+
+    def normalize_result(
+        self, payload: Any, *, contract: CrawlContract
+    ) -> tuple[dict[str, Any], BatchCrawlResponse | None]:
+        assert contract == "batch_crawl"
+        if self.crash_on_normalize:
+            raise NormalizationCrash
+        batch, _raw = parse_batch_crawl_response(payload)
+        return batch.model_dump(mode="json"), batch
+
+    async def test_connection(
+        self, *, contract: CrawlContract | None = None, source_url: str | None = None
+    ) -> CrawlProviderConnection:
+        return CrawlProviderConnection(True, contract or "batch_crawl", 200, 1)
+
+    async def get_task_status(self, provider_task_id: str) -> CrawlProviderResult:
+        raise AssertionError(f"unexpected status lookup: {provider_task_id}")
+
+    async def cancel_task(self, provider_task_id: str) -> bool:
+        return False
+
+
+def _settings(base: Settings) -> Settings:
+    return base.model_copy(
+        update={
+            "coze_enabled": True,
+            "coze_api_token": SecretStr("fixture-secret"),
+            "coze_batch_api_url": "https://batch.example/run",
+            "coze_default_contract": "batch_crawl",
+        }
+    )
+
+
+async def _seed_task(session) -> int:
+    source = Source(
+        source_key=f"worker-{uuid.uuid4().hex}",
+        name="四川省软件行业协会",
+        domain="example.com",
+        region="四川省",
+        homepage_url="https://example.com/",
+        crawl_provider="coze",
+        coze_contract_mode="batch_crawl",
+    )
+    column = SourceColumn(
+        source=source,
+        column_key="news",
+        column_name="行业动态",
+        column_url="https://example.com/news",
+        request_interval_seconds=0,
+    )
+    task = CrawlTask(
+        source_column=column,
+        status="pending",
+        crawl_provider="coze",
+        provider="coze",
+        provider_contract="batch_crawl",
+        contract_mode="batch_crawl",
+        current_stage="pending",
+    )
+    session.add_all([source, column, task])
+    await session.commit()
+    return task.id
+
+
+def _article(title: str, suffix: str) -> dict[str, Any]:
+    content = f"{title}的中文正文"
+    return {
+        "title": title,
+        "url": f"https://example.com/news/{suffix}",
+        "published_at": "2026-08-04",
+        "organization": "四川省软件行业协会",
+        "region": "四川省",
+        "column_name": "行业动态",
+        "content": content,
+        "content_length": len(content),
+        "attachments": [],
+        "extraction_method": "html",
+        "needs_ocr": False,
+        "image_urls": [],
+        "image_count": 0,
+        "image_alt_texts": [],
+        "decision": "accepted",
+        "accepted": True,
+        "quality_score": 90,
+        "decision_reason": "内容完整",
+        "warnings": [],
+    }
+
+
+def _batch_response(task_id: int, articles: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "success": True,
+        "task_id": task_id,
+        "source": {
+            "source_url": "https://example.com/news",
+            "source_name": "四川省软件行业协会",
+            "region": "四川省",
+            "column_name": "行业动态",
+        },
+        "statistics": {
+            "pages_visited": 1,
+            "articles_discovered": len(articles),
+            "articles_fetched": len(articles),
+            "articles_accepted": len(articles),
+            "articles_rejected": 0,
+            "articles_pending_review": 0,
+            "articles_failed": 0,
+        },
+        "articles": articles,
+        "failed_urls": [],
+        "warnings": [],
+    }
+
+
+async def test_raw_response_survives_normalization_process_crash(app, test_settings) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        raw = _batch_response(task_id, [_article("中文标题", "one")])
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(raw, crash_on_normalize=True),
+        )
+
+        with pytest.raises(NormalizationCrash):
+            await service.execute(task_id)
+
+    async with app.state.database.session_factory() as verification_session:
+        invocation = await verification_session.scalar(
+            select(CozeInvocation).where(CozeInvocation.crawl_task_id == task_id)
+        )
+        assert invocation is not None
+        assert invocation.status == "response_received"
+        assert invocation.raw_response_json == raw
+        assert invocation.normalized_response_json is None
+
+
+async def test_one_document_save_failure_keeps_other_articles(
+    app, test_settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        raw = _batch_response(
+            task_id,
+            [_article("第一篇中文标题", "one"), _article("第二篇中文标题", "two")],
+        )
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(raw),
+        )
+        original_save = service._save_coze_article
+
+        async def fail_second(task: CrawlTask, column: object, article: object) -> None:
+            if getattr(article, "title", "") == "第二篇中文标题":
+                raise ValueError("fixture document failure")
+            await original_save(task, column, article)
+
+        monkeypatch.setattr(service, "_save_coze_article", fail_second)
+        result = await service.execute(task_id)
+
+        assert result.status == "partial_failed"
+        assert result.accepted_count == 1
+        assert result.failed_count == 1
+        assert await session.scalar(select(func.count(Document.id))) == 1
+        failure = await session.scalar(
+            select(CrawlTaskFailure).where(CrawlTaskFailure.crawl_task_id == task_id)
+        )
+        assert failure is not None
+        assert failure.url.endswith("/two")
+        assert failure.error_code == "LOCAL_DOCUMENT_SAVE_FAILED"
+        assert failure.retryable is True
+
+
+async def test_active_sync_cancel_is_not_overwritten_when_remote_returns(
+    app, test_settings
+) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        raw = _batch_response(task_id, [_article("不会保存的中文标题", "cancelled")])
+
+        class CancellingProvider(FixtureProvider):
+            async def start_crawl(
+                self,
+                payload: Mapping[str, Any],
+                *,
+                contract: CrawlContract | None = None,
+            ) -> CrawlProviderResult:
+                async with app.state.database.session_factory() as cancel_session:
+                    cancel_service = CrawlService(
+                        CrawlRepository(cancel_session),
+                        UnusedFetcher(),
+                        _settings(test_settings),
+                        crawl_provider=self,
+                    )
+                    cancelled = await cancel_service.cancel(task_id)
+                    assert cancelled.provider_status == "cancel_requested_local_only"
+                return await super().start_crawl(payload, contract=contract)
+
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=CancellingProvider(raw),
+        )
+        result = await service.execute(task_id)
+
+        assert result.status == "cancelled"
+        assert result.provider_status == "remote_completed_local_processing_cancelled"
+
+    async with app.state.database.session_factory() as verification_session:
+        assert await verification_session.scalar(select(func.count(Document.id))) == 0
+        invocation = await verification_session.scalar(
+            select(CozeInvocation).where(CozeInvocation.crawl_task_id == task_id)
+        )
+        assert invocation is not None
+        assert invocation.status == "completed_discarded_cancelled"
+        assert invocation.raw_response_json == raw

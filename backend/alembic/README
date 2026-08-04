@@ -1,0 +1,5 @@
+ODIRAG database migrations.
+
+Run from the backend directory:
+
+    alembic upgrade head

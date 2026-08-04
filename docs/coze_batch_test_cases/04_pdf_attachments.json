@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-04", "source_url": "https://example.org/pdf-column", "include_pdf": true, "max_articles": 5, "max_pages": 1},
+  "expected": {"attachment_fields": ["name", "url", "file_type", "extracted_text", "download_status", "error_message"], "article_preserved_on_attachment_failure": true}
+}

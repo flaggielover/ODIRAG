@@ -1,0 +1,262 @@
+name: "${COMPOSE_PROJECT_NAME:-odirag}"
+
+x-backend-environment: &backend-environment
+  ODIRAG_APP_NAME: "${ODIRAG_APP_NAME:-ODIRAG API}"
+  ODIRAG_ENVIRONMENT: "${ODIRAG_ENVIRONMENT:-development}"
+  ODIRAG_DEBUG: "${ODIRAG_DEBUG:-false}"
+  ODIRAG_API_PREFIX: "${ODIRAG_API_PREFIX:-/api}"
+  ODIRAG_LOG_LEVEL: "${ODIRAG_LOG_LEVEL:-INFO}"
+  ODIRAG_LOG_JSON: "${ODIRAG_LOG_JSON:-false}"
+  ODIRAG_DEPENDENCY_TIMEOUT_SECONDS: "${ODIRAG_DEPENDENCY_TIMEOUT_SECONDS:-2}"
+  ODIRAG_CORS_ORIGINS: "${ODIRAG_CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}"
+  ODIRAG_DATABASE_URL: "${ODIRAG_DATABASE_URL:-postgresql+asyncpg://odirag:odirag_dev_password@postgres:5432/odirag}"
+  ODIRAG_REDIS_URL: "${ODIRAG_REDIS_URL:-redis://redis:6379/0}"
+  ODIRAG_QDRANT_URL: "${ODIRAG_QDRANT_URL:-http://qdrant:6333}"
+  ODIRAG_HEALTH_CHECK_QDRANT: "${ODIRAG_HEALTH_CHECK_QDRANT:-true}"
+  ODIRAG_JWT_SECRET_KEY: "${ODIRAG_JWT_SECRET_KEY:-change-me-in-production-with-at-least-32-characters}"
+  ODIRAG_JWT_ALGORITHM: "${ODIRAG_JWT_ALGORITHM:-HS256}"
+  ODIRAG_ACCESS_TOKEN_EXPIRE_MINUTES: "${ODIRAG_ACCESS_TOKEN_EXPIRE_MINUTES:-30}"
+  ODIRAG_REFRESH_TOKEN_EXPIRE_DAYS: "${ODIRAG_REFRESH_TOKEN_EXPIRE_DAYS:-7}"
+  ODIRAG_ADMIN_USERNAME: "${ODIRAG_ADMIN_USERNAME:-admin}"
+  ODIRAG_ADMIN_PASSWORD: "${ODIRAG_ADMIN_PASSWORD:-}"
+  ODIRAG_BOOTSTRAP_ADMIN: "${ODIRAG_BOOTSTRAP_ADMIN:-true}"
+  ODIRAG_AUTO_CREATE_SCHEMA: "${ODIRAG_AUTO_CREATE_SCHEMA:-false}"
+  ODIRAG_DATA_DIR: "/app/data"
+  ODIRAG_BM25_SNAPSHOT_PATH: "/app/data/indexes/bm25.json"
+  ODIRAG_EVALUATION_ARTIFACT_DIR: "/app/data/evaluation/runs"
+  ODIRAG_EXPERIMENT_ARTIFACT_DIR: "/app/data/experiments/runs"
+  ODIRAG_EMBEDDING_PROVIDER: "${ODIRAG_EMBEDDING_PROVIDER:-deterministic}"
+  ODIRAG_EMBEDDING_CACHE_PROVIDER: "${ODIRAG_EMBEDDING_CACHE_PROVIDER:-redis}"
+  ODIRAG_EMBEDDING_DIMENSIONS: "${ODIRAG_EMBEDDING_DIMENSIONS:-64}"
+  ODIRAG_EMBEDDING_VERSION: "${ODIRAG_EMBEDDING_VERSION:-demo-v1}"
+  ODIRAG_VECTOR_STORE_PROVIDER: "${ODIRAG_VECTOR_STORE_PROVIDER:-qdrant}"
+  ODIRAG_QDRANT_COLLECTION: "${ODIRAG_QDRANT_COLLECTION:-odirag_demo_chunks_v1}"
+  ODIRAG_RERANK_PROVIDER: "${ODIRAG_RERANK_PROVIDER:-deterministic}"
+  ODIRAG_CELERY_BROKER_URL: "${ODIRAG_CELERY_BROKER_URL:-redis://redis:6379/1}"
+  ODIRAG_CELERY_RESULT_BACKEND: "${ODIRAG_CELERY_RESULT_BACKEND:-redis://redis:6379/2}"
+  COZE_ENABLED: "${COZE_ENABLED:-false}"
+  COZE_LEGACY_API_URL: "${COZE_LEGACY_API_URL:-}"
+  COZE_BATCH_API_URL: "${COZE_BATCH_API_URL:-}"
+  COZE_API_TOKEN: "${COZE_API_TOKEN:-}"
+  COZE_DEFAULT_CONTRACT: "${COZE_DEFAULT_CONTRACT:-batch_crawl}"
+  COZE_TIMEOUT_SECONDS: "${COZE_TIMEOUT_SECONDS:-90}"
+  COZE_MAX_RETRIES: "${COZE_MAX_RETRIES:-2}"
+
+x-backend-env-files: &backend-env-files
+  - path: .env
+    required: false
+
+x-backend-depends-on: &backend-depends-on
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  qdrant:
+    condition: service_healthy
+
+x-async-depends-on: &async-depends-on
+  backend:
+    condition: service_healthy
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  qdrant:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-odirag}"
+      POSTGRES_USER: "${POSTGRES_USER:-odirag}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-odirag_dev_password}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.14.1}
+    ports:
+      - "127.0.0.1:${QDRANT_HTTP_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", ":> /dev/tcp/127.0.0.1/6333"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    image: odirag/backend:${ODIRAG_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}"
+    environment:
+      <<: *backend-environment
+      ODIRAG_RUN_MIGRATIONS: "true"
+    env_file: *backend-env-files
+    working_dir: /app/backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    depends_on: *backend-depends-on
+    volumes:
+      - app-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/system/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  # Celery services are opt-in so API-only development stays lightweight and beat stays singular.
+  # Start them with: docker compose --profile async up -d worker scheduler
+  worker:
+    profiles: ["async"]
+    image: odirag/backend:${ODIRAG_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}"
+    environment:
+      <<: *backend-environment
+      ODIRAG_RUN_MIGRATIONS: "false"
+    env_file: *backend-env-files
+    working_dir: /app/backend
+    command:
+      [
+        "celery",
+        "-A",
+        "app.tasks.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--hostname=worker@%h",
+      ]
+    depends_on: *async-depends-on
+    volumes:
+      - app-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A app.tasks.celery_app:celery_app inspect ping --destination worker@$${HOSTNAME} --timeout 5 | grep -q pong",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  scheduler:
+    profiles: ["async"]
+    image: odirag/backend:${ODIRAG_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}"
+    environment:
+      <<: *backend-environment
+      ODIRAG_RUN_MIGRATIONS: "false"
+    env_file: *backend-env-files
+    working_dir: /app/backend
+    command:
+      [
+        "celery",
+        "-A",
+        "app.tasks.celery_app:celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--pidfile=/tmp/celerybeat.pid",
+        "--schedule=/app/data/celerybeat-schedule",
+      ]
+    depends_on: *async-depends-on
+    volumes:
+      - app-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os, pathlib; path = pathlib.Path('/tmp/celerybeat.pid'); assert path.is_file(); os.kill(int(path.read_text().strip()), 0)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    profiles: ["ui"]
+    image: odirag/frontend:${ODIRAG_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api}"
+        NODE_IMAGE: "${NODE_IMAGE:-node:22-alpine}"
+        NGINX_IMAGE: "${NGINX_IMAGE:-nginx:1.27-alpine}"
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  nginx:
+    profiles: ["ui"]
+    image: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    volumes:
+      - ./deployment/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${NGINX_BIND_ADDRESS:-127.0.0.1}:${NGINX_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  postgres-data:
+  redis-data:
+  qdrant-data:

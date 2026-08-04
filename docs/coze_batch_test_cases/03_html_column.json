@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-03", "source_url": "https://example.org/html-column", "max_articles": 5, "max_pages": 1},
+  "expected": {"success_article_count_min": 1, "article_url_is_absolute": true, "content_or_attachment_present": true}
+}

@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-07", "source_url": "https://example.org/image-notice", "max_articles": 5, "max_pages": 1},
+  "expected": {"extraction_method": "image", "needs_ocr": true, "image_urls_preserved": true, "ocr_warning_present": true}
+}

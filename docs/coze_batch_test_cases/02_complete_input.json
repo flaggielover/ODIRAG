@@ -1,0 +1,20 @@
+{
+  "input": {
+    "task_id": "case-02",
+    "source_url": "https://example.org/industry",
+    "source_name": "示例行业协会",
+    "region": "四川省",
+    "column_name": "行业动态",
+    "max_articles": 5,
+    "max_pages": 1,
+    "minimum_content_length": 3000,
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "include_html": true,
+    "include_pdf": true,
+    "include_docx": true,
+    "include_xlsx": true,
+    "deduplicate": true
+  },
+  "expected": {"date_filter_applied": true, "all_attachment_flags_applied": true}
+}

@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "task_id": "sample-success",
+  "source": {"source_url": "https://example.org/news", "source_name": "示例协会", "region": "四川省", "organization": "示例协会", "column_name": "行业动态"},
+  "statistics": {"pages_visited": 1, "articles_discovered": 1, "articles_fetched": 1, "articles_accepted": 1, "articles_rejected": 0, "articles_pending_review": 0, "articles_failed": 0},
+  "articles": [{"url": "https://example.org/news/a-1", "title": "产业政策分析", "published_at": "2026-08-01", "organization": "示例协会", "organization_inferred": false, "region": "四川省", "column_name": "行业动态", "content": "可复用的行业政策正文。", "content_length": 11, "summary": "政策摘要", "keywords": ["政策"], "attachments": [], "accepted": true, "quality_score": 86, "decision": "accepted", "decision_reason": "官方来源且正文包含可复用政策知识", "document_type": "政策解读", "extraction_method": "html", "needs_ocr": false, "image_urls": [], "image_count": 0, "image_alt_texts": [], "warnings": []}],
+  "failed_urls": [],
+  "warnings": [],
+  "workflow_version": "batch_crawl-v1",
+  "started_at": "2026-08-04T09:00:00Z",
+  "completed_at": "2026-08-04T09:00:10Z"
+}

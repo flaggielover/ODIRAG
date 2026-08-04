@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odirag.local/schemas/batch-crawl-result-v1.json",
+  "title": "ODIRAG batch_crawl result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["success", "task_id", "source", "statistics", "articles", "failed_urls", "warnings"],
+  "properties": {
+    "success": {"type": "boolean"},
+    "task_id": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_url", "source_name", "region", "organization", "column_name"],
+      "properties": {
+        "source_url": {"type": "string", "format": "uri"},
+        "source_name": {"type": ["string", "null"]},
+        "region": {"type": ["string", "null"]},
+        "organization": {"type": ["string", "null"]},
+        "column_name": {"type": ["string", "null"]}
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pages_visited", "articles_discovered", "articles_fetched", "articles_accepted", "articles_rejected", "articles_pending_review", "articles_failed"],
+      "properties": {
+        "pages_visited": {"type": "integer", "minimum": 0},
+        "articles_discovered": {"type": "integer", "minimum": 0},
+        "articles_fetched": {"type": "integer", "minimum": 0},
+        "articles_accepted": {"type": "integer", "minimum": 0},
+        "articles_rejected": {"type": "integer", "minimum": 0},
+        "articles_pending_review": {"type": "integer", "minimum": 0},
+        "articles_failed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "articles": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/article"}
+    },
+    "failed_urls": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/failedUrl"}
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "workflow_version": {"type": ["string", "null"]},
+    "contract_version": {"type": ["string", "null"]},
+    "started_at": {"type": ["string", "null"], "format": "date-time"},
+    "finished_at": {"type": ["string", "null"], "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"}
+  },
+  "$defs": {
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url", "file_type", "extracted_text", "download_status", "error_message"],
+      "properties": {
+        "name": {"type": "string"},
+        "url": {"type": "string", "format": "uri"},
+        "file_type": {"type": ["string", "null"]},
+        "extracted_text": {"type": ["string", "null"]},
+        "download_status": {"type": "string", "enum": ["pending", "success", "completed", "failed", "too_large", "unsupported", "skipped"]},
+        "error_message": {"type": ["string", "null"]}
+      }
+    },
+    "article": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "title", "published_at", "organization", "organization_inferred", "region", "column_name", "content", "content_length", "attachments", "accepted", "quality_score", "decision", "decision_reason", "document_type", "summary", "keywords", "extraction_method", "needs_ocr", "image_urls", "image_count", "image_alt_texts", "warnings"],
+      "properties": {
+        "url": {"type": "string", "format": "uri"},
+        "title": {"type": "string"},
+        "published_at": {"type": ["string", "null"]},
+        "organization": {"type": ["string", "null"]},
+        "organization_inferred": {"type": "boolean"},
+        "region": {"type": ["string", "null"]},
+        "column_name": {"type": ["string", "null"]},
+        "content": {"type": "string"},
+        "content_length": {"type": "integer", "minimum": 0},
+        "summary": {"type": ["string", "null"]},
+        "keywords": {"type": "array", "items": {"type": "string"}},
+        "attachments": {"type": "array", "items": {"$ref": "#/$defs/attachment"}},
+        "accepted": {"type": "boolean"},
+        "quality_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "decision": {"type": "string", "enum": ["accepted", "rejected", "pending_review", "failed"]},
+        "decision_reason": {"type": "string"},
+        "document_type": {"type": ["string", "null"]},
+        "extraction_method": {"type": "string", "enum": ["html", "pdf", "doc", "docx", "xls", "xlsx", "image", "mixed"]},
+        "needs_ocr": {"type": "boolean"},
+        "image_urls": {"type": "array", "items": {"type": "string", "format": "uri"}},
+        "image_count": {"type": "integer", "minimum": 0},
+        "image_alt_texts": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "failedUrl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "stage", "error_code", "error_message", "retryable"],
+      "properties": {
+        "url": {"type": "string", "format": "uri"},
+        "stage": {"type": "string"},
+        "error_code": {"type": "string"},
+        "error_message": {"type": "string"},
+        "retryable": {"type": "boolean"}
+      }
+    }
+  }
+}

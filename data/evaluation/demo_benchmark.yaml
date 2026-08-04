@@ -1,0 +1,68 @@
+schema_version: 1
+source:
+  source_key: demo-government
+  name: Demo Government Policy Office
+  domain: demo.gov.example
+  homepage_url: https://demo.gov.example/policies
+  official_status: official
+  region: Sichuan
+documents:
+  - document_id: demo-policy-research-2026
+    title: Software Research and Innovation Support Measures
+    source_url: https://demo.gov.example/policies/research-2026
+    publish_date: 2026-02-01
+    issuing_authority: Demo Government Policy Office
+    document_number: DEMO-2026-01
+    region: Sichuan
+    document_type: industry_policy
+    content: |
+      # Support measures
+
+      Eligible software companies can apply for research funding and innovation grants.
+
+      # Application requirements
+
+      Applicants must submit a project plan and an audited research budget.
+  - document_id: demo-policy-talent-2025
+    title: Digital Talent Training Support Measures
+    source_url: https://demo.gov.example/policies/talent-2025
+    publish_date: 2025-06-15
+    issuing_authority: Demo Government Policy Office
+    document_number: DEMO-2025-08
+    region: Sichuan
+    document_type: talent_policy
+    content: |
+      # Talent support
+
+      Qualified employers may receive subsidies for accredited digital skills training.
+questions:
+  - question_id: demo-research-support
+    question: What support can eligible software companies apply for?
+    query_type: rag
+    expected_document_ids:
+      - demo-policy-research-2026
+    expected_answer_points:
+      - Eligible software companies can apply for research funding and innovation grants
+    difficulty: easy
+    category: support
+    created_by: demo-benchmark
+    verified: true
+  - question_id: demo-application-requirements
+    question: What must applicants submit for research support?
+    query_type: rag
+    expected_document_ids:
+      - demo-policy-research-2026
+    expected_answer_points:
+      - Applicants must submit a project plan and an audited research budget
+    difficulty: medium
+    category: requirements
+    created_by: demo-benchmark
+    verified: true
+  - question_id: demo-refusal
+    question: 火星天气如何？
+    query_type: rag
+    should_refuse: true
+    difficulty: easy
+    category: refusal
+    created_by: demo-benchmark
+    verified: true

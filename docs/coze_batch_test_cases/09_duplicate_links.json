@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-09", "source_url": "https://example.org/duplicate-column", "deduplicate": true, "max_articles": 5, "max_pages": 1},
+  "expected": {"canonical_urls_unique": true, "tracking_parameters_removed": true, "duplicate_count_is_reported": true}
+}

@@ -1,0 +1,72 @@
+# Python caches, environments, and build output
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+.runtime-venv/
+venv/
+env/
+.tmp/
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/pytest-cache-files-*/
+backend/.pytest-tmp-*/
+backend/.test-data/
+.pytest-phase5-*/
+backend/.pip-tmp/
+backend/.ruff_cache/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
+backend/*.egg-info/
+dist/
+build/
+
+# Node/Vite output
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+frontend/playwright-report/
+frontend/test-results/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Generated data and reports. Keep directory markers and committed fixtures.
+data/raw/*
+data/parsed/*
+data/attachments/*
+data/reports/*
+data/evaluation/runs/*
+data/experiments/runs/*
+data/indexes/*
+data/load-tests/*
+!data/raw/.gitkeep
+!data/parsed/.gitkeep
+!data/attachments/.gitkeep
+!data/reports/.gitkeep
+!data/evaluation/runs/.gitkeep
+!data/experiments/runs/.gitkeep
+!data/indexes/.gitkeep
+!data/load-tests/.gitkeep
+
+# Local service state and logs
+*.log
+*.sqlite
+*.sqlite3
+*.db
+.docker/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

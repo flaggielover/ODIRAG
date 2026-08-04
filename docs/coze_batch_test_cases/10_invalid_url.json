@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-10", "source_url": "javascript:alert(1)", "max_articles": 5, "max_pages": 1},
+  "expected": {"validation_error": "INVALID_URL", "external_request_count": 0, "normal_batch_result_not_emitted": true}
+}

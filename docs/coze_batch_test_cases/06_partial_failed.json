@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-06", "source_url": "https://example.org/mixed-column", "max_articles": 5, "max_pages": 1},
+  "expected": {"success": true, "partial_failure": true, "articles_min": 1, "failed_urls_min": 1, "successful_articles_not_discarded": true}
+}

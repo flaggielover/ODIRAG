@@ -1,0 +1,28 @@
+schema_version: 1
+name: chunk_600_vs_800
+experiment_type: chunking
+dataset: data/evaluation/demo_benchmark.yaml
+output_directory: data/experiments/runs/chunk_600_vs_800
+runner: app.experiments.demo:DemoDatasetExperimentRunner
+regression_tolerance: 0.0
+lower_is_better:
+  - p50_latency_ms
+  - p95_latency_ms
+  - average_cost
+  - hallucination_rate
+baseline:
+  name: chunk_600
+  parameters:
+    chunking:
+      target_chars: 600
+      min_chars: 160
+      max_chars: 900
+      overlap_chars: 100
+candidate:
+  name: chunk_800
+  parameters:
+    chunking:
+      target_chars: 800
+      min_chars: 160
+      max_chars: 1200
+      overlap_chars: 120

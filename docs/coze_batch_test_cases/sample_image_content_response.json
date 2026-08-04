@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "task_id": "sample-image",
+  "source": {"source_url": "https://example.org/image", "source_name": "示例协会", "region": "四川省", "organization": "示例协会", "column_name": "通知"},
+  "statistics": {"pages_visited": 1, "articles_discovered": 1, "articles_fetched": 1, "articles_accepted": 0, "articles_rejected": 0, "articles_pending_review": 1, "articles_failed": 0},
+  "articles": [{"url": "https://example.org/image/1", "title": "图片公告", "published_at": null, "organization": "示例协会", "organization_inferred": false, "region": "四川省", "column_name": "通知", "content": "页面可提取的标题文字", "content_length": 10, "summary": null, "keywords": [], "attachments": [{"name": "notice.png", "url": "https://example.org/files/notice.png", "file_type": "image", "extracted_text": "", "download_status": "success", "error_message": null}], "accepted": false, "quality_score": 0, "decision": "pending_review", "decision_reason": "正文主体为图片，等待 OCR/人工复核", "document_type": "无法判断", "extraction_method": "image", "needs_ocr": true, "image_urls": ["https://example.org/files/notice.png"], "image_count": 1, "image_alt_texts": ["公告正文图片"], "warnings": ["ocr_required"]}],
+  "failed_urls": [],
+  "warnings": [],
+  "workflow_version": "batch_crawl-v1",
+  "started_at": "2026-08-04T09:00:00Z",
+  "completed_at": "2026-08-04T09:00:12Z"
+}

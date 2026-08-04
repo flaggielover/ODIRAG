@@ -1,0 +1,4 @@
+{
+  "input": {"task_id": "case-08", "source_url": "https://example.org/中文栏目", "source_name": "四川测试协会", "column_name": "行业动态", "max_articles": 5, "max_pages": 1},
+  "expected": {"utf8_round_trip": true, "replacement_character_absent": true}
+}

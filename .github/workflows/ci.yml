@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend quality and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend and development tools
+        run: python -m pip install -e ".[dev]"
+
+      - name: Ruff
+        run: python -m ruff check .
+
+      - name: Black
+        run: python -m black --check .
+
+      - name: Mypy
+        run: python -m mypy app
+
+      - name: Migration smoke test
+        env:
+          ODIRAG_DATABASE_URL: sqlite+aiosqlite:///./.ci-migration.db
+          ODIRAG_BOOTSTRAP_ADMIN: "false"
+        run: |
+          python -m alembic upgrade head
+          python -m alembic downgrade 0002_observability_alerts
+          python -m alembic upgrade head
+          python -m alembic current | grep -q "(head)"
+
+      - name: Tests and coverage
+        run: python -m pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage XML
+        if: always() && hashFiles('backend/coverage.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect frontend lock file
+        id: detect
+        shell: bash
+        run: |
+          if [[ -f frontend/package-lock.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Frontend has not been added; build is intentionally skipped."
+          fi
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run lint --if-present
+
+      - name: Type-check frontend
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run type-check --if-present
+
+      - name: Test frontend
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm test
+
+      - name: Install Playwright browser
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end frontend journeys
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Build frontend
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run build
+
+  containers:
+    name: Container build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [backend, frontend]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose model
+        run: docker compose config --quiet
+
+      - name: Validate Nginx configuration
+        run: |
+          docker run --rm \
+            --add-host backend:127.0.0.1 \
+            --add-host frontend:127.0.0.1 \
+            --volume "$PWD/deployment/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            nginx:1.27-alpine nginx -t
+          docker run --rm --volume "$PWD/deployment/frontend.nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+
+      - name: Build backend image
+        run: docker build --file Dockerfile.backend --tag odirag/backend:ci .
+
+      - name: Smoke test backend image as non-root
+        run: |
+          docker run --detach --name odirag-backend-ci \
+            --publish 127.0.0.1:8000:8000 \
+            --env ODIRAG_DATABASE_URL=sqlite+aiosqlite:////app/data/ci-smoke.db \
+            --env ODIRAG_DEPENDENCY_TIMEOUT_SECONDS=0.1 \
+            --env ODIRAG_HEALTH_CHECK_QDRANT=false \
+            --env ODIRAG_ADMIN_USERNAME=admin \
+            --env ODIRAG_ADMIN_PASSWORD=ci-admin-password \
+            --env ODIRAG_EMBEDDING_PROVIDER=deterministic \
+            --env ODIRAG_EMBEDDING_CACHE_PROVIDER=memory \
+            --env ODIRAG_EMBEDDING_DIMENSIONS=8 \
+            --env ODIRAG_VECTOR_STORE_PROVIDER=memory \
+            --env ODIRAG_RERANK_PROVIDER=deterministic \
+            odirag/backend:ci
+
+          for attempt in $(seq 1 60); do
+            if curl --silent --show-error --fail http://127.0.0.1:8000/api/system/health >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == "60" ]]; then
+              docker logs odirag-backend-ci
+              exit 1
+            fi
+            sleep 2
+          done
+
+          test "$(docker exec odirag-backend-ci id -u)" = "10001"
+          docker exec odirag-backend-ci test -w /app/data
+          docker exec odirag-backend-ci test -s /app/data/ci-smoke.db
+
+          docker exec --interactive odirag-backend-ci python - <<'PY'
+          import json
+          import urllib.request
+
+          request = urllib.request.Request(
+              "http://127.0.0.1:8000/api/auth/login",
+              data=json.dumps(
+                  {"username": "admin", "password": "ci-admin-password"}
+              ).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=5) as response:
+              payload = json.load(response)
+          assert payload["access_token"]
+          assert payload["refresh_token"]
+          PY
+
+      - name: Show backend smoke logs
+        if: always()
+        run: docker logs odirag-backend-ci || true
+
+      - name: Remove backend smoke container
+        if: always()
+        run: docker rm --force odirag-backend-ci || true
+
+      - name: Detect frontend lock file
+        id: frontend
+        shell: bash
+        run: |
+          if [[ -f frontend/package-lock.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build frontend image
+        if: steps.frontend.outputs.present == 'true'
+        run: docker build --file Dockerfile.frontend --tag odirag/frontend:ci .

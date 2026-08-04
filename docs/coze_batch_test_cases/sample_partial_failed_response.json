@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "task_id": "sample-partial",
+  "source": {"source_url": "https://example.org/news", "source_name": "示例协会", "region": null, "organization": null, "column_name": null},
+  "statistics": {"pages_visited": 1, "articles_discovered": 2, "articles_fetched": 1, "articles_accepted": 1, "articles_rejected": 0, "articles_pending_review": 0, "articles_failed": 1},
+  "articles": [{"url": "https://example.org/news/a-1", "title": "政策正文", "published_at": null, "organization": null, "organization_inferred": false, "region": null, "column_name": null, "content": "正文", "content_length": 2, "summary": null, "keywords": [], "attachments": [], "accepted": true, "quality_score": 70, "decision": "accepted", "decision_reason": "待复核的示例", "document_type": "政策发布", "extraction_method": "html", "needs_ocr": false, "image_urls": [], "image_count": 0, "image_alt_texts": [], "warnings": []}],
+  "failed_urls": [{"url": "https://example.org/news/a-2", "stage": "article_fetch", "error_code": "TIMEOUT", "error_message": "详情页超时", "retryable": true}],
+  "warnings": ["PARTIAL_FAILURE"],
+  "workflow_version": "batch_crawl-v1",
+  "started_at": "2026-08-04T09:00:00Z",
+  "completed_at": "2026-08-04T09:00:20Z"
+}

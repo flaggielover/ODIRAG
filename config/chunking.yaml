@@ -1,0 +1,4 @@
+target_chars: 800
+min_chars: 160
+max_chars: 1200
+overlap_chars: 120
