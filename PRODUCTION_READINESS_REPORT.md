@@ -33,7 +33,7 @@
 10. **真实站点抓取缺证据。** fixture crawl 覆盖分页、详情、附件和幂等；已完成 scsia.org 浏览器级侦察与人工协会来源记录，但 backend DNS 解析到 `198.18.0.208` 后被 SSRF guard 拒绝，0 fetched/0 documents；指南建议的可达真实站点至少 10 篇文章仍未执行。
 11. **扫描 PDF 只有 OCR 标志。** requires_ocr 可追踪，但没有 OCR engine；这不违反 Phase 3 的“标志”要求，却限制扫描件生产覆盖。
 12. **供应链验收未完成。** npm install 报告 2 个 high severity 提示，但 npm audit advisory 查询被网络策略拒绝，不能判定漏洞是否适用。
-13. **Git 基线不可审计。** 当前仓库文件均为 untracked，缺少可复现 checkpoint commit/tag；这不影响本地测试，但阻止正式发布和差异追踪。
+13. **Git 基线已建立，但还不是正式发布标签。** 当前实现已提交为 `85d4bdb feat: complete Coze batch crawl readiness`，工作区清洁；仍需目标仓库的签名 tag、CI green、SBOM 和镜像 digest 才能完成发布审计。
 
 ## 3. Phase 0-15 需求到代码追踪矩阵
 
@@ -45,7 +45,7 @@
 | 创建持续更新的状态文档与 phase checklist | IMPLEMENTATION_STATUS.md | 文档结构检查 | VERIFIED-LOCAL | 最终状态须与本报告同步 |
 | 记录假设 | IMPLEMENTATION_STATUS.md | 人工审阅 | VERIFIED-LOCAL | 假设需部署负责人确认 |
 | 验证 Python、Node、Docker、Git | IMPLEMENTATION_STATUS.md | version 命令；Docker Compose health | VERIFIED-LOCAL | 生产主机版本、镜像 provenance 和发布权限仍需目标环境验收 |
-| 每阶段 lint/type/test/checkpoint | IMPLEMENTATION_STATUS.md command log | 历史命令记录 | PARTIAL | 测试证据存在；没有 Git checkpoint commit |
+| 每阶段 lint/type/test/checkpoint | IMPLEMENTATION_STATUS.md command log；Git `85d4bdb` | 历史命令记录；当前实现 checkpoint | PARTIAL | 历史阶段没有逐阶段 commit，正式发布仍需 CI/tag |
 
 ### Phase 1 - Infrastructure and Core Backend
 
@@ -232,7 +232,7 @@
 | honest demo seed | scripts/seed_demo.py；data/evaluation/* | test_demo_seed.py；deterministic pipeline | FIXTURE-VERIFIED | demo URLs/data 不代表真实来源 |
 | one-command startup | scripts/start_demo.ps1；scripts/start_demo.sh | local Compose build/start and health | VERIFIED-LOCAL | 生产环境变量、备份恢复和发布流程未实测 |
 | 12+ learning/defense docs | docs/learning/*；docs/*.md | structure audit | VERIFIED-LOCAL | Phase16 learning doc另行新增 |
-| release/checkpoint history | .git | git status | FAIL | 所有文件 untracked，无 commit/tag |
+| release/checkpoint history | .git | `git log --oneline`；clean working tree | VERIFIED-LOCAL | 已有实现 checkpoint `85d4bdb`；尚无签名 release tag/CI/SBOM |
 
 ## 4. Required API Surface
 
