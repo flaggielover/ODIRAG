@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-05。每一项都必须在目标环境执行并保存原始输出。本机 Docker Desktop/Compose 的 development 栈曾用旧基础镜像完成一轮真实本地验收；当前 Python 3.12 Alpine/Nginx 1.30.4 加固镜像因 Docker Desktop WSL 数据盘挂载故障尚未完成重建、启动和扫描，因此仍为 UNVERIFIED。生产 secret、远程 provider 凭据和代表性真实抓取也仍未验收。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-05。每一项都必须在目标环境执行并保存原始输出。本机 WSL2/Docker Desktop 已无损恢复，当前 Compose development 栈的八个服务、PostgreSQL/Alembic、Redis、Qdrant health、worker、scheduler、Nginx 1.30.4、frontend、8080 API 和 acceptance-summary 已通过真实本地验收。当前镜像仍未 fresh rebuild/Scout/SBOM，生产 secret、远程 provider 凭据、真实索引/Qdrant points 和代表性真实抓取也仍未验收。
 
 ## 证据规则
 
@@ -582,20 +582,21 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 
 只有 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、frontend、Alembic 和所选真实 provider 全部 PASS-LIVE，且日志/trace/备份恢复证据已归档，才可把部署标为生产接受。
 
-### 本机 development 栈证据（2026-08-04，历史旧基础镜像）
+### 本机 development 栈证据（2026-08-05，当前恢复检查点）
 
-以下结果是真实本地 Compose 历史运行结果，标记为 `VERIFIED-LOCAL-HISTORICAL`。它们不能证明当前加固镜像，也不能替代目标生产环境的 `PASS-LIVE`：
+以下结果是真实本地 Compose 运行结果，标记为 `VERIFIED-LOCAL`。它们证明当前 development 栈，但不能替代目标生产环境的 `PASS-LIVE`：
 
 | 项目 | 结果 | 边界 |
 | --- | --- | --- |
-| Compose 服务 | 旧基础镜像下 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx | 当前加固镜像未完成重建/启动；development 配置未证明生产 secret/TLS/provenance |
-| PostgreSQL | `pg_isready` accepting connections；身份/业务计数查询成功；4 张 Phase16 表存在 | 未执行生产备份恢复、连接池耗尽和专用 PostgreSQL downgrade |
+| Compose 服务 | 当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；Nginx 为 1.30.4 | development 配置未证明生产 secret/TLS/provenance；镜像未 fresh build/scan |
+| PostgreSQL | `pg_isready` accepting connections；server/client UTF8；current/heads 为 `0006_coze_task_operations (head)`；`alembic check` 无漂移；6 张 Phase16/Coze 表存在 | 未执行生产备份恢复、连接池耗尽和专用 PostgreSQL downgrade |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
-| Qdrant | `/healthz` 成功；当前 collection 数为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
-| worker/scheduler | worker inspect ping 与 `ping.delay()` 成功；日志观察到 recovery/monitoring 调度 | 未执行真实 queued crawl/source-discovery 完成和故障恢复演练 |
-| Nginx/frontend | 旧 Nginx 镜像下 `/healthz`、`/`、`/api/system/health` 均 200；安全响应头存在 | 当前 Nginx 1.30.4 未完成启动验证；未执行 HTTPS/live Playwright 和生产浏览器门禁 |
-| 当前加固镜像 | 已配置 Python 3.12 Alpine、Nginx 1.30.4 Alpine，backend runtime 移除 pip | Docker Desktop 报 `WSL_E_USER_VHD_ALREADY_ATTACHED`；定向 terminate 后 WSL 服务仍超时，需主机重启或管理员恢复服务；build/start/Scout 未完成，状态为 UNVERIFIED |
+| Qdrant | `/healthz` HTTP 200；当前 collection 数为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
+| worker/scheduler | worker inspect ping 成功；scheduler PID 存在；日志观察到 recovery/monitoring 调度 | 未执行真实 queued crawl/source-discovery 完成和故障恢复演练 |
+| Nginx/frontend | Nginx 1.30.4 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；安全响应头存在 | 仅交互式本地 HTTP 浏览器证据；未执行自动化 live Playwright、HTTPS 和生产浏览器门禁 |
+| Docker/WSL 恢复 | Docker Desktop 4.85.0、Client/Server 29.6.2、Compose v5.3.1；`docker-desktop` WSL2 running；未删除 VHD/Volume/数据库 | 卡死 Desktop 进程已恢复；仍需目标主机容灾/重启演练 |
+| 当前镜像配置与现存本地镜像 | 已配置 Python 3.12 Alpine、Nginx 1.30.4 Alpine，backend runtime 移除 pip；现存本地镜像启动通过 | 本轮未 fresh build/Scout/SBOM，状态仍为供应链 UNVERIFIED |
 | Alembic | current/heads 为 `0006_coze_task_operations (head)`；`alembic check` 无新 upgrade operations | 未执行生产数据库 downgrade/backup/restore |
 | scsia.org | 浏览器可读；backend DNS `198.18.0.208` 被 SSRF guard 拒绝；最新任务失败、0 文档、接口 422 | 不是 live crawl 成功；需要正常公网 DNS/出口及图片/OCR 抽取验收 |
 
-因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。剩余生产门禁是：无损恢复 Docker Desktop 并完成当前加固镜像 build/start/Scout、真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇真实官方站点抓取、代表性评测与负载、备份恢复、Git checkpoint 和 live Playwright。
+因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL 和本地服务启动门禁已完成；剩余生产门禁是：当前加固镜像 fresh build/Scout/SBOM、真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇真实官方站点抓取、真实索引/Qdrant points、代表性评测与负载、备份恢复、Git checkpoint 和 live Playwright。
