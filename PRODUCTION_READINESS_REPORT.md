@@ -333,18 +333,20 @@ Brave 被选为当前 live provider，因为 Microsoft 已宣布 Bing Search API
 | `backend/.venv/Scripts/ruff.exe check app tests` | PASS | 本地源代码/测试静态检查 |
 | `backend/.venv/Scripts/black.exe --check app tests alembic` | PASS；205 files unchanged | 本地格式检查 |
 | `backend/.venv/Scripts/mypy.exe app` | PASS；154 source files | 本地类型检查 |
-| `backend/.venv/Scripts/python.exe -m pytest -q` | PASS；210 passed | SQLite、内存实现、确定性 provider；覆盖率本轮未重新生成报告 |
+| `backend/.venv/Scripts/python.exe -m pytest -q --cov=app --cov-report=term-missing` | PASS；210 passed；总覆盖率 79.78% | SQLite、内存实现、确定性 provider；不替代真实依赖验收 |
 | `backend/.venv/Scripts/pytest.exe tests/unit/test_sources_and_crawler.py -q` | PASS；8 passed | fixture；含 unsafe inline crawl 结构化错误 |
 | Phase 16/config/API 定向测试 | PASS；28 passed | fixture/contract |
-| Alembic fresh upgrade → downgrade → upgrade | PASS；最终 `0006_coze_task_operations (head)`；SQLite 和本地 PostgreSQL `check` 均无 drift | SQLite/PostgreSQL round-trip；未做生产 backup/restore |
+| Alembic fresh upgrade → downgrade → upgrade | PASS；隔离 SQLite 最终 `0006_coze_task_operations (head)`；开发演示 SQLite `alembic check` 无 drift | SQLite round-trip；历史 PostgreSQL 结果未在本次 Docker 控制面故障期间重新验证；未做生产 backup/restore |
 | frontend lint/type-check/Vitest/build | PASS；16 Vitest tests，Vite 1850 modules | 本地 Node toolchain（Vitest/build 使用提升权限启动 esbuild） |
 | `npm audit` / `npm audit --omit=dev` / `npm ls --all` | PASS；0 vulnerabilities；依赖树有效 | npm registry advisory；不覆盖 Python/容器镜像 |
 | `pip --python backend/.venv check` | PASS；No broken requirements found | 只验证依赖一致性，不是 CVE 扫描 |
 | Playwright fixture suite | PASS；串行 9 passed，1 live test skipped | route fixture；live gate 未开启 |
 | local no-intercept `live-stack.spec.ts` | PASS；1 passed | 本地 SQLite + deterministic providers，不是生产验收 |
+| isolated Uvicorn API smoke | PASS；health/login/Coze status/sources/crawl-tasks 均 HTTP 200；health 为 database healthy、Redis unavailable、Qdrant disabled | 临时 SQLite + deterministic providers；不证明 Docker、PostgreSQL、Redis、Qdrant 或外部 provider |
 | historical local Docker Compose service/worker/scheduler acceptance | PASS-HISTORICAL；旧基础镜像下 8 services healthy；worker inspect ping 与 `ping.delay()` 成功；scheduler 发送 recovery/monitoring tasks；应用限流 key 写入 Redis | 不能证明当前 Python 3.12 Alpine/Nginx 1.30.4 镜像；当前 Docker Desktop WSL 挂载失败 |
 | historical local PostgreSQL `alembic current/heads/check` | PASS-HISTORICAL；`0006_coze_task_operations (head)`；No new upgrade operations detected；4 张 Phase16 表存在 | 旧基础镜像/当前开发数据卷证据；未做生产 downgrade/backup/restore |
 | historical local Nginx/frontend/API smoke | PASS-HISTORICAL；旧 Nginx 镜像下 `/healthz`、`/`、`/api/system/health` 均 200；安全响应头存在 | 当前 Nginx 1.30.4 镜像、HTTPS/live Playwright 和生产浏览器门禁未验证 |
+| current Docker/WSL control-plane check | BLOCKED；Docker client 29.6.2、Compose v5.3.1 与 `docker compose config --quiet` 通过；Engine named pipe permission denied，WSL 查询失败/超时，预期服务端口均未监听 | 需要主机管理员恢复 Docker Desktop/WSL；未执行 VHD 删除、prune 或数据重置 |
 | current hardened image build/scan | BLOCKED；已配置 `python:3.12-alpine3.24`、`nginx:1.30.4-alpine` 并移除 runtime pip；清单已覆盖 runtime 与 builder SBOM/CVE | Docker Desktop `WSL_E_USER_VHD_ALREADY_ATTACHED`；定向 terminate 后 WSL 服务仍超时，托管环境无权重启服务；未完成 build/start/Scout，不能宣称漏洞已清零 |
 | Coze batch live preflight | PASS-EXPECTED；`GET /api/system/coze/status` 显示 disabled/unconfigured；脚本退出码 2、`batch_workflow_not_published` | 没有批量部署 URL/token；不是 Live 成功 |
 
