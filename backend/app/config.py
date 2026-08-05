@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from ipaddress import ip_network
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -180,11 +181,15 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     health_check_qdrant: bool = True
+    rate_limit_backend: Literal["memory", "redis"] = "redis"
     rate_limit_enabled: bool = True
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     rate_limit_auth_requests: int = Field(default=20, ge=1, le=10_000)
     rate_limit_expensive_requests: int = Field(default=120, ge=1, le=100_000)
     rate_limit_default_requests: int = Field(default=600, ge=1, le=1_000_000)
+    # Only these direct peers may supply a single X-Forwarded-For client address.
+    # Leave empty when the ASGI server is exposed directly.
+    trusted_proxy_ips: list[str] = Field(default_factory=list)
 
     @field_validator(
         "qdrant_api_key",
@@ -219,6 +224,24 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @field_validator("trusted_proxy_ips", mode="before")
+    @classmethod
+    def parse_trusted_proxy_ips(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("trusted_proxy_ips")
+    @classmethod
+    def validate_trusted_proxy_ips(cls, value: list[str]) -> list[str]:
+        for item in value:
+            try:
+                ip_network(item, strict=False)
+            except ValueError as exc:
+                message = f"trusted_proxy_ips contains an invalid IP or CIDR: {item}"
+                raise ValueError(message) from exc
+        return value
+
     @model_validator(mode="after")
     def validate_security(self) -> Settings:
         if self.celery_task_soft_time_limit_seconds >= self.celery_task_time_limit_seconds:
@@ -236,6 +259,8 @@ class Settings(BaseSettings):
                 raise ValueError("admin_password must not contain a plaintext production secret")
             if not self.rate_limit_enabled:
                 raise ValueError("rate limiting must be enabled outside development/test")
+            if self.rate_limit_backend != "redis":
+                raise ValueError("rate_limit_backend must be redis outside development/test")
             if self.source_discovery_provider == "deterministic":
                 raise ValueError("deterministic source discovery is restricted to development/test")
             if self.source_discovery_provider == "brave":

@@ -49,7 +49,7 @@
 5. `backend/app/logging.py`
 6. `backend/app/metrics.py`
 
-需要回答：token version 如何撤销旧 access/refresh？限流为何只在单进程内有效？路由和数据库延迟怎样采样？
+需要回答：token version 如何撤销旧 access/refresh？Redis Lua 限流如何保证跨实例共享、故障时为何 fail-closed？路由和数据库延迟怎样采样？
 
 配对测试：`test_security.py`、`test_rate_limit.py`、`test_metrics.py`。
 

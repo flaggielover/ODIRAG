@@ -199,6 +199,10 @@ async def test_crawl_queue_failure_is_persisted_and_retryable(
     assert failed.json()["status"] == "failed"
     assert failed.json()["failed_count"] == 1
     assert failed.json()["error_message"] == "TASK_QUEUE_UNAVAILABLE:RuntimeError"
+    assert failed.json()["provider_error_code"] == "TASK_QUEUE_UNAVAILABLE"
+    assert failed.json()["provider_error_message"] == (
+        "Crawl task could not be queued: RuntimeError"
+    )
 
     sent: list[int] = []
 

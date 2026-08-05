@@ -19,6 +19,7 @@ test.describe('Coze 抓取关键流程（fixture-backed）', () => {
     await expect(page.getByText('exec-fixture-1')).toBeVisible()
     await page.locator('a[href="/crawl-tasks/1"]').click()
     await expect(page).toHaveURL(/\/crawl-tasks\/1$/)
+    await expect(page.getByText('验收摘要')).toBeVisible()
     await expect(page.getByText('exec-fixture-1')).toBeVisible()
     await expect(page.getByText('阶段计数')).toBeVisible()
     await expect(page.getByText('Coze 调用记录')).toBeVisible()

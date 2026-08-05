@@ -21,7 +21,9 @@
 ```text
 scripts/start_demo.ps1 或 start_demo.sh
   -> 设置 deterministic demo Provider + Qdrant
-  -> docker compose --profile ui --profile async up -d --build
+  -> docker compose build backend
+  -> docker compose build frontend
+  -> docker compose --profile ui --profile async up -d --no-build
   -> postgres/redis/qdrant healthy
   -> backend entrypoint 创建目录 + alembic upgrade head
   -> backend healthy

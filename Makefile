@@ -65,13 +65,16 @@ app-up: ## Build and start the backend plus core dependencies
 	$(COMPOSE) up -d --build backend
 
 stack-up: ## Build and start the complete platform behind Nginx
-	$(COMPOSE) --profile ui --profile async up -d --build
+	$(COMPOSE) build backend
+	$(COMPOSE) build frontend
+	$(COMPOSE) --profile ui --profile async up -d --no-build
 
 demo-up: ## Start the complete stack and seed the demo dataset
 	sh scripts/start_demo.sh
 
 async-up: ## Start the real Celery worker and scheduler runtime
-	$(COMPOSE) --profile async up -d --build worker scheduler
+	$(COMPOSE) build backend
+	$(COMPOSE) --profile async up -d --no-build worker scheduler
 
 down: ## Stop all services, preserving named volumes
 	$(COMPOSE) --profile ui --profile async down

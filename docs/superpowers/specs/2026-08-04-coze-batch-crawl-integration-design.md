@@ -17,7 +17,9 @@ The provider supports two deployment contracts behind one interface:
 
 - `legacy_single_article`: the existing `COZE_LEGACY_API_URL` deployment. It
   receives the old article-level JSON directly and remains available only for
-  compatibility and regression checks.
+  compatibility and regression checks. Column-task creation rejects this
+  contract with `COZE_LEGACY_SINGLE_ARTICLE_ONLY`; it must never enter the
+  batch persistence path.
 - `batch_crawl`: the new `COZE_BATCH_API_URL` deployment. It receives the
   source/task batch input directly as JSON and returns the strict batch result
   object described in `docs/COZE_BATCH_WORKFLOW_BUILD_SPEC.md`.
@@ -36,11 +38,17 @@ paths usable.
 authentication, timeout, exponential retry, deployment-contract selection,
 response capture, and schema normalization. It never logs or returns tokens.
 `LocalCrawlProvider` wraps the existing crawler as an explicit fallback and
-diagnostic path; it is not the default source provider.
+diagnostic path; it is not the default source provider. An explicit
+`provider=local` task executes this provider contract through the same worker
+service and persists each parsed article as `pending_review`. Those records use
+`local_extraction` provenance rather than claiming a Coze quality review, and
+the crawl task remains `waiting_review` until downstream review is complete.
 
-The worker creates a local task, claims it, records an invocation before the
-request, calls the selected provider, persists the raw response regardless of
-normalization success, then normalizes and saves each article independently.
+The worker creates a local task and claims it. For Coze tasks it records a
+`CozeInvocation` before the request, calls the provider, persists the raw
+response regardless of normalization success, then normalizes and saves each
+article independently. Local diagnostic tasks use the same task/document
+persistence path without fabricating a Coze invocation.
 The batch deployment is synchronous today, so `coze_running` covers the remote
 HTTP execution. The task model still stores `coze_execution_id` and polling
 metadata so an async deployment can be added without changing the API or UI.
@@ -59,6 +67,10 @@ The state machine accepts:
 `pending -> queued -> calling_coze -> coze_running -> normalizing ->
 saving_documents -> waiting_review -> completed | partial_failed | failed |
 cancelled`.
+
+`waiting_review` is not a worker-active state and is therefore excluded from
+stale-worker recovery; the scheduler must not recrawl an item merely because it
+has waited for manual review longer than the worker timeout.
 
 Accepted and pending-review articles become reviewable local documents; rejected
 articles and per-article failures remain queryable with reasons and URLs but do

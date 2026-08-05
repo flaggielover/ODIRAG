@@ -125,6 +125,14 @@ def test_comma_separated_cors_origins_are_normalized() -> None:
     assert settings.cors_origins == ["https://one.example", "https://two.example"]
 
 
+def test_trusted_proxy_ips_are_normalized_and_validated() -> None:
+    settings = Settings(trusted_proxy_ips="172.30.0.10, 2001:db8::/64")
+    assert settings.trusted_proxy_ips == ["172.30.0.10", "2001:db8::/64"]
+
+    with pytest.raises(ValidationError, match="trusted_proxy_ips"):
+        Settings(trusted_proxy_ips=["not-an-ip"])
+
+
 def test_celery_urls_derive_separate_redis_databases() -> None:
     settings = Settings(redis_url="redis://cache.internal:6379/0")
     assert settings.effective_celery_broker_url == "redis://cache.internal:6379/1"

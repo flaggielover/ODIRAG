@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ReviewResult(BaseModel):
+class LLMResultBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    token_usage: dict[str, int] = Field(default_factory=dict, exclude=True)
+    cost: Decimal | None = Field(default=None, exclude=True)
+
+
+class ReviewResult(LLMResultBase):
     decision: Literal["approve", "reject", "manual_review"]
     quality_score: float = Field(ge=0, le=1)
     document_type: str | None = None
@@ -18,26 +24,20 @@ class ReviewResult(BaseModel):
     raw_response: str | None = Field(default=None, exclude=True)
 
 
-class QueryPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class QueryPlan(LLMResultBase):
     query_type: Literal["sql", "rag", "sql+rag"]
     rewritten_query: str
     filters: dict[str, Any] = Field(default_factory=dict)
 
 
-class AnswerResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AnswerResult(LLMResultBase):
     answer: str
     cited_chunk_ids: list[str] = Field(default_factory=list)
     refusal: bool = False
     refusal_reason: str | None = None
 
 
-class EvidenceCheck(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class EvidenceCheck(LLMResultBase):
     sufficient: bool
     covered_points: list[str] = Field(default_factory=list)
     missing_points: list[str] = Field(default_factory=list)

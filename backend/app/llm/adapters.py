@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 from typing import Any, TypeVar
 
 import httpx
@@ -11,6 +12,8 @@ from app.llm.protocols import AnswerResult, EvidenceCheck, QueryPlan, ReviewResu
 from app.providers import ProviderResponseError, ProviderUnavailableError
 
 ResultT = TypeVar("ResultT", bound=BaseModel)
+_COST_QUANTUM = Decimal("0.00000001")
+_MAX_STORED_COST = Decimal("9999999999.99999999")
 
 
 class DirectLLMAdapter:
@@ -77,6 +80,7 @@ class DirectLLMAdapter:
         try:
             content = response_payload["choices"][0]["message"]["content"]
             result = result_type.model_validate_json(content)
+            result = _with_usage(result, response_payload)
             if isinstance(result, ReviewResult):
                 result.raw_response = content
             return result
@@ -160,6 +164,7 @@ class CozeAdapter:
         try:
             content = _coze_content(response_payload)
             result = result_type.model_validate_json(content)
+            result = _with_usage(result, response_payload)
             if isinstance(result, ReviewResult):
                 result.raw_response = content
             return result
@@ -173,3 +178,67 @@ def _coze_content(payload: dict[str, Any]) -> str:
         if message.get("type") == "answer" or message.get("role") == "assistant":
             return str(message["content"])
     raise ValueError("answer message is missing")
+
+
+def _with_usage(result: ResultT, payload: Mapping[str, Any]) -> ResultT:
+    usage = _extract_usage(payload)
+    cost = _extract_cost(payload, usage)
+    return result.model_copy(update={"token_usage": usage, "cost": cost})
+
+
+def _extract_usage(payload: Mapping[str, Any]) -> dict[str, int]:
+    candidates: list[Any] = [payload.get("usage"), payload.get("token_usage")]
+    data = payload.get("data")
+    if isinstance(data, Mapping):
+        candidates.extend([data.get("usage"), data.get("token_usage")])
+    usage: Mapping[str, Any] | None = next(
+        (item for item in candidates if isinstance(item, Mapping)), None
+    )
+    if usage is None:
+        return {}
+    normalized: dict[str, int] = {}
+    aliases = {
+        "prompt_tokens": ("prompt_tokens", "input_tokens", "input"),
+        "completion_tokens": ("completion_tokens", "output_tokens", "output"),
+        "total_tokens": ("total_tokens", "tokens"),
+    }
+    for target, names in aliases.items():
+        for name in names:
+            value = usage.get(name)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                normalized[target] = value
+                break
+    if "total_tokens" not in normalized:
+        parts = normalized.get("prompt_tokens"), normalized.get("completion_tokens")
+        if all(part is not None for part in parts):
+            normalized["total_tokens"] = int(parts[0] or 0) + int(parts[1] or 0)
+    return normalized
+
+
+def _extract_cost(payload: Mapping[str, Any], usage: Mapping[str, Any]) -> Decimal | None:
+    candidates: list[Any] = [payload.get("cost"), payload.get("total_cost"), usage.get("cost")]
+    for key in ("usage", "token_usage"):
+        nested = payload.get(key)
+        if isinstance(nested, Mapping):
+            candidates.extend([nested.get("cost"), nested.get("total_cost")])
+    data = payload.get("data")
+    if isinstance(data, Mapping):
+        candidates.extend([data.get("cost"), data.get("total_cost")])
+        for key in ("usage", "token_usage"):
+            nested = data.get(key)
+            if isinstance(nested, Mapping):
+                candidates.extend([nested.get("cost"), nested.get("total_cost")])
+    for value in candidates:
+        if isinstance(value, bool) or value is None:
+            continue
+        try:
+            amount = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            continue
+        if not amount.is_finite() or amount < 0 or amount > _MAX_STORED_COST:
+            continue
+        try:
+            return amount.quantize(_COST_QUANTUM)
+        except InvalidOperation:
+            continue
+    return None

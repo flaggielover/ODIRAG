@@ -29,6 +29,8 @@ class ChatAnswer:
     filters: dict[str, Any]
     structured_count: int | None
     retrieval_trace: RetrievalTrace | None
+    token_usage_json: dict[str, Any]
+    cost: Decimal
 
 
 class ChatService:
@@ -59,6 +61,11 @@ class ChatService:
         structured_count: int | None = None
         retrieval_trace: RetrievalTrace | None = None
         decision = EvidenceDecision(True, (), (), (), ())
+        token_usage_json: dict[str, Any] = {
+            "measurement": "not_available",
+            "cost_measurement": "not_available",
+        }
+        cost = Decimal("0")
         if route.query_type in {QueryType.SQL, QueryType.COMPOSITE}:
             structured_count = await self.repository.count_approved_documents(route.filters)
         if route.query_type is QueryType.SQL:
@@ -81,7 +88,14 @@ class ChatService:
                 refusal_reasons = decision.reasons
                 citations = decision.citations
             else:
-                answer, citations, refusal, refusal_reasons = await self._grounded_answer(
+                (
+                    answer,
+                    citations,
+                    refusal,
+                    refusal_reasons,
+                    token_usage_json,
+                    cost,
+                ) = await self._grounded_answer(
                     query,
                     retrieval_trace,
                     decision,
@@ -100,6 +114,8 @@ class ChatService:
             filters=route.filters,
             structured_count=structured_count,
             retrieval_trace=retrieval_trace,
+            token_usage_json=token_usage_json,
+            cost=cost,
         )
         await self._persist(result, query, started)
         return result
@@ -125,14 +141,21 @@ class ChatService:
         query: str,
         trace: RetrievalTrace,
         decision: EvidenceDecision,
-    ) -> tuple[str, tuple[Citation, ...], bool, tuple[str, ...]]:
+    ) -> tuple[str, tuple[Citation, ...], bool, tuple[str, ...], dict[str, Any], Decimal]:
         if self.orchestrator is None:
             selected = decision.citations[:3]
             lines = [
                 f"{index}. {citation.quote}（来源：《{citation.title}》）"
                 for index, citation in enumerate(selected, start=1)
             ]
-            return "根据检索到的官方文件：" + " ".join(lines), selected, False, ()
+            return (
+                "根据检索到的官方文件：" + " ".join(lines),
+                selected,
+                False,
+                (),
+                {"measurement": "not_available", "cost_measurement": "not_applicable"},
+                Decimal("0"),
+            )
         citation_by_chunk = {citation.chunk_id: citation for citation in decision.citations}
         eligible_hits = [hit for hit in trace.final_results if hit.chunk_id in citation_by_chunk]
         generated = await self.orchestrator.generate_answer(
@@ -142,7 +165,7 @@ class ChatService:
         )
         if generated.refusal:
             reason = generated.refusal_reason or "model_refusal"
-            return generated.answer, (), True, (reason,)
+            return generated.answer, (), True, (reason,), *_result_usage(generated)
         cited_ids = tuple(dict.fromkeys(generated.cited_chunk_ids))
         if not cited_ids or any(chunk_id not in citation_by_chunk for chunk_id in cited_ids):
             raise ProviderResponseError("grounded_answer", "citations are missing or invalid")
@@ -151,7 +174,8 @@ class ChatService:
         generated_urls = set(re.findall(r"https?://[^\s)\]}>]+", generated.answer))
         if not generated_urls.issubset(allowed_urls):
             raise ProviderResponseError("grounded_answer", "answer contains an unknown URL")
-        return generated.answer, citations, False, ()
+        usage, cost = _result_usage(generated)
+        return generated.answer, citations, False, (), usage, cost
 
     async def _persist(self, result: ChatAnswer, query: str, started: float) -> None:
         retrieval = result.retrieval_trace
@@ -181,8 +205,8 @@ class ChatService:
                 citations_json=[_citation_payload(citation) for citation in result.citations],
                 refusal=result.refusal,
                 latency_ms=round((perf_counter() - started) * 1000),
-                token_usage_json={"measurement": "not_available"},
-                cost=Decimal("0"),
+                token_usage_json=result.token_usage_json,
+                cost=result.cost,
             )
         )
         await self.repository.commit()
@@ -221,3 +245,15 @@ def _citation_payload(citation: Citation) -> dict[str, Any]:
         "page": citation.page,
         "quote": citation.quote,
     }
+
+
+def _result_usage(result: Any) -> tuple[dict[str, Any], Decimal]:
+    usage = dict(getattr(result, "token_usage", {}) or {})
+    cost = getattr(result, "cost", None)
+    if not usage:
+        usage["measurement"] = "not_available"
+    if cost is None:
+        usage.setdefault("cost_measurement", "not_available")
+        return usage, Decimal("0")
+    usage.setdefault("cost_measurement", "provider_reported")
+    return usage, Decimal(str(cost))

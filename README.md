@@ -33,9 +33,10 @@ Default development login: `admin` / `development-only-admin-password`. Override
 - API docs: `http://127.0.0.1:8000/api/docs`
 - Health: `http://127.0.0.1:8000/api/system/health`
 
-The one-command workflow was statically and logically validated, but the implementation workstation
-did not have Docker installed. CI performs image, non-root, writable-volume, migration, health, and
-login smoke checks.
+The one-command workflow has been exercised on the implementation workstation. The last complete
+local acceptance used the previous base images; the hardened Python 3.12 Alpine and Nginx 1.30.4
+images still require a clean rebuild after the workstation's Docker Desktop WSL data-disk mount
+failure. CI performs image, backend non-root, writable-volume, migration, health, and login smoke checks.
 
 ## Implemented Capabilities
 
@@ -58,8 +59,8 @@ login smoke checks.
   isolated experiments, regression comparison, complete trace/lineage, metrics, and alerts.
 - Vue 3/TypeScript operations console for sources, crawling, documents, review, chat, evaluation,
   experiments, monitoring, feedback, and authenticated session management.
-- Token rotation/revocation, process-local rate limiting, structured errors, production config
-  validation, non-root containers, migrations, CI, and one-command demo startup.
+- Token rotation/revocation, shared Redis fixed-window rate limiting (memory only in tests), structured errors, production config
+  validation, a non-root backend container, migrations, CI, and one-command demo startup.
 
 ## Host Development
 
@@ -96,9 +97,9 @@ batch deployment, run the bounded authenticated acceptance check:
 python scripts/live_accept_coze_batch.py --source-column-id <column_id>
 ```
 
-The command always queues a real 5-article/1-page batch task through the API and prints only a
-redacted count summary. `batch_workflow_not_published` is an explicit unverified state, not a
-successful integration result. Full node construction instructions are in
+When its live preflight passes, the command queues a real 5-article/1-page batch task through the API
+and prints only a redacted count summary. `batch_workflow_not_published` exits before task creation
+and is an explicit unverified state, not a successful integration result. Full node construction instructions are in
 [`docs/COZE_BATCH_WORKFLOW_BUILD_SPEC.md`](docs/COZE_BATCH_WORKFLOW_BUILD_SPEC.md).
 
 Autonomous source discovery uses Brave Search when `ODIRAG_SOURCE_DISCOVERY_PROVIDER=brave` and
@@ -155,10 +156,13 @@ scripts/              startup, seed, experiment, BM25, and load-test commands
 
 ## Known Limits
 
-Docker/Qdrant/PostgreSQL/Redis runtime verification remains pending on a Docker-capable host. Live
-government-site access and remote LLM/embedding/rerank providers require network approval and
-credentials. The rate limiter is process-local, OCR execution is not bundled, and application URL
-checks should be paired with network egress controls. See `ROADMAP.md` for release gates.
+The local Docker/Qdrant/PostgreSQL/Redis development stack was verified with the previous base
+images; the current hardened images remain unverified until Docker Desktop recovers and rebuilds
+them. Target production TLS, ACLs, backup/restore, and failure drills remain pending. Live government-site access and
+remote LLM/embedding/rerank providers require network approval and credentials. Redis-backed
+rate limiting is the non-test default and fails closed when Redis is unavailable; OCR execution
+is not bundled, and application URL checks should be paired with network egress controls. See
+`ROADMAP.md` for release gates.
 
 ## License
 

@@ -236,7 +236,8 @@ Compose 包含 backend、frontend、postgres、redis、qdrant、worker、schedul
 ## 16. 关键状态迁移
 
 ```text
-CrawlTask: pending -> running -> completed/failed/cancelled
+CrawlTask: pending -> running -> saving_documents -> waiting_review -> completed/failed/cancelled
+审核完成后，若 lineage 关联文档不再处于 pending 状态，任务原子收敛为 `completed`；`waiting_review` 不属于 worker-active 状态，不参与 stale recovery。
                          -> stale recovery -> pending/failed
 
 Document final_status: pending -> rejected/pending_llm/pending_manual_review/approved
@@ -249,8 +250,8 @@ Alert: open -> acknowledged -> resolved
 
 ## 17. 诚实限制
 
-- 本机 Docker 未运行，因此完整八服务启动仍需有 Docker 的环境或 CI 验证。
-- 进程指标和固定窗口限流是单进程状态，多副本需共享实现。
+- 本机 development Compose 已完成一轮八服务健康验证；生产 TLS、镜像 provenance、备份恢复和长期故障演练仍需目标环境证据。
+- 路由指标在进程内采样后汇总；非 test 环境固定窗口限流写入共享 Redis，单 key Lua 脚本保证计数/过期原子。生产仍需验证 Redis ACL、故障转移和多副本部署策略。
 - DNS 校验与 socket 连接之间仍有 rebinding 时间窗，生产需网络出口策略。
 - PDF 只检测 OCR 需求，没有内置 OCR Provider。
 - SimHash 与权威来源选择已实现，但未完整贯通自动近重复归并主链。

@@ -51,9 +51,12 @@ describe('SourcesView', () => {
 
   it('shows Coze as the business provider and separates both connectivity checks', async () => {
     const wrapper = mount(SourcesView, {
-      global: { stubs: { AsyncState: { template: '<div><slot /></div>' }, ModalDialog: true, PageHeader: { template: '<div><slot name="actions" /></div>' }, StatusBadge: true } },
+      global: { stubs: { AsyncState: { template: '<div><slot /></div>' }, ModalDialog: true, PageHeader: { template: '<div><slot name="actions" /></div>' }, StatusBadge: { props: ['status'], template: '<span class="status-badge-stub">{{ status }}</span>' } } },
     })
     await flushPromises()
+
+    expect(wrapper.get('[data-testid="coze-contract-status-batch"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="coze-contract-status-legacy"]').exists()).toBe(true)
 
     expect(wrapper.text()).toContain('业务抓取：Coze 工作流')
     expect(wrapper.text()).toContain('Coze 工作流')
@@ -65,5 +68,17 @@ describe('SourcesView', () => {
     await wrapper.get('button[aria-label="测试本地连通性"]').trigger('click')
     await flushPromises()
     expect(apiMocks.testSourceLocal).toHaveBeenCalledWith(1)
+  })
+
+  it('reports legacy and batch configuration independently', async () => {
+    apiMocks.cozeStatus.mockResolvedValueOnce({ enabled: true, token_configured: true, legacy_workflow_configured: true, batch_workflow_configured: false, default_contract: 'legacy_single_article' })
+
+    const wrapper = mount(SourcesView, {
+      global: { stubs: { AsyncState: { template: '<div><slot /></div>' }, ModalDialog: true, PageHeader: { template: '<div><slot name="actions" /></div>' }, StatusBadge: { props: ['status'], template: '<span>{{ status }}</span>' } } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="coze-contract-status-batch"]').text()).toContain('unavailable')
+    expect(wrapper.get('[data-testid="coze-contract-status-legacy"]').text()).toContain('healthy')
   })
 })

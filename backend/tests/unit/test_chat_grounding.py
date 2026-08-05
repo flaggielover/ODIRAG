@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from app.bm25 import BM25Document, BM25Index
@@ -109,6 +111,23 @@ async def test_llm_answer_uses_only_stored_citations_and_urls() -> None:
     assert not answer.refusal
     assert answer.citations[0].chunk_id == "chunk-1"
     assert answer.citations[0].url == "https://example.gov/policy"
+
+
+@pytest.mark.asyncio
+async def test_chat_trace_persists_provider_usage_and_cost() -> None:
+    service = await _service(
+        AnswerResult(
+            answer="政策提供研发资金支持，来源 https://example.gov/policy",
+            cited_chunk_ids=["chunk-1"],
+            token_usage={"total_tokens": 20},
+            cost=Decimal("0.0007"),
+        )
+    )
+    await service.answer("软件企业有哪些研发支持措施？")
+    trace = service.repository.trace
+    assert trace is not None
+    assert trace.token_usage_json == {"total_tokens": 20, "cost_measurement": "provider_reported"}
+    assert trace.cost == Decimal("0.0007")
 
 
 @pytest.mark.asyncio

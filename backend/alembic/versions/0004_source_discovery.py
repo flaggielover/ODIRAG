@@ -50,10 +50,21 @@ def upgrade() -> None:
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("created_by", sa.String(length=255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.CheckConstraint(
-            "status IN ('pending', 'running', 'no_gap', 'awaiting_approval', 'activated', 'failed')",
+            "status IN ('pending', 'running', 'no_gap', 'awaiting_approval', "
+            "'activated', 'failed')",
             name="ck_source_discovery_runs_source_discovery_run_status_allowed",
         ),
         sa.CheckConstraint(
@@ -79,17 +90,13 @@ def upgrade() -> None:
         "source_discovery_runs",
         ["status", "created_at"],
     )
-    op.create_index(
-        "ix_source_discovery_runs_topic", "source_discovery_runs", ["topic"]
-    )
+    op.create_index("ix_source_discovery_runs_topic", "source_discovery_runs", ["topic"])
     op.create_index(
         "ix_source_discovery_runs_topic_region",
         "source_discovery_runs",
         ["topic", "region"],
     )
-    op.create_index(
-        "ix_source_discovery_runs_region", "source_discovery_runs", ["region"]
-    )
+    op.create_index("ix_source_discovery_runs_region", "source_discovery_runs", ["region"])
     op.create_index(
         "ix_source_discovery_runs_organization_level",
         "source_discovery_runs",
@@ -122,7 +129,12 @@ def upgrade() -> None:
         sa.Column("search_rank", sa.Integer(), nullable=True),
         sa.Column("discovery_provider", sa.String(length=64), nullable=False),
         sa.Column("discovery_query", sa.Text(), nullable=False),
-        sa.Column("official_status", sa.String(length=32), nullable=False, server_default="unknown"),
+        sa.Column(
+            "official_status",
+            sa.String(length=32),
+            nullable=False,
+            server_default="unknown",
+        ),
         sa.Column("official_score", sa.Numeric(precision=5, scale=4), nullable=True),
         sa.Column("official_evidence_json", json_type, nullable=False),
         sa.Column("validation_status_code", sa.Integer(), nullable=True),
@@ -139,8 +151,18 @@ def upgrade() -> None:
         sa.Column("approved_by", sa.String(length=255), nullable=True),
         sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("source_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.CheckConstraint(
             "official_score IS NULL OR (official_score >= 0 AND official_score <= 1)",
             name="ck_source_candidates_source_candidate_official_score_range",
@@ -150,24 +172,20 @@ def upgrade() -> None:
             name="ck_source_candidates_source_candidate_quality_score_range",
         ),
         sa.CheckConstraint(
-            "status IN ('discovered', 'validation_failed', 'validated', 'columns_discovered', 'trial_crawled', 'pending_approval', 'approved', 'rejected', 'activating', 'activated', 'failed')",
+            "status IN ('discovered', 'validation_failed', 'validated', "
+            "'columns_discovered', 'trial_crawled', 'pending_approval', "
+            "'approved', 'rejected', 'activating', 'activated', 'failed')",
             name="ck_source_candidates_source_candidate_status_allowed",
         ),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["source_discovery_runs.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["run_id"], ["source_discovery_runs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["source_id"], ["sources.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id", name="pk_source_candidates"),
         sa.UniqueConstraint(
             "run_id", "canonical_homepage_url", name="uq_source_candidates_run_homepage"
         ),
     )
-    op.create_index(
-        "ix_source_candidates_run_status", "source_candidates", ["run_id", "status"]
-    )
-    op.create_index(
-        "ix_source_candidates_quality", "source_candidates", ["quality_score"]
-    )
+    op.create_index("ix_source_candidates_run_status", "source_candidates", ["run_id", "status"])
+    op.create_index("ix_source_candidates_quality", "source_candidates", ["quality_score"])
     op.create_index("ix_source_candidates_run_id", "source_candidates", ["run_id"])
     op.create_index("ix_source_candidates_domain", "source_candidates", ["domain"])
     op.create_index(
@@ -195,15 +213,23 @@ def upgrade() -> None:
         sa.Column("trial_average_chars", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("quality_score", sa.Numeric(precision=5, scale=4), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.CheckConstraint(
             "quality_score IS NULL OR (quality_score >= 0 AND quality_score <= 1)",
             name="ck_source_candidate_columns_source_candidate_column_quality_range",
         ),
-        sa.ForeignKeyConstraint(
-            ["candidate_id"], ["source_candidates.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["candidate_id"], ["source_candidates.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name="pk_source_candidate_columns"),
         sa.UniqueConstraint("candidate_id", "column_url", name="uq_source_candidate_columns_url"),
     )
@@ -233,13 +259,14 @@ def upgrade() -> None:
         sa.Column("to_status", sa.String(length=32), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("details_json", json_type, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["source_discovery_runs.id"], ondelete="CASCADE"
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
-        sa.ForeignKeyConstraint(
-            ["candidate_id"], ["source_candidates.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["run_id"], ["source_discovery_runs.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["candidate_id"], ["source_candidates.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name="pk_source_discovery_events"),
     )
     op.create_index(

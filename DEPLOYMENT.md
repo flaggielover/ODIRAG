@@ -3,9 +3,11 @@
 ## Verification Status
 
 Compose, CI, shell/PowerShell startup logic, Alembic upgrade/downgrade, demo API flow, and container
-configuration have been statically or locally validated. Docker was not installed on the
-implementation workstation, so image and full multi-service runtime evidence must come from CI or
-a Docker-capable host. Do not treat this limitation as a successful live Compose test.
+configuration have been statically or locally validated. Docker is installed on the implementation
+workstation, and the previous-base-image stack completed a historical local multi-service run. The
+current hardened images have not been rebuilt or started because Docker Desktop cannot mount its WSL
+data VHD (`WSL_E_USER_VHD_ALREADY_ATTACHED`). Do not reuse the historical result as evidence for the
+current images; recover WSL, rebuild serially, and rerun the production acceptance checklist.
 
 ## One-Command Development Demo
 
@@ -37,7 +39,9 @@ Set `ODIRAG_ADMIN_PASSWORD` before startup to replace the development default.
 ```bash
 cp .env.example .env
 # Review every development credential and provider setting.
-docker compose --profile ui --profile async up -d --build
+docker compose build backend
+docker compose build frontend
+docker compose --profile ui --profile async up -d --no-build
 docker compose ps
 ```
 
@@ -106,6 +110,14 @@ document and test their own recovery objectives.
 Use `ODIRAG_ENVIRONMENT=production`, JSON logs, an external secret manager, a high-entropy JWT key,
 a precomputed admin password hash, exact HTTPS CORS origins, TLS ingress, private service networks,
 authenticated Redis/Qdrant where supported, resource limits, and distributed rate limiting.
+
+The rate limiter always uses an IP bucket at middleware time; it deliberately does not derive a
+bucket from an unverified Bearer token before FastAPI authentication runs. For the supplied Compose
+topology, Nginx has the fixed `ODIRAG_NGINX_PROXY_IP` (`172.30.0.10` by default) and backend trusts
+only that value through `ODIRAG_TRUSTED_PROXY_IPS`. Nginx replaces `X-Forwarded-For` with its direct
+peer address, so client-supplied forwarding chains cannot select another bucket. When changing the
+Compose subnet/IP, update both settings together. A directly exposed backend must leave
+`ODIRAG_TRUSTED_PROXY_IPS` empty.
 
 Remote embedding/LLM/rerank keys must be backend secrets. If a provider is intentionally absent,
 leave its feature unavailable and rely on health/error reporting; never insert a fake production

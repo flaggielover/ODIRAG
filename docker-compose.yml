@@ -13,6 +13,8 @@ x-backend-environment: &backend-environment
   ODIRAG_REDIS_URL: "${ODIRAG_REDIS_URL:-redis://redis:6379/0}"
   ODIRAG_QDRANT_URL: "${ODIRAG_QDRANT_URL:-http://qdrant:6333}"
   ODIRAG_HEALTH_CHECK_QDRANT: "${ODIRAG_HEALTH_CHECK_QDRANT:-true}"
+  ODIRAG_RATE_LIMIT_BACKEND: "${ODIRAG_RATE_LIMIT_BACKEND:-redis}"
+  ODIRAG_TRUSTED_PROXY_IPS: "${ODIRAG_TRUSTED_PROXY_IPS:-172.30.0.10}"
   ODIRAG_JWT_SECRET_KEY: "${ODIRAG_JWT_SECRET_KEY:-change-me-in-production-with-at-least-32-characters}"
   ODIRAG_JWT_ALGORITHM: "${ODIRAG_JWT_ALGORITHM:-HS256}"
   ODIRAG_ACCESS_TOKEN_EXPIRE_MINUTES: "${ODIRAG_ACCESS_TOKEN_EXPIRE_MINUTES:-30}"
@@ -34,13 +36,41 @@ x-backend-environment: &backend-environment
   ODIRAG_RERANK_PROVIDER: "${ODIRAG_RERANK_PROVIDER:-deterministic}"
   ODIRAG_CELERY_BROKER_URL: "${ODIRAG_CELERY_BROKER_URL:-redis://redis:6379/1}"
   ODIRAG_CELERY_RESULT_BACKEND: "${ODIRAG_CELERY_RESULT_BACKEND:-redis://redis:6379/2}"
-  COZE_ENABLED: "${COZE_ENABLED:-false}"
-  COZE_LEGACY_API_URL: "${COZE_LEGACY_API_URL:-}"
-  COZE_BATCH_API_URL: "${COZE_BATCH_API_URL:-}"
-  COZE_API_TOKEN: "${COZE_API_TOKEN:-}"
-  COZE_DEFAULT_CONTRACT: "${COZE_DEFAULT_CONTRACT:-batch_crawl}"
-  COZE_TIMEOUT_SECONDS: "${COZE_TIMEOUT_SECONDS:-90}"
-  COZE_MAX_RETRIES: "${COZE_MAX_RETRIES:-2}"
+  ODIRAG_SOURCE_DISCOVERY_PROVIDER: "${ODIRAG_SOURCE_DISCOVERY_PROVIDER:-brave}"
+  ODIRAG_SOURCE_DISCOVERY_SEARCH_URL: "${ODIRAG_SOURCE_DISCOVERY_SEARCH_URL:-https://api.search.brave.com/res/v1/web/search}"
+  ODIRAG_SOURCE_DISCOVERY_API_KEY: "${ODIRAG_SOURCE_DISCOVERY_API_KEY:-}"
+  ODIRAG_SOURCE_DISCOVERY_TIMEOUT_SECONDS: "${ODIRAG_SOURCE_DISCOVERY_TIMEOUT_SECONDS:-20}"
+  ODIRAG_SOURCE_DISCOVERY_MAX_CANDIDATES: "${ODIRAG_SOURCE_DISCOVERY_MAX_CANDIDATES:-10}"
+  ODIRAG_SOURCE_DISCOVERY_MAX_COLUMNS: "${ODIRAG_SOURCE_DISCOVERY_MAX_COLUMNS:-12}"
+  ODIRAG_SOURCE_DISCOVERY_TRIAL_MAX_DOCUMENTS: "${ODIRAG_SOURCE_DISCOVERY_TRIAL_MAX_DOCUMENTS:-5}"
+  ODIRAG_SOURCE_DISCOVERY_TRIAL_MIN_CHARS: "${ODIRAG_SOURCE_DISCOVERY_TRIAL_MIN_CHARS:-160}"
+  ODIRAG_SOURCE_DISCOVERY_QUALITY_THRESHOLD: "${ODIRAG_SOURCE_DISCOVERY_QUALITY_THRESHOLD:-0.65}"
+  ODIRAG_SOURCE_DISCOVERY_OFFICIAL_SUFFIXES: '${ODIRAG_SOURCE_DISCOVERY_OFFICIAL_SUFFIXES:-[".gov.cn",".gov",".edu.cn"]}'
+  ODIRAG_LLM_PROVIDER: "${ODIRAG_LLM_PROVIDER:-direct}"
+  ODIRAG_DIRECT_LLM_BASE_URL: "${ODIRAG_DIRECT_LLM_BASE_URL:-https://api.openai.com/v1}"
+  ODIRAG_DIRECT_LLM_API_KEY: "${ODIRAG_DIRECT_LLM_API_KEY:-}"
+  ODIRAG_DIRECT_LLM_MODEL: "${ODIRAG_DIRECT_LLM_MODEL:-gpt-4.1-mini}"
+  ODIRAG_COZE_BASE_URL: "${ODIRAG_COZE_BASE_URL:-https://api.coze.com}"
+  ODIRAG_COZE_API_TOKEN: "${ODIRAG_COZE_API_TOKEN:-}"
+  ODIRAG_COZE_BOT_ID: "${ODIRAG_COZE_BOT_ID:-}"
+  ODIRAG_ANSWER_PROVIDER: "${ODIRAG_ANSWER_PROVIDER:-extractive}"
+  COZE_ENABLED: "${COZE_ENABLED:-${ODIRAG_COZE_ENABLED:-false}}"
+  COZE_LEGACY_API_URL: "${COZE_LEGACY_API_URL:-${ODIRAG_COZE_LEGACY_API_URL:-}}"
+  COZE_BATCH_API_URL: "${COZE_BATCH_API_URL:-${ODIRAG_COZE_BATCH_API_URL:-}}"
+  COZE_API_TOKEN: "${COZE_API_TOKEN:-${ODIRAG_COZE_API_TOKEN:-}}"
+  COZE_DEFAULT_CONTRACT: "${COZE_DEFAULT_CONTRACT:-${ODIRAG_COZE_DEFAULT_CONTRACT:-batch_crawl}}"
+  COZE_TIMEOUT_SECONDS: "${COZE_TIMEOUT_SECONDS:-${ODIRAG_COZE_TIMEOUT_SECONDS:-90}}"
+  COZE_MAX_RETRIES: "${COZE_MAX_RETRIES:-${ODIRAG_COZE_MAX_RETRIES:-2}}"
+  ODIRAG_EMBEDDING_BASE_URL: "${ODIRAG_EMBEDDING_BASE_URL:-https://api.openai.com/v1}"
+  ODIRAG_EMBEDDING_API_KEY: "${ODIRAG_EMBEDDING_API_KEY:-}"
+  ODIRAG_EMBEDDING_MODEL: "${ODIRAG_EMBEDDING_MODEL:-text-embedding-3-small}"
+  ODIRAG_EMBEDDING_BATCH_SIZE: "${ODIRAG_EMBEDDING_BATCH_SIZE:-32}"
+  ODIRAG_EMBEDDING_MINIMUM_INTERVAL_SECONDS: "${ODIRAG_EMBEDDING_MINIMUM_INTERVAL_SECONDS:-0}"
+  ODIRAG_EMBEDDING_CACHE_TTL_SECONDS: "${ODIRAG_EMBEDDING_CACHE_TTL_SECONDS:-2592000}"
+  ODIRAG_EMBEDDING_COST_PER_1K_CHARS: "${ODIRAG_EMBEDDING_COST_PER_1K_CHARS:-0}"
+  ODIRAG_RERANK_BASE_URL: "${ODIRAG_RERANK_BASE_URL:-https://api.cohere.com/v2}"
+  ODIRAG_RERANK_API_KEY: "${ODIRAG_RERANK_API_KEY:-}"
+  ODIRAG_RERANK_MODEL: "${ODIRAG_RERANK_MODEL:-rerank-v3.5}"
 
 x-backend-env-files: &backend-env-files
   - path: .env
@@ -118,7 +148,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
       args:
-        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}"
+        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-alpine3.24}"
     environment:
       <<: *backend-environment
       ODIRAG_RUN_MIGRATIONS: "true"
@@ -143,11 +173,6 @@ services:
   worker:
     profiles: ["async"]
     image: odirag/backend:${ODIRAG_IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-      args:
-        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}"
     environment:
       <<: *backend-environment
       ODIRAG_RUN_MIGRATIONS: "false"
@@ -180,11 +205,6 @@ services:
   scheduler:
     profiles: ["async"]
     image: odirag/backend:${ODIRAG_IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-      args:
-        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}"
     environment:
       <<: *backend-environment
       ODIRAG_RUN_MIGRATIONS: "false"
@@ -226,7 +246,7 @@ services:
       args:
         VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api}"
         NODE_IMAGE: "${NODE_IMAGE:-node:22-alpine}"
-        NGINX_IMAGE: "${NGINX_IMAGE:-nginx:1.27-alpine}"
+        NGINX_IMAGE: "${NGINX_IMAGE:-nginx:1.30.4-alpine}"
     expose:
       - "80"
     healthcheck:
@@ -238,7 +258,7 @@ services:
 
   nginx:
     profiles: ["ui"]
-    image: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    image: ${NGINX_IMAGE:-nginx:1.30.4-alpine}
     volumes:
       - ./deployment/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
@@ -248,6 +268,9 @@ services:
         condition: service_healthy
       frontend:
         condition: service_healthy
+    networks:
+      default:
+        ipv4_address: "${ODIRAG_NGINX_PROXY_IP:-172.30.0.10}"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
       interval: 10s
@@ -260,3 +283,9 @@ volumes:
   postgres-data:
   redis-data:
   qdrant-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: "${ODIRAG_COMPOSE_NETWORK_SUBNET:-172.30.0.0/24}"

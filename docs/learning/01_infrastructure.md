@@ -63,7 +63,7 @@
 4. 刷新令牌采用 token version 轮换。刷新或注销后提升数据库版本，使旧 access/refresh token 同时失效。
 5. 外部服务不可用时返回明确的 `PROVIDER_UNAVAILABLE`，健康接口显示 degraded，不伪造成功。
 6. `auto_create_schema` 只适合测试或显式开发模式；正式部署以 Alembic 为准。
-7. 当前限流器是单进程内存实现，能保证单实例原子更新，但多副本部署需要 Redis 等共享实现。
+7. 非 test 环境使用 Redis Lua 原子固定窗口限流器；Redis 不可用时 fail-closed 返回结构化 503。test 环境才使用内存实现，生产仍需验收 Redis ACL、故障转移和多副本公平性。
 
 ## 6. 技术选型原因
 
@@ -81,7 +81,7 @@
 - Redis 或 Qdrant 未运行：依赖健康显示 unavailable；仅依赖这些服务的功能失败。
 - 旧令牌突然 401：用户的 `token_version` 已因刷新或注销递增。
 - 429：命中了 auth、expensive 或 default 限流 profile，响应包含 `Retry-After`。
-- 多 worker 下限流不一致：当前 `InMemoryFixedWindowRateLimiter` 不跨进程共享计数。
+- 多 worker 下限流不一致：确认 `ODIRAG_RATE_LIMIT_BACKEND=redis` 且检查 `odirag:ratelimit:*` 共享 key；若 Redis 不可用，应用应返回 `RATE_LIMIT_BACKEND_UNAVAILABLE`，不能偷偷退回内存计数。
 - 只改模型未执行迁移：运行时结构与数据库结构不一致，应先执行 `alembic upgrade head`。
 
 ## 8. 调试步骤

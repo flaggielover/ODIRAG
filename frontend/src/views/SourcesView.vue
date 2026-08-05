@@ -180,6 +180,12 @@ function connectivityLatency(state: ConnectivityState): number {
 function connectivityError(state: ConnectivityState): string | null {
   return state.provider === 'coze' ? state.result.error_code : state.result.error_type
 }
+
+function isCozeContractConfigured(contract: CozeContract): boolean {
+  const status = cozeStatus.value
+  if (!status) return false
+  return status.enabled && status.token_configured && (contract === 'batch_crawl' ? status.batch_workflow_configured : status.legacy_workflow_configured)
+}
 </script>
 
 <template>
@@ -195,8 +201,12 @@ function connectivityError(state: ConnectivityState): string | null {
   </PageHeader>
 
   <div class="dependency-strip" role="status">
+    <div v-if="cozeStatus" class="coze-contract-statuses">
+      <span data-testid="coze-contract-status-batch"><span class="cell-secondary">Coze 批量工作流</span><StatusBadge :status="isCozeContractConfigured('batch_crawl') ? 'healthy' : 'unavailable'" /></span>
+      <span data-testid="coze-contract-status-legacy"><span class="cell-secondary">Coze 单篇筛选工作流</span><StatusBadge :status="isCozeContractConfigured('legacy_single_article') ? 'healthy' : 'unavailable'" /></span>
+    </div>
     <span>业务抓取：Coze 工作流</span>
-    <StatusBadge v-if="cozeStatus" :status="cozeStatus.enabled && cozeStatus.token_configured && cozeStatus.batch_workflow_configured ? 'healthy' : 'unavailable'" />
+    <StatusBadge v-if="cozeStatus" :status="isCozeContractConfigured(cozeStatus.default_contract) ? 'healthy' : 'unavailable'" />
     <span v-if="cozeStatus" class="cell-secondary">{{ cozeStatus.batch_workflow_configured ? '批量工作流已配置' : '批量工作流未配置' }} · 默认 {{ cozeStatus.default_contract }}</span>
     <span v-else class="cell-secondary">配置状态暂不可用</span>
   </div>
@@ -262,5 +272,7 @@ function connectivityError(state: ConnectivityState): string | null {
 
 <style scoped>
 .dependency-strip { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.coze-contract-statuses { display: flex; flex-wrap: wrap; gap: 10px; }
+.coze-contract-statuses > span { display: inline-flex; align-items: center; gap: 6px; }
 .provider-local-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid currentColor; border-radius: 50%; font-size: 10px; font-weight: 700; }
 </style>

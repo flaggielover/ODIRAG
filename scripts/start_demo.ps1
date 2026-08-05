@@ -47,7 +47,15 @@ foreach ($name in $demoOverrides.Keys) {
 
 Push-Location $repositoryRoot
 try {
-    & docker compose --profile ui --profile async up --detach --build
+    & docker compose build backend
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker Compose failed to build the backend image."
+    }
+    & docker compose build frontend
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker Compose failed to build the frontend image."
+    }
+    & docker compose --profile ui --profile async up --detach --no-build
     if ($LASTEXITCODE -ne 0) {
         throw "Docker Compose failed to start the ODIRAG stack."
     }

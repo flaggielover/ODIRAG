@@ -4,6 +4,7 @@
 适用部署：复制现有单篇筛选工作流后，新建的 Coze Coding 部署  
 调用方式：`POST https://<new-deployment>.coze.site/run`，`Authorization: Bearer <token>`  
 重要边界：现有 `https://c6z3nhnzg7.coze.site/run` 是 `legacy_single_article`，不要修改、不要用它宣称批量抓取已验收。
+本地栏目任务对该契约返回 `422 COZE_LEGACY_SINGLE_ARTICLE_ONLY`；只有新部署可作为 `batch_crawl` 任务目标。
 
 本文是控制台施工规格，不是 Live 验收证明。Coze 未发布新部署前，所有本地测试只能标为 fixture/contract verified。
 
@@ -421,7 +422,9 @@ def assemble_result(task_id, source, articles, failed_urls, warnings, pages, sta
 启动后端、worker 和界面：
 
 ```powershell
-docker compose --profile async --profile ui up -d --build
+docker compose build backend
+docker compose build frontend
+docker compose --profile async --profile ui up -d --no-build
 python scripts/live_accept_coze_batch.py --source-column-id <column_id>
 ```
 

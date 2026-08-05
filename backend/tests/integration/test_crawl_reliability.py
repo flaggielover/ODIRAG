@@ -106,6 +106,34 @@ async def test_crawl_task_claim_is_atomic_and_stale_tasks_recover(app) -> None:
         assert task.error_message == "WORKER_LOST_MAX_RECOVERIES"
 
 
+async def test_waiting_review_task_is_not_recovered_as_worker_loss(app) -> None:
+    task_id = await _create_task(app)
+    async with app.state.database.session_factory() as session:
+        repository = CrawlRepository(session)
+        task = await repository.get_task(task_id)
+        assert task is not None
+        task.status = "waiting_review"
+        task.current_stage = "waiting_review"
+        task.provider_status = "waiting_review"
+        task.started_at = datetime.now(UTC) - timedelta(hours=2)
+        task.pending_review_count = 1
+        await repository.save_task(task)
+
+        recovered, exhausted = await repository.recover_stale_tasks(
+            cutoff=datetime.now(UTC) - timedelta(minutes=30),
+            max_recovery_attempts=3,
+            limit=10,
+        )
+
+        assert recovered == []
+        assert exhausted == []
+        unchanged = await repository.get_task(task_id)
+        assert unchanged is not None
+        assert unchanged.status == "waiting_review"
+        assert unchanged.retry_count == 0
+        assert unchanged.pending_review_count == 1
+
+
 async def test_retry_endpoint_requeues_the_task(
     app,
     client: httpx.AsyncClient,

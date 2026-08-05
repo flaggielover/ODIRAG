@@ -64,12 +64,82 @@ class CrawlRepository:
             return None
         return await self.get_task(task_id)
 
+    async def advance_task_if_status(
+        self,
+        task_id: int,
+        *,
+        expected_status: str,
+        target_status: str,
+        provider_status: str,
+        target_stage: str | None = None,
+    ) -> bool:
+        """Atomically advance a worker stage without overwriting a concurrent cancel."""
+
+        result = await self.session.execute(
+            update(CrawlTask)
+            .where(CrawlTask.id == task_id, CrawlTask.status == expected_status)
+            .values(
+                status=target_status,
+                current_stage=target_stage or target_status,
+                provider_status=provider_status,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        return getattr(result, "rowcount", 0) == 1
+
+    async def cancel_task_if_status(
+        self,
+        task: CrawlTask,
+        *,
+        expected_status: str,
+        provider_status: str,
+        provider_error_message: str | None,
+    ) -> bool:
+        """Cancel only the state observed by the caller, preserving worker progress."""
+
+        now = datetime.now(UTC)
+        result = await self.session.execute(
+            update(CrawlTask)
+            .where(CrawlTask.id == task.id, CrawlTask.status == expected_status)
+            .values(
+                status="cancelled",
+                current_stage="cancelled",
+                provider_status=provider_status,
+                provider_error_message=provider_error_message,
+                finished_at=now,
+                completed_at=now,
+                error_message=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        await self.session.refresh(task)
+        return getattr(result, "rowcount", 0) == 1
+
     async def list_tasks(self, *, status: str | None = None) -> list[CrawlTask]:
         statement = select(CrawlTask).order_by(CrawlTask.created_at.desc(), CrawlTask.id.desc())
         if status is not None:
             statement = statement.where(CrawlTask.status == status)
         result = await self.session.execute(statement)
         return list(result.scalars())
+
+    async def count_pending_task_documents(self, task_id: int) -> int:
+        document_ids = (
+            select(DataLineage.document_id)
+            .where(
+                DataLineage.crawl_task_id == task_id,
+                DataLineage.document_id.is_not(None),
+            )
+            .distinct()
+        )
+        count = await self.session.scalar(
+            select(func.count(Document.id)).where(
+                Document.id.in_(document_ids),
+                Document.final_status.not_in(["approved", "rejected"]),
+            )
+        )
+        return int(count or 0)
 
     async def recover_stale_tasks(
         self,
@@ -88,7 +158,6 @@ class CrawlRepository:
                         "coze_running",
                         "normalizing",
                         "saving_documents",
-                        "waiting_review",
                     ]
                 ),
                 CrawlTask.started_at.is_not(None),

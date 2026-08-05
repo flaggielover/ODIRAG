@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from app.models import CrawlTask, CrawlTaskFailure, DataLineage, Document, Source, SourceColumn
+from app.repositories.crawl import CrawlRepository
 from app.tasks.celery_app import celery_app
 
 
@@ -100,6 +101,34 @@ async def test_cancel_active_sync_call_marks_local_only(
     assert body["status"] == "cancelled"
     assert body["provider_status"] == "cancel_requested_local_only"
     assert "cannot be cancelled remotely" in body["provider_error_message"]
+
+
+async def test_stale_cancel_cannot_overwrite_worker_stage(app) -> None:
+    task_id, _failure_id = await _seed_task(app, status="calling_coze")
+    async with app.state.database.session_factory() as cancel_session:
+        stale_task = await cancel_session.get(CrawlTask, task_id)
+        assert stale_task is not None
+        await cancel_session.commit()
+
+        async with app.state.database.session_factory() as worker_session:
+            worker_repository = CrawlRepository(worker_session)
+            advanced = await worker_repository.advance_task_if_status(
+                task_id,
+                expected_status="calling_coze",
+                target_status="coze_running",
+                provider_status="coze_running",
+            )
+            assert advanced is True
+
+        cancelled = await CrawlRepository(cancel_session).cancel_task_if_status(
+            stale_task,
+            expected_status="calling_coze",
+            provider_status="cancel_requested_local_only",
+            provider_error_message="stale cancellation",
+        )
+        assert cancelled is False
+        await cancel_session.refresh(stale_task)
+        assert stale_task.status == "coze_running"
 
 
 async def test_task_results_filter_by_decision(

@@ -180,7 +180,7 @@ access/refresh 都带 token version。refresh rotation 和 logout 递增数据�
 
 ### 42. 当前限流是否支持多副本？
 
-不支持。`InMemoryFixedWindowRateLimiter` 只在单应用实例内原子，生产多副本需 Redis Lua、API gateway 或其他共享限流。
+支持代码路径。非 test 环境的 `RedisFixedWindowRateLimiter` 用单 key Lua 脚本原子执行计数和过期，Redis 不可用时返回结构化 503；test 才使用 `InMemoryFixedWindowRateLimiter`。目标环境仍需验证 Redis ACL、故障转移、网关协同和多副本公平性。
 
 ### 43. Provider 原始错误为什么不返回前端？
 

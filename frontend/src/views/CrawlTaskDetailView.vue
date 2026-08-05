@@ -4,7 +4,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { api } from '@/api/resources'
-import type { CozeInvocation, CrawlTask, CrawlTaskFailure, CrawlTaskResult } from '@/api/types'
+import type {
+  CozeInvocation,
+  CrawlTask,
+  CrawlTaskAcceptanceSummary,
+  CrawlTaskFailure,
+  CrawlTaskResult,
+} from '@/api/types'
 import AsyncState from '@/components/AsyncState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -13,6 +19,8 @@ import { formatDateTime, formatNumber } from '@/utils/format'
 
 const route = useRoute()
 const task = ref<CrawlTask | null>(null)
+const acceptanceSummary = ref<CrawlTaskAcceptanceSummary | null>(null)
+const acceptanceError = ref<string | null>(null)
 const invocations = ref<CozeInvocation[]>([])
 const failures = ref<CrawlTaskFailure[]>([])
 const results = ref<CrawlTaskResult[]>([])
@@ -26,11 +34,28 @@ onMounted(load)
 
 async function load(): Promise<void> {
   await run(async () => {
-    const [taskResult, invocationResult, failureResult, documentResult] = await Promise.all([api.crawlTask(taskId.value), api.crawlInvocations(taskId.value), api.crawlTaskFailures(taskId.value), api.crawlTaskResults(taskId.value)])
-    task.value = taskResult
-    invocations.value = invocationResult
-    failures.value = failureResult
-    results.value = documentResult
+    acceptanceSummary.value = null
+    acceptanceError.value = null
+    const [taskResult, invocationResult, failureResult, documentResult, summaryResult] = await Promise.allSettled([
+      api.crawlTask(taskId.value),
+      api.crawlInvocations(taskId.value),
+      api.crawlTaskFailures(taskId.value),
+      api.crawlTaskResults(taskId.value),
+      api.crawlTaskAcceptanceSummary(taskId.value),
+    ])
+    if (taskResult.status === 'rejected') throw taskResult.reason
+    if (invocationResult.status === 'rejected') throw invocationResult.reason
+    if (failureResult.status === 'rejected') throw failureResult.reason
+    if (documentResult.status === 'rejected') throw documentResult.reason
+    task.value = taskResult.value
+    invocations.value = invocationResult.value
+    failures.value = failureResult.value
+    results.value = documentResult.value
+    if (summaryResult.status === 'fulfilled') {
+      acceptanceSummary.value = summaryResult.value
+    } else {
+      acceptanceError.value = summaryResult.reason instanceof Error ? summaryResult.reason.message : '验收摘要暂时不可用'
+    }
   })
 }
 
@@ -55,6 +80,16 @@ async function retryFailure(failure: CrawlTaskFailure): Promise<void> {
 
   <AsyncState :loading="loading" :error="error" :empty="!task" empty-text="任务不存在" @retry="load">
     <template v-if="task">
+      <section class="detail-section acceptance-summary-section" aria-labelledby="acceptance-summary-title">
+        <h2 id="acceptance-summary-title">验收摘要</h2>
+        <div v-if="acceptanceSummary" class="metric-row">
+          <div><strong>{{ formatNumber(acceptanceSummary.database_document_count) }}</strong><span>数据库文档</span></div>
+          <div><strong>{{ formatNumber(acceptanceSummary.chunk_count) }}</strong><span>分块</span></div>
+          <div><strong>{{ formatNumber(acceptanceSummary.qdrant_point_count) }}</strong><span>Qdrant 向量点</span></div>
+        </div>
+        <div v-else-if="acceptanceError" class="notice" role="status">验收摘要不可用：{{ acceptanceError }}</div>
+        <p v-else class="muted">验收摘要暂无数据。</p>
+      </section>
       <section class="detail-band"><div class="detail-grid"><div><span class="detail-label">状态</span><StatusBadge :status="task.status" /></div><div><span class="detail-label">当前阶段</span><span>{{ task.current_stage || task.stage || task.status }}</span></div><div><span class="detail-label">Provider</span><span>{{ task.crawl_provider || task.provider || 'coze' }}</span></div><div><span class="detail-label">Coze 契约</span><span>{{ task.provider_contract || task.contract_mode || '-' }}</span></div><div><span class="detail-label">Coze execution ID</span><code>{{ task.coze_execution_id || task.provider_task_id || '-' }}</code></div><div><span class="detail-label">Provider 状态</span><span>{{ task.provider_status || '-' }}</span></div><div><span class="detail-label">开始时间</span><span>{{ formatDateTime(task.started_at) }}</span></div><div><span class="detail-label">结束时间</span><span>{{ formatDateTime(task.finished_at) }}</span></div></div></section>
       <section class="detail-section"><h2>处理计数</h2><div class="metric-row"><div><strong>{{ formatNumber(task.discovered_count) }}</strong><span>发现</span></div><div><strong>{{ formatNumber(task.fetched_count) }}</strong><span>抓取</span></div><div><strong>{{ formatNumber(task.success_count) }}</strong><span>成功</span></div><div><strong>{{ formatNumber(task.accepted_count ?? task.success_count) }}</strong><span>接受</span></div><div><strong>{{ formatNumber(task.rejected_count ?? 0) }}</strong><span>拒绝</span></div><div><strong>{{ formatNumber(task.pending_review_count ?? 0) }}</strong><span>待审核</span></div><div><strong>{{ formatNumber(task.failed_count) }}</strong><span>失败</span></div><div><strong>{{ formatNumber(task.retry_count) }}</strong><span>重试</span></div></div></section>
       <section class="detail-section"><h2>阶段计数</h2><div v-if="counts.length" class="stage-grid"><div v-for="[name, value] in counts" :key="name"><span>{{ name }}</span><strong>{{ formatNumber(value) }}</strong></div></div><p v-else class="muted">暂无阶段计数。</p></section>

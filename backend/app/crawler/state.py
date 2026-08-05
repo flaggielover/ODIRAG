@@ -14,7 +14,7 @@ class CrawlTaskStateMachine:
     transitions: ClassVar[dict[str, set[str]]] = {
         "pending": {"queued", "running", "failed", "cancelled"},
         "queued": {"running", "calling_coze", "failed", "cancelled"},
-        "running": {"calling_coze", "completed", "failed", "cancelled"},
+        "running": {"calling_coze", "saving_documents", "completed", "failed", "cancelled"},
         "calling_coze": {"coze_running", "normalizing", "failed", "cancelled"},
         "coze_running": {"normalizing", "failed", "cancelled"},
         "normalizing": {"saving_documents", "failed", "cancelled"},

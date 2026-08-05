@@ -34,7 +34,9 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
-docker compose --profile ui --profile async up --detach --build
+docker compose build backend
+docker compose build frontend
+docker compose --profile ui --profile async up --detach --no-build
 
 attempt=1
 while [ "$attempt" -le 90 ]; do

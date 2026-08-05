@@ -64,7 +64,7 @@ PostgreSQL 保存 chunk 和血缘，Qdrant 保存向量与 metadata payload，BM
 
 监控同时记录路由与数据库 P50/P95/P99、抓取失败、索引失败、RAG 延迟、拒答、token、成本、评估回归和依赖健康。告警持久化并支持 acknowledge/resolve。
 
-当前固定窗口限流和路由指标是单进程内存实现；多副本需要 Redis 或网关方案。应用层 SSRF 仍存在 DNS 校验到 socket 连接的时间窗，生产还要配置容器出口网络策略。这些都在文档中明确记录。”
+当前非 test 固定窗口限流使用 Redis Lua 原子脚本并在 Redis 故障时 fail-closed；路由指标仍按进程采样。生产还要验证 Redis ACL、故障转移、网关协同和多副本公平性。应用层 SSRF 仍存在 DNS 校验到 socket 连接的时间窗，生产还要配置容器出口网络策略。这些都在文档中明确记录。”
 
 画面建议：Monitoring 页面，指出 DB P95、依赖状态和告警操作。
 

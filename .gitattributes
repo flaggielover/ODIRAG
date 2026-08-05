@@ -1,0 +1,7 @@
+* text=auto
+
+# Container entrypoints and operator scripts must remain executable by POSIX shells
+# after a Windows checkout with core.autocrlf enabled.
+deployment/*.sh text eol=lf
+scripts/*.sh text eol=lf
+Dockerfile* text eol=lf

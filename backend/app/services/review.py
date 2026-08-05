@@ -83,6 +83,7 @@ class ReviewService:
         )
         if rule_result.decision is FilterDecision.REJECT:
             document.final_status = "rejected"
+            await self.repository.reconcile_crawl_tasks(document.id)
             await self.repository.commit()
             return ReviewPipelineResult(
                 document.id,
@@ -151,6 +152,7 @@ class ReviewService:
             document.final_status = "pending_manual_review"
         else:
             document.final_status = "approved"
+        await self.repository.reconcile_crawl_tasks(document.id)
         await self.repository.commit()
         return ReviewPipelineResult(
             document.id,
@@ -189,6 +191,7 @@ class ReviewService:
                 extracted_fields_json={},
             )
         )
+        await self.repository.reconcile_crawl_tasks(document.id)
         await self.repository.commit()
         return document
 

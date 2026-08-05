@@ -37,6 +37,7 @@ import type {
   CozeInvocation,
   CrawlTaskFailure,
   CrawlTaskResult,
+  CrawlTaskAcceptanceSummary,
 } from '@/api/types'
 
 function queryString(values: Record<string, string | number | boolean | null | undefined>): string {
@@ -110,6 +111,8 @@ export const api = {
   crawlTasks: (status?: string) =>
     apiRequest<CrawlTask[]>(`/crawl-tasks${queryString({ status })}`),
   crawlTask: (id: number) => apiRequest<CrawlTask>(`/crawl-tasks/${id}`),
+  crawlTaskAcceptanceSummary: (id: number) =>
+    apiRequest<CrawlTaskAcceptanceSummary>(`/crawl-tasks/${id}/acceptance-summary`),
   crawlInvocations: (id: number) => apiRequest<CozeInvocation[]>(`/crawl-tasks/${id}/invocations`),
   crawlTaskFailures: (id: number) => apiRequest<CrawlTaskFailure[]>(`/crawl-tasks/${id}/failed-urls`),
   retryCrawlTaskFailure: (taskId: number, failureId: number) =>

@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
 
 from app.filters import RuleFilter
 from app.llm.protocols import ReviewResult
-from app.models import Document, DocumentReview, PromptVersion, Source, StructuredKnowledge
+from app.models import (
+    CrawlTask,
+    DataLineage,
+    Document,
+    DocumentReview,
+    PromptVersion,
+    Source,
+    SourceColumn,
+    StructuredKnowledge,
+)
 from app.providers import ProviderResponseError, ProviderUnavailableError
 from app.repositories.reviews import ReviewRepository
 from app.services.filter_config import load_filter_config
@@ -133,3 +143,63 @@ async def test_rule_rejection_skips_llm_and_manual_review_changes_status(app) ->
             document.id, decision="approve", reviewer="admin", reasons=["verified"]
         )
         assert approved.final_status == "approved"
+
+
+async def test_manual_review_closes_linked_waiting_crawl_task(app) -> None:
+    async with app.state.database.session_factory() as session:
+        document = await _document(
+            session,
+            content="Official policy application support requirements. " * 8,
+            source_key="review-crawl-close",
+        )
+        source = await session.scalar(
+            select(Source).where(Source.source_key == "review-crawl-close")
+        )
+        assert source is not None
+        column = SourceColumn(
+            source_id=source.id,
+            column_key="policies",
+            column_name="Policies",
+            column_url="https://review-crawl-close.gov/policies",
+        )
+        session.add(column)
+        await session.flush()
+        task = CrawlTask(
+            source_column_id=column.id,
+            status="waiting_review",
+            current_stage="waiting_review",
+            provider_status="waiting_review",
+            crawl_provider="local",
+            provider="local",
+            contract_mode="batch_crawl",
+            provider_contract="batch_crawl",
+            pending_review_count=1,
+            started_at=datetime.now(UTC),
+        )
+        session.add(task)
+        await session.flush()
+        session.add(
+            DataLineage(
+                lineage_id=str(uuid.uuid4()),
+                source_id=source.id,
+                crawl_task_id=task.id,
+                document_id=document.id,
+            )
+        )
+        await session.commit()
+
+        reviewed = await _service(session, RetryThenApproveOrchestrator()).manual_decision(
+            document.id,
+            decision="approve",
+            reviewer="admin",
+        )
+        assert reviewed.final_status == "approved"
+        await session.refresh(task)
+        assert task.status == "completed"
+        assert task.current_stage == "completed"
+        assert task.provider_status == "completed"
+        assert task.accepted_count == 1
+        assert task.rejected_count == 0
+        assert task.pending_review_count == 0
+        assert task.finished_at is not None
+        assert task.completed_at is not None

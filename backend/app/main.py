@@ -13,7 +13,12 @@ from app.database.session import DatabaseManager
 from app.errors import register_error_handlers
 from app.logging import RequestContextMiddleware, configure_logging
 from app.metrics import MetricsMiddleware, MetricsRegistry
-from app.rate_limit import InMemoryFixedWindowRateLimiter, RateLimitMiddleware
+from app.rate_limit import (
+    InMemoryFixedWindowRateLimiter,
+    RateLimiter,
+    RateLimitMiddleware,
+    RedisFixedWindowRateLimiter,
+)
 from app.repositories.users import UserRepository
 from app.runtime import build_application_runtime
 from app.services.auth import AuthService
@@ -28,7 +33,14 @@ def create_app(
     configure_logging(app_settings)
     database_manager = database or DatabaseManager(app_settings)
     metrics_registry = MetricsRegistry()
-    rate_limiter = InMemoryFixedWindowRateLimiter()
+    rate_limiter: RateLimiter
+    if app_settings.rate_limit_backend == "redis" and app_settings.environment != "test":
+        rate_limiter = RedisFixedWindowRateLimiter(
+            app_settings.redis_url,
+            timeout_seconds=app_settings.dependency_timeout_seconds,
+        )
+    else:
+        rate_limiter = InMemoryFixedWindowRateLimiter()
     application_runtime = build_application_runtime(app_settings)
     metrics_registry.attach_database_engine(database_manager.async_engine.sync_engine)
 
@@ -51,6 +63,7 @@ def create_app(
             database_driver=database_manager.async_engine.url.drivername,
         )
         yield
+        await rate_limiter.close()
         await database_manager.dispose()
         logger.info("application_stopped")
 

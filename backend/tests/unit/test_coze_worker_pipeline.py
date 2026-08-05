@@ -9,7 +9,12 @@ from pydantic import SecretStr
 from sqlalchemy import func, select
 
 from app.config import Settings
-from app.crawler.providers import CrawlContract, CrawlProviderConnection, CrawlProviderResult
+from app.crawler.providers import (
+    CrawlContract,
+    CrawlProviderConnection,
+    CrawlProviderError,
+    CrawlProviderResult,
+)
 from app.models import CozeInvocation, CrawlTask, CrawlTaskFailure, Document, Source, SourceColumn
 from app.repositories.crawl import CrawlRepository
 from app.schemas.coze import BatchCrawlResponse, parse_batch_crawl_response
@@ -215,7 +220,7 @@ async def test_one_document_save_failure_keeps_other_articles(
         )
         assert failure is not None
         assert failure.url.endswith("/two")
-        assert failure.error_code == "LOCAL_DOCUMENT_SAVE_FAILED"
+        assert failure.error_code == "COZE_DOCUMENT_SAVE_FAILED"
         assert failure.retryable is True
 
 
@@ -263,3 +268,52 @@ async def test_active_sync_cancel_is_not_overwritten_when_remote_returns(
         assert invocation is not None
         assert invocation.status == "completed_discarded_cancelled"
         assert invocation.raw_response_json == raw
+
+
+async def test_active_sync_cancel_is_not_overwritten_when_remote_fails(app, test_settings) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+
+        class CancellingFailureProvider(FixtureProvider):
+            async def start_crawl(
+                self,
+                payload: Mapping[str, Any],
+                *,
+                contract: CrawlContract | None = None,
+            ) -> CrawlProviderResult:
+                del payload, contract
+                async with app.state.database.session_factory() as cancel_session:
+                    cancel_service = CrawlService(
+                        CrawlRepository(cancel_session),
+                        UnusedFetcher(),
+                        _settings(test_settings),
+                        crawl_provider=self,
+                    )
+                    cancelled = await cancel_service.cancel(task_id)
+                    assert cancelled.provider_status == "cancel_requested_local_only"
+                raise CrawlProviderError(
+                    "COZE_REMOTE_FAILURE",
+                    "remote failure after cancellation",
+                    retryable=True,
+                )
+
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=CancellingFailureProvider({}),
+        )
+        result = await service.execute(task_id)
+
+        assert result.status == "cancelled"
+        assert result.provider_status == "remote_failed_after_local_cancel"
+        assert result.failed_count == 0
+
+    async with app.state.database.session_factory() as verification_session:
+        assert await verification_session.scalar(select(func.count(Document.id))) == 0
+        invocation = await verification_session.scalar(
+            select(CozeInvocation).where(CozeInvocation.crawl_task_id == task_id)
+        )
+        assert invocation is not None
+        assert invocation.status == "failed"
+        assert invocation.error_code == "COZE_REMOTE_FAILURE"

@@ -285,6 +285,13 @@ export interface CrawlTask {
   completed_at?: string | null
 }
 
+export interface CrawlTaskAcceptanceSummary {
+  crawl_task_id: number
+  database_document_count: number
+  chunk_count: number
+  qdrant_point_count: number
+}
+
 export interface CrawlTaskInput {
   source_column_id: number
   task_type: 'full' | 'incremental'
