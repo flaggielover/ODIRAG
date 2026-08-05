@@ -4,7 +4,7 @@
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现，未发现 runtime TODO、FIXME、空函数、硬编码检索结果、硬编码仪表盘指标或伪造评估指标。本机 WSL2/Docker Desktop 控制面已无损恢复，当前 Compose 配置下 PostgreSQL、Redis、Qdrant、backend、worker、scheduler、frontend、Nginx 八个服务全部 healthy；PostgreSQL/Alembic、Redis、Qdrant health、worker、scheduler、8080/Nginx/frontend/API 与 acceptance-summary 均完成真实本地检查。代码已切换到 Python 3.12 Alpine、Nginx 1.30.4 Alpine 并移除 runtime pip，但本轮没有重新构建全部镜像或执行 Scout/SBOM，因此供应链状态仍是 UNVERIFIED。自动化集成测试仍主要使用 SQLite、内存 cache/vector store 和确定性 embedding/rerank，外部 provider 只做协议级 test double 验证。因此本报告不能把生产部署、Brave、Coze、远程 embedding/rerank 或 Direct LLM 标为生产通过。
+代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现，未发现 runtime TODO、FIXME、空函数、硬编码检索结果、硬编码仪表盘指标或伪造评估指标。本机 WSL2/Docker Desktop 控制面已无损恢复，当前 fresh application 镜像下八个服务全部 healthy；隔离 PostgreSQL 备份恢复、Redis、Qdrant health、worker、scheduler、8080/Nginx/frontend/API 与 acceptance-summary 均完成真实本地检查。fresh build 暴露了 pydantic-settings 2.14 的可信代理环境值兼容回归、Alembic 1.19.0 的约束名 drift，以及 frontend builder 2 个 high 漏洞；当前容器使用等价 JSON 环境值临时恢复，Alembic 1.18.5 对照 check 通过但 fresh 1.19.0 门禁失败。Scout/SBOM 和 npm advisory detail 因外部元数据上传尚未获得明确授权，供应链状态仍是 UNVERIFIED。自动化集成测试仍主要使用 SQLite、内存 cache/vector store 和确定性 embedding/rerank，外部 provider 只做协议级 test double 验证。因此本报告不能把生产部署、Brave、Coze、远程 embedding/rerank 或 Direct LLM 标为生产通过。
 
 ## 1. 状态定义
 
@@ -21,7 +21,7 @@
 
 ## 2. 关键审计结论
 
-1. **当前本机运行时已恢复并验证，供应链仍未验收。** `docker compose ps --all` 显示 backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx 全部 healthy；PostgreSQL、Redis、Qdrant health、worker ping、scheduler 调度和 Nginx/8080/API 均通过。旧 backend 镜像扫描为 2 critical/4 high，旧 frontend 为 6 critical/27 high；当前运行镜像尚未重新完成 builder/runtime Scout、SBOM 和 digest/provenance 门禁。生产 secret、TLS、备份恢复和故障演练仍无证据。
+1. **当前本机 fresh runtime 已启动，fresh migration/supply-chain 门禁失败或待定。** backend/frontend 已 `--pull --no-cache` 串行构建，两个 builder stage 已标记；八服务 healthy，fresh worker、scheduler 和 Nginx/API 均通过。普通默认代理环境值在新版 pydantic-settings 下启动失败，当前容器靠等价 JSON 值临时恢复。fresh Alembic 1.19.0 `check` 失败，而同库 1.18.5 通过；frontend builder 报 2 high；Scout/SBOM、advisory detail、digest/provenance 尚未完成。
 2. **测试真实性边界清晰但很窄。** backend/tests/conftest.py 统一使用 SQLite memory、InMemoryEmbeddingCache、InMemoryVectorStore、DeterministicEmbeddingProvider 和 DeterministicRerankProvider。
 3. **远程模型均未 live 验证。** Direct LLM、Coze、remote embedding、remote rerank 和 Brave Search 使用 MockTransport/fixture 验证；没有真实 token、配额、延迟、限流或计费证据。
 4. **LLM token/cost 已支持真实响应透传，但仍需 live 验收。** Direct/Coze 适配器现在读取响应中的 usage/cost（若 provider 返回），Chat trace 持久化规范化 token 字段；缺失 usage 或价格时明确标记 `not_available`，cost 保持 0 作为 schema 兼容的“未知”值。真实 provider 方言、价格字段、计费和异步语义仍未验收。
@@ -32,7 +32,7 @@
 9. **配置文件结构不完全一致。** sites.yaml、filters.yaml、chunking.yaml、prompts 已使用；指南目标中的 knowledge_schema.yaml、retrieval.yaml、rerank.yaml、monitoring.yaml 不存在，相应参数主要通过环境变量/代码 schema 管理。Compose 现在显式透传 provider 配置，并把 canonical Coze token 优先级与 ODIRAG 别名对齐；真实 token 仍不得写入仓库。
 10. **真实站点抓取缺证据。** fixture crawl 覆盖分页、详情、附件和幂等；已完成 scsia.org 浏览器级侦察与人工协会来源记录，但 backend DNS 解析到 `198.18.0.208` 后被 SSRF guard 拒绝，0 fetched/0 documents；指南建议的可达真实站点至少 10 篇文章仍未执行。
 11. **扫描 PDF 只有 OCR 标志。** requires_ocr 可追踪，但没有 OCR engine；这不违反 Phase 3 的“标志”要求，却限制扫描件生产覆盖。
-12. **前端依赖审计已清零，但容器供应链门禁未通过。** `npm audit` 与 `npm audit --omit=dev` 均返回 0 vulnerabilities，`npm ls --all` 无 invalid/extraneous 必需依赖，Python 环境 `pip check` 无破损依赖。当前配置镜像已成功启动，旧镜像的 Scout 扫描曾证实 critical/high 漏洞；当前镜像仍需重新构建和扫描，Python/容器 SBOM、发布镜像 digest/provenance 仍缺证据。验收清单覆盖 Compose 全部运行时镜像与 Python/Node builder stage。
+12. **fresh 前端依赖门禁失败，容器扫描仍未执行。** 历史 host `npm audit` 曾返回 0，但 fresh frontend builder 的 `npm ci` 当前报告 2 high，历史零结果已被新证据取代。npm advisory detail 和 Docker Scout 都因会向外部服务发送依赖/镜像组件元数据而等待明确授权；不能把“工具可用”写成扫描通过。Python 环境 `pip check` 只证明依赖一致性，不是 CVE 证据。
 13. **Git 基线和审计检查点已建立，但还不是正式发布标签。** `85d4bdb feat: complete Coze batch crawl readiness` 是批量抓取实现基线，`14bbf40 docs: record production audit checkpoint` 是审计文档检查点；最终发布仍需干净且经复核的 release checkpoint、签名 tag、CI green、SBOM 和镜像 digest。
 14. **本地高优先级竞态与数据边界已回归验证。** Local/Coze worker 在保存前使用条件状态推进，取消或远端失败不会覆盖 `cancelled`；审核提交锁定关联任务并在无 pending 文档时收敛为 `completed`；LLM cost 拒绝非有限/负数/超 Numeric(18,8) 范围值并量化到数据库精度。上述证据仍是 SQLite/fixture 边界，不替代 PostgreSQL 并发演练。
 
@@ -53,9 +53,9 @@
 | Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
 | --- | --- | --- | --- | --- |
 | FastAPI application factory | backend/app/main.py | backend/tests/unit/test_core_api.py | FIXTURE-VERIFIED | 目标 ASGI/进程管理未压测 |
-| Pydantic 环境配置与生产安全 gate | backend/app/config.py；.env.example | backend/tests/unit/test_config.py | VERIFIED-LOCAL | 外部 secret manager 未接入 |
+| Pydantic 环境配置与生产安全 gate | backend/app/config.py；.env.example | backend/tests/unit/test_config.py；fresh Compose startup | PARTIAL | pydantic-settings 2.14 在 validator 前解码 list env，逗号格式启动失败；当前临时使用 JSON 值，代码修复/回归待完成；外部 secret manager 未接入 |
 | PostgreSQL + SQLAlchemy async | backend/app/database/*；backend/app/models/* | SQLite integration suite；local Compose PostgreSQL health/identity/count queries | VERIFIED-LOCAL | 生产规模事务、锁竞争、连接池耗尽和恢复未验收 |
-| Alembic core migrations | backend/alembic/versions/0001_core_schema.py | SQLite round-trip；local PostgreSQL current/heads/check | VERIFIED-LOCAL | PostgreSQL 专用 downgrade/backup/restore 未执行 |
+| Alembic core migrations | backend/alembic/versions/0001_core_schema.py | SQLite round-trip；local PostgreSQL current/heads；Alembic 1.18.5/1.19.0 A/B check | PARTIAL | 1.18.5 无漂移，fresh 1.19.0 报约束名 remove/add drift；工具链约束未锁定；PostgreSQL 专用 downgrade 未执行 |
 | Redis abstraction | backend/app/cache/embedding.py；backend/app/tasks/celery_app.py；backend/app/rate_limit.py | local Redis PING/SET/GET/DEL；backend Redis ping；worker task；shared rate-limit key/header | VERIFIED-LOCAL | ACL、持久化、故障转移和跨副本限流未在目标环境验收 |
 | 结构化日志与错误 | backend/app/logging.py；backend/app/errors.py | core API tests | FIXTURE-VERIFIED | 集中日志/PII 脱敏未在部署环境验证 |
 | dependency health endpoint | backend/app/services/health.py；backend/app/api/routes/system.py | backend/tests/unit/test_core_api.py；`/api/system/health` real Compose response | VERIFIED-LOCAL | 只证明当前开发实例；生产网络/TLS/告警策略未验收 |
@@ -216,7 +216,7 @@
 | distributed locks | conditional DB UPDATE；unique constraints | concurrency-oriented SQLite tests | PARTIAL | 无共享 Redis lock；SQLite 不等于 PostgreSQL 并发 |
 | cache/batch embedding | cache/embedding.py；embedding/batcher.py | memory cache tests | FIXTURE-VERIFIED | Redis/remote provider 未 live |
 | task recovery | tasks/recovery.py；0003 migration | test_crawl_reliability.py | FIXTURE-VERIFIED | worker kill/visibility timeout 未 live 演练 |
-| migration/backup documentation | DEPLOYMENT.md；SECURITY.md | doc audit | VERIFIED-LOCAL | 未执行真实 backup/restore |
+| migration/backup documentation | DEPLOYMENT.md；SECURITY.md；PRODUCTION_ACCEPTANCE_CHECKLIST.md | 独立临时 PostgreSQL 容器/卷 restore；9 表 count 对比 | VERIFIED-LOCAL | 当前小型 development 数据通过；目标生产数据量、加密、保留策略和定期调度未验收 |
 | lightweight load test + actual metrics | scripts/load_test.py；performance.py | deterministic local run | FIXTURE-VERIFIED | 不是生产容量/SLA；外部依赖为空 |
 | search/chat/DB P95 goals | data/load-tests ignored artifacts；IMPLEMENTATION_STATUS.md | 20+20 local deterministic requests | FIXTURE-VERIFIED | 需生产规模重跑 |
 
@@ -228,7 +228,7 @@
 | optional prometheus/grafana | 无 | 无 | PARTIAL | 指南允许 if feasible，不是核心 blocker |
 | backend lint/type/test/coverage CI | .github/workflows/ci.yml | YAML parse；本地等价命令 | CONTRACT-VERIFIED | GitHub Actions 未实际跑 |
 | frontend lint/test/build/Playwright CI | .github/workflows/ci.yml | YAML parse；本地 npm commands | CONTRACT-VERIFIED | Actions/浏览器镜像未实际跑 |
-| Docker build CI | .github/workflows/ci.yml；Dockerfile.backend；Dockerfile.frontend | 当前 Compose 配置与已存在本地镜像启动通过 | UNVERIFIED-LIVE | Python/Node builder 与全部 runtime 镜像仍需 fresh build/Scout/SBOM；GitHub Actions 未实际跑 |
+| Docker build CI | .github/workflows/ci.yml；Dockerfile.backend；Dockerfile.frontend | fresh backend/frontend runtime build；fresh builder stages；current Compose health | PARTIAL | 本地 fresh build 通过但暴露配置回归和 frontend 2 high；Scout/SBOM 未获外传授权；GitHub Actions 未实际跑 |
 | README/architecture/API/eval/experiments/deployment/security/contribution/roadmap/license | 根目录文档 | link/path/structure audit | VERIFIED-LOCAL | 需随最终测试结果同步 |
 | honest demo seed | scripts/seed_demo.py；data/evaluation/* | test_demo_seed.py；deterministic pipeline | FIXTURE-VERIFIED | demo URLs/data 不代表真实来源 |
 | one-command startup | scripts/start_demo.ps1；scripts/start_demo.sh | 脚本本身有历史 smoke；当前恢复中 `up -d` 被中断，修复依赖网络别名并定向启动后 health 通过 | PARTIAL | 需要在保留数据前提下重新执行 clean startup 验收；fresh build、生产环境变量、备份恢复、发布流程未实测 |
@@ -271,7 +271,7 @@ OpenAPI 生成结果包含指南要求的 auth、sources、crawl-tasks、documen
 | evaluation/experiments/load | tiny deterministic demo | representative corpus, production latency/cost/quality |
 | frontend E2E | Playwright route fixtures；local SQLite/deterministic 无拦截 smoke；Nginx/frontend HTTP smoke | deployed HTTPS、真实内容/引用、remote provider |
 | worker/scheduler | Celery task registration/schedule config tests；local worker ping/task and scheduler logs | queued crawl/source-discovery completion、故障恢复和生产 beat 长期运行 |
-| containers/CI | 旧基础镜像 local Docker build/start/health；当前已存在本地镜像 start/health；worker/scheduler 复用已构建 backend tag | 当前加固镜像 fresh build/Scout、GitHub Actions、生产镜像签名/SBOM和恢复演练；frontend/reverse-proxy root master 仍需目标环境 hardening 评估 |
+| containers/CI | 当前 backend/frontend `--pull --no-cache` build；builder stage tag；fresh runtime start/health；worker/scheduler 复用 backend tag | 配置解析回归修复；frontend 2 high 处置；Scout/SBOM、GitHub Actions、生产镜像签名和 provenance；frontend/reverse-proxy root master 仍需目标环境 hardening 评估 |
 
 ## 7. Phase 16 - Autonomous Source Discovery
 
@@ -336,18 +336,20 @@ Brave 被选为当前 live provider，因为 Microsoft 已宣布 Bing Search API
 | `backend/.venv/Scripts/python.exe -m pytest -q --cov=app --cov-report=term-missing` | PASS；210 passed；总覆盖率 79.78% | SQLite、内存实现、确定性 provider；不替代真实依赖验收 |
 | `backend/.venv/Scripts/pytest.exe tests/unit/test_sources_and_crawler.py -q` | PASS；8 passed | fixture；含 unsafe inline crawl 结构化错误 |
 | Phase 16/config/API 定向测试 | PASS；28 passed | fixture/contract |
-| Alembic fresh upgrade → downgrade → upgrade | PASS；隔离 SQLite 最终 `0006_coze_task_operations (head)`；当前本地 PostgreSQL `current`/`heads` 为 `0006_coze_task_operations (head)` 且 `alembic check` 无 drift | SQLite round-trip + 当前开发 PostgreSQL；未做生产 downgrade/backup/restore |
+| Alembic fresh upgrade → downgrade → upgrade | PARTIAL；隔离 SQLite round-trip 最终 `0006_coze_task_operations (head)`；当前 PostgreSQL current/heads 正确；1.18.5 check 无 drift，fresh 1.19.0 check 失败 | SQLite round-trip + 当前开发 PostgreSQL A/B；未做生产 downgrade；fresh 工具链约束待修复 |
 | frontend lint/type-check/Vitest/build | PASS；16 Vitest tests，Vite 1850 modules | 本地 Node toolchain（Vitest/build 使用提升权限启动 esbuild） |
-| `npm audit` / `npm audit --omit=dev` / `npm ls --all` | PASS；0 vulnerabilities；依赖树有效 | npm registry advisory；不覆盖 Python/容器镜像 |
+| `npm audit` / fresh builder dependency audit | FAIL/PENDING；历史 host audit 为 0，但 fresh `npm ci` 报 2 high；advisory detail 调用未获外部元数据上传授权 | 不能沿用历史 0；具体 advisory/修复版本仍待授权后取得 |
 | `pip --python backend/.venv check` | PASS；No broken requirements found | 只验证依赖一致性，不是 CVE 扫描 |
 | Playwright fixture suite | PASS；串行 9 passed，1 live test skipped | route fixture；live gate 未开启 |
 | local no-intercept `live-stack.spec.ts` | PASS；1 passed | 本地 SQLite + deterministic providers，不是生产验收 |
 | isolated Uvicorn API smoke | PASS；health/login/Coze status/sources/crawl-tasks 均 HTTP 200；health 为 database healthy、Redis unavailable、Qdrant disabled | 临时 SQLite + deterministic providers；不证明 Docker、PostgreSQL、Redis、Qdrant 或外部 provider |
 | current local Docker Compose service/worker/scheduler acceptance | PASS-LOCAL；8 services healthy；worker inspect ping 成功；scheduler PID 存在并发送 recovery/monitoring tasks | development 配置；不证明生产 secret/TLS、容灾或远程 provider |
-| current local PostgreSQL `alembic current/heads/check` | PASS-LOCAL；`0006_coze_task_operations (head)`；No new upgrade operations detected；6 张 Phase16/Coze 表存在；server/client UTF8 | 当前开发数据卷证据；未做生产 downgrade/backup/restore |
+| current local PostgreSQL Alembic | PARTIAL/FAIL；fresh 1.19.0 `current`/`heads` 为 `0006_coze_task_operations (head)`，但 `check` 报大批 constraint-name remove/add；同库 1.18.5 返回无漂移；6 张 Phase16/Coze 表存在；server/client UTF8 | 未生成/执行漂移迁移；需锁定并回归可接受工具链，生产 downgrade 未做 |
+| isolated PostgreSQL backup/restore | PASS-LOCAL；156,455-byte custom dump；SHA-256 留档；独立 `--network none` 容器和临时卷恢复；9 表 count 一致；临时资源已清理 | 当前小型 development 数据；未证明生产规模、加密备份、RPO/RTO 和定期调度 |
 | current local Nginx/frontend/API/browser smoke | PASS-LOCAL；Nginx 1.30.4 下 `/healthz`、`/`、`/api/system/health` 均 200；API database/redis/qdrant 均 healthy；管理员页面登录成功并渲染仪表盘；浏览器控制台无 warning/error；安全响应头存在 | HTTP development 入口和交互式本地浏览器证据；自动化 live Playwright、HTTPS 和 remote provider 门禁未验证 |
 | current Docker/WSL control-plane check | PASS-LOCAL；Docker Desktop 4.85.0、Client/Server 29.6.2、Compose v5.3.1；`docker-desktop` WSL2 running；8080/8000/5433/6379/6333/6334 监听 | 通过停止卡死 Desktop 进程、成功执行 `wsl --shutdown`、重新启动 Desktop 恢复；未删除 VHD、容器、Volume 或数据库 |
-| current hardened image build/scan | PARTIAL；Nginx 1.30.4 和当前 backend/frontend 本地镜像启动通过；代码已配置 Python 3.12 Alpine 并移除 runtime pip | 本轮未 fresh build/Scout/SBOM，不能宣称 critical/high 已清零或 provenance 已成立 |
+| current hardened image build/scan | PARTIAL/FAIL；backend/frontend `--pull --no-cache` 和两个 builder stage 成功；fresh runtime 八服务 healthy；frontend builder 报 2 high | trusted-proxy env 兼容回归尚未固化；Scout/SBOM/npm detail 因外部元数据上传未授权而未运行；不能宣称 CVE 清零或 provenance 成立 |
+| current real Compose Playwright | FAIL-EXPECTED；登录、sources、documents、chat 页面成功；查询返回 `A required provider is unavailable`，引用断言失败 | `embedding_provider=remote` 且无 key，数据库/Qdrant 无已索引文档；不是前端 live acceptance pass |
 | authenticated API / acceptance-summary | PASS-LOCAL；login、Coze status、sources、documents、crawl-tasks、acceptance-summary、invocations、failed-urls 均通过 | 现有 3 个 scsia 失败任务均为 0 documents/chunks/Qdrant points；不是成功抓取/索引证据 |
 | Qdrant live local state | PASS-LOCAL health；`/healthz` 200；collection count 0 | 服务正常但无已索引文档，collection/schema/point 持久化仍未验收 |
 | Coze batch live preflight | PASS-EXPECTED；`GET /api/system/coze/status` 显示 disabled/unconfigured；脚本退出码 2、`batch_workflow_not_published` | 没有批量部署 URL/token；不是 Live 成功 |
@@ -363,7 +365,7 @@ Brave 被选为当前 live provider，因为 Microsoft 已宣布 Bing Search API
 
 必须在具备正常公网 DNS/出口（或经安全审查的代理解析方案）的目标主机上重新执行真实抓取；对该站点的图片型正文还需要 selector 校准和 OCR/图片抽取，才能进入可检索内容质量验收。
 
-本机 PostgreSQL、Redis、Qdrant health、worker、scheduler、Nginx、frontend 和 Alembic 已通过 development 栈验证；外部 live 项目仍必须按 `PRODUCTION_ACCEPTANCE_CHECKLIST.md` 在目标环境执行。在 Brave、Coze/Direct LLM、embedding、rerank、真实索引/Qdrant points、备份恢复、镜像扫描和 live Playwright 证据完成前，发布结论保持 **NOT PRODUCTION ACCEPTED**。
+本机 PostgreSQL 服务、隔离备份恢复、Redis、Qdrant health、fresh worker/scheduler、Nginx 和 frontend 已通过 development 栈验证；fresh Alembic 1.19.0 check 未通过。外部 live 项目仍必须按 `PRODUCTION_ACCEPTANCE_CHECKLIST.md` 在目标环境执行。在配置解析回归、Alembic 工具链 drift、frontend 2 high、Brave、Coze/Direct LLM、embedding、rerank、真实索引/Qdrant points、镜像扫描和 cited-answer live Playwright 证据完成前，发布结论保持 **NOT PRODUCTION ACCEPTED**。
 
 ## 10. 发布门禁
 

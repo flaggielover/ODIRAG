@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-05。每一项都必须在目标环境执行并保存原始输出。本机 WSL2/Docker Desktop 已无损恢复，当前 Compose development 栈的八个服务、PostgreSQL/Alembic、Redis、Qdrant health、worker、scheduler、Nginx 1.30.4、frontend、8080 API 和 acceptance-summary 已通过真实本地验收。当前镜像仍未 fresh rebuild/Scout/SBOM，生产 secret、远程 provider 凭据、真实索引/Qdrant points 和代表性真实抓取也仍未验收。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-05。每一项都必须在目标环境执行并保存原始输出。本机 WSL2/Docker Desktop 已无损恢复；当前 backend/frontend 已 fresh build，八个 development 服务、隔离 PostgreSQL 备份恢复、Redis、Qdrant health、worker、scheduler、Nginx 1.30.4、frontend、8080 API 和 acceptance-summary 已通过真实本地验收。fresh build 同时暴露 trusted-proxy 环境值兼容回归、Alembic 1.19.0 drift 和 frontend builder 2 high；Scout/SBOM/npm advisory detail 因外部元数据上传未获明确授权而未执行。生产 secret、远程 provider 凭据、真实索引/Qdrant points 和代表性真实抓取也仍未验收。
 
 ## 证据规则
 
@@ -28,8 +28,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Compose model is invalid' }
 ## 1. 启动完整栈
 
 ~~~powershell
-docker compose build backend
-docker compose build frontend
+docker compose build --pull --no-cache backend
+docker compose build --pull --no-cache frontend
 docker compose --profile ui --profile async up -d --no-build
 docker compose ps --all
 docker compose ps --format json | ConvertFrom-Json | Format-Table
@@ -58,41 +58,122 @@ docker compose exec -T postgres psql -U $pgUser -d $pgDb -v ON_ERROR_STOP=1 -Atc
 
 预期恰好返回四张表。若使用受管 PostgreSQL，另执行备份、恢复和连接池耗尽演练；这些不由 Compose 默认配置证明。
 
-### PostgreSQL 备份/恢复演练（隔离恢复库）
+### PostgreSQL 备份/恢复演练（独立临时容器与临时卷）
 
-以下命令只创建并删除一个带时间戳的恢复库，不向业务库执行 `restore` 或 `downgrade`：
+以下 PowerShell 5.1 兼容脚本只从业务库执行 `pg_dump` 和只读计数。恢复写入发生在
+`--network none` 的临时 PostgreSQL 容器及唯一临时卷中，不写入项目 `postgres-data`。
+`finally` 只清理本次运行精确命名并带标签的临时资源；宿主备份和 SHA-256 留档：
 
 ~~~powershell
-$stamp = Get-Date -Format 'yyyyMMddHHmmss'
-$backupDir = Join-Path $PWD "artifacts\acceptance\$stamp"
-New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
-$containerDump = "/tmp/odirag-acceptance-$stamp.dump"
-$restoreDb = "odirag_acceptance_restore_$stamp"
-if ($restoreDb -notmatch '^odirag_acceptance_restore_\d{14}$') { throw 'Unsafe restore database name' }
-
-$pgUser = (docker compose exec -T postgres printenv POSTGRES_USER).Trim()
-$pgDb = (docker compose exec -T postgres printenv POSTGRES_DB).Trim()
-docker compose exec -T postgres pg_dump -U $pgUser -d $pgDb -Fc --no-owner --no-privileges -f $containerDump
-docker compose cp "postgres:$containerDump" $backupDir
-$dumpPath = Join-Path $backupDir ([IO.Path]::GetFileName($containerDump))
-if (-not (Test-Path -LiteralPath $dumpPath) -or (Get-Item -LiteralPath $dumpPath).Length -lt 1024) {
-  throw 'PostgreSQL backup file was not copied or is implausibly small'
+$ErrorActionPreference = 'Stop'
+function Assert-Exit([string]$step) {
+  if ($LASTEXITCODE -ne 0) { throw "$step failed, exit=$LASTEXITCODE" }
 }
-Get-FileHash -Algorithm SHA256 -LiteralPath $dumpPath
-docker compose exec -T postgres pg_restore -l $containerDump | Select-Object -First 20
 
-docker compose exec -T postgres createdb -U $pgUser $restoreDb
-docker compose exec -T postgres pg_restore -U $pgUser -d $restoreDb --exit-on-error --no-owner --no-privileges $containerDump
-$countSql = "SELECT 'sources', count(*) FROM sources UNION ALL SELECT 'source_columns', count(*) FROM source_columns UNION ALL SELECT 'source_discovery_runs', count(*) FROM source_discovery_runs UNION ALL SELECT 'source_candidates', count(*) FROM source_candidates UNION ALL SELECT 'source_candidate_columns', count(*) FROM source_candidate_columns UNION ALL SELECT 'source_discovery_events', count(*) FROM source_discovery_events UNION ALL SELECT 'crawl_tasks', count(*) FROM crawl_tasks UNION ALL SELECT 'coze_invocations', count(*) FROM coze_invocations UNION ALL SELECT 'documents', count(*) FROM documents ORDER BY 1"
-$sourceCounts = @(docker compose exec -T postgres psql -U $pgUser -d $pgDb -At -v ON_ERROR_STOP=1 -c $countSql)
-$restoreCounts = @(docker compose exec -T postgres psql -U $pgUser -d $restoreDb -At -v ON_ERROR_STOP=1 -c $countSql)
-if (Compare-Object $sourceCounts $restoreCounts) { throw 'Restored PostgreSQL table counts differ from source' }
+$stamp = Get-Date -Format 'yyyyMMddHHmmss'
+$token = "$stamp-$PID"
+if ($token -notmatch '^\d{14}-\d+$') { throw 'Unsafe run token' }
 
-docker compose exec -T postgres dropdb -U $pgUser --if-exists $restoreDb
-docker compose exec -T postgres rm -f $containerDump
+$artifactDir = Join-Path $PWD "data\reports\acceptance\$token"
+$sourceDump = "/tmp/odirag-acceptance-$token.dump"
+$dumpPath = Join-Path $artifactDir "odirag-acceptance-$token.dump"
+$restoreContainer = "odirag-pg-restore-$token"
+$restoreVolume = "odirag-pg-restore-$token"
+$restoreDb = "odirag_acceptance_restore_${stamp}_$PID"
+if ($sourceDump -notmatch '^/tmp/odirag-acceptance-\d{14}-\d+\.dump$' -or
+    $restoreContainer -notmatch '^odirag-pg-restore-\d{14}-\d+$' -or
+    $restoreVolume -notmatch '^odirag-pg-restore-\d{14}-\d+$' -or
+    $restoreDb -notmatch '^odirag_acceptance_restore_\d{14}_\d+$') {
+  throw 'Unsafe restore resource name'
+}
+
+$pgUser = (@(docker compose exec -T postgres printenv POSTGRES_USER) -join '').Trim()
+Assert-Exit 'read POSTGRES_USER'
+$pgDb = (@(docker compose exec -T postgres printenv POSTGRES_DB) -join '').Trim()
+Assert-Exit 'read POSTGRES_DB'
+$pgContainer = (@(docker compose ps -q postgres) -join '').Trim()
+Assert-Exit 'locate postgres container'
+$pgImageId = (@(docker inspect --format '{{.Image}}' $pgContainer) -join '').Trim()
+Assert-Exit 'inspect postgres image'
+if ($pgImageId -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Invalid PostgreSQL image ID' }
+
+if (@(docker container ls -a --format '{{.Names}}') -contains $restoreContainer) {
+  throw "Container already exists: $restoreContainer"
+}
+Assert-Exit 'list containers'
+if (@(docker volume ls --format '{{.Name}}') -contains $restoreVolume) {
+  throw "Volume already exists: $restoreVolume"
+}
+Assert-Exit 'list volumes'
+
+New-Item -ItemType Directory -Path $artifactDir | Out-Null
+$sourceDumpCreated = $false
+$containerCreated = $false
+$volumeCreated = $false
+$ok = $false
+
+try {
+  docker compose exec -T postgres pg_dump -U $pgUser -d $pgDb -Fc `
+    --no-owner --no-privileges -f $sourceDump
+  Assert-Exit 'pg_dump'
+  $sourceDumpCreated = $true
+
+  docker compose cp "postgres:$sourceDump" $dumpPath
+  Assert-Exit 'copy dump'
+  $dumpFile = Get-Item -LiteralPath $dumpPath
+  if ($dumpFile.Length -lt 1024) { throw 'Dump is implausibly small' }
+  Get-FileHash -Algorithm SHA256 -LiteralPath $dumpPath
+
+  $countSql = "SELECT 'sources',count(*) FROM sources UNION ALL SELECT 'source_columns',count(*) FROM source_columns UNION ALL SELECT 'source_discovery_runs',count(*) FROM source_discovery_runs UNION ALL SELECT 'source_candidates',count(*) FROM source_candidates UNION ALL SELECT 'source_candidate_columns',count(*) FROM source_candidate_columns UNION ALL SELECT 'source_discovery_events',count(*) FROM source_discovery_events UNION ALL SELECT 'crawl_tasks',count(*) FROM crawl_tasks UNION ALL SELECT 'coze_invocations',count(*) FROM coze_invocations UNION ALL SELECT 'documents',count(*) FROM documents ORDER BY 1"
+  $sourceCounts = @(docker compose exec -T postgres psql -U $pgUser -d $pgDb -At -v ON_ERROR_STOP=1 -c $countSql)
+  Assert-Exit 'source counts'
+
+  docker volume create --label "odirag.acceptance.run=$token" $restoreVolume | Out-Null
+  Assert-Exit 'create isolated volume'
+  $volumeCreated = $true
+
+  $tempPassword = [guid]::NewGuid().ToString('N')
+  $runArgs = @(
+    'run','-d','--name',$restoreContainer,'--network','none',
+    '--label',"odirag.acceptance.run=$token",
+    '--mount',"type=volume,source=$restoreVolume,target=/var/lib/postgresql/data",
+    '--env','POSTGRES_USER=restore_admin','--env',"POSTGRES_PASSWORD=$tempPassword",
+    '--env',"POSTGRES_DB=$restoreDb",$pgImageId
+  )
+  & docker @runArgs | Out-Null
+  Assert-Exit 'start isolated PostgreSQL'
+  $containerCreated = $true
+
+  $ready = $false
+  for ($i = 0; $i -lt 60; $i++) {
+    docker exec $restoreContainer pg_isready -U restore_admin -d $restoreDb *> $null
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    Start-Sleep -Seconds 1
+  }
+  if (-not $ready) { throw 'Isolated PostgreSQL did not become ready' }
+
+  docker cp $dumpPath "${restoreContainer}:/tmp/source.dump"
+  Assert-Exit 'copy dump to isolated PostgreSQL'
+  docker exec $restoreContainer pg_restore -U restore_admin -d $restoreDb `
+    --exit-on-error --no-owner --no-privileges /tmp/source.dump
+  Assert-Exit 'isolated pg_restore'
+
+  $restoreCounts = @(docker exec $restoreContainer psql -U restore_admin -d $restoreDb -At -v ON_ERROR_STOP=1 -c $countSql)
+  Assert-Exit 'restored counts'
+  if (Compare-Object $sourceCounts $restoreCounts) { throw 'Restored counts differ' }
+  $ok = $true
+}
+finally {
+  if ($containerCreated) { docker rm -f $restoreContainer | Out-Null }
+  if ($volumeCreated) { docker volume rm $restoreVolume | Out-Null }
+  if ($sourceDumpCreated) { docker compose exec -T postgres rm -f $sourceDump | Out-Null }
+}
+if (-not $ok) { throw 'Restore acceptance failed' }
 ~~~
 
-预期：`pg_dump`、`pg_restore`、恢复库计数对比全部退出 0；备份文件及 SHA-256 留档。当前仓库没有自动备份调度器，恢复演练仍是人工生产门禁。
+预期：`pg_dump`、隔离 `pg_restore`、九张关键表计数对比全部退出 0；备份文件及
+SHA-256 留档；按 `odirag.acceptance.run=$token` 查询不到残留容器或卷。当前仓库没有自动
+备份调度器，目标环境仍需验证加密、保留策略、RPO/RTO 和生产数据量。
 
 ## 3. Alembic
 
@@ -269,8 +350,8 @@ npm run test:e2e
 
 ~~~powershell
 pip --python .\backend\.venv check
-docker build --file Dockerfile.backend --target builder --tag odirag/backend-builder:acceptance .
-docker build --file Dockerfile.frontend --target builder --tag odirag/frontend-builder:acceptance .
+docker build --pull --no-cache --file Dockerfile.backend --target builder --tag odirag/backend-builder:acceptance .
+docker build --pull --no-cache --file Dockerfile.frontend --target builder --tag odirag/frontend-builder:acceptance .
 $scanDir = Join-Path $PWD 'artifacts\acceptance\image-scan'
 New-Item -ItemType Directory -Force -Path $scanDir | Out-Null
 $images = @(
@@ -588,15 +669,15 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 
 | 项目 | 结果 | 边界 |
 | --- | --- | --- |
-| Compose 服务 | 当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；Nginx 为 1.30.4 | development 配置未证明生产 secret/TLS/provenance；镜像未 fresh build/scan |
-| PostgreSQL | `pg_isready` accepting connections；server/client UTF8；current/heads 为 `0006_coze_task_operations (head)`；`alembic check` 无漂移；6 张 Phase16/Coze 表存在 | 未执行生产备份恢复、连接池耗尽和专用 PostgreSQL downgrade |
+| Compose 服务 | fresh backend/frontend runtime 下当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；Nginx 为 1.30.4 | 当前需 JSON trusted-proxy 临时值；普通默认 recreation 在兼容修复前会失败；development 配置未证明生产 secret/TLS/provenance |
+| PostgreSQL | `pg_isready` accepting connections；server/client UTF8；current/heads 为 `0006_coze_task_operations (head)`；`alembic check` 无漂移；6 张 Phase16/Coze 表存在；独立临时容器/卷备份恢复及 9 表 count 对比通过 | 未执行生产规模备份、RPO/RTO、连接池耗尽和专用 PostgreSQL downgrade |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
 | Qdrant | `/healthz` HTTP 200；当前 collection 数为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
 | worker/scheduler | worker inspect ping 成功；scheduler PID 存在；日志观察到 recovery/monitoring 调度 | 未执行真实 queued crawl/source-discovery 完成和故障恢复演练 |
-| Nginx/frontend | Nginx 1.30.4 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；安全响应头存在 | 仅交互式本地 HTTP 浏览器证据；未执行自动化 live Playwright、HTTPS 和生产浏览器门禁 |
+| Nginx/frontend | fresh frontend 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；真实栈 Playwright 到达 chat | live Playwright 在引用断言处失败：remote embedding 无 key 且无索引内容；HTTPS/生产浏览器门禁未通过 |
 | Docker/WSL 恢复 | Docker Desktop 4.85.0、Client/Server 29.6.2、Compose v5.3.1；`docker-desktop` WSL2 running；未删除 VHD/Volume/数据库 | 卡死 Desktop 进程已恢复；仍需目标主机容灾/重启演练 |
-| 当前镜像配置与现存本地镜像 | 已配置 Python 3.12 Alpine、Nginx 1.30.4 Alpine，backend runtime 移除 pip；现存本地镜像启动通过 | 本轮未 fresh build/Scout/SBOM，状态仍为供应链 UNVERIFIED |
-| Alembic | current/heads 为 `0006_coze_task_operations (head)`；`alembic check` 无新 upgrade operations | 未执行生产数据库 downgrade/backup/restore |
+| fresh 镜像与供应链 | backend/frontend `--pull --no-cache` 和两个 builder stage 构建成功；fresh runtime 八服务 healthy；backend runtime 移除 pip | frontend builder 报 2 high；Scout/SBOM/npm detail 未获外部元数据上传授权；trusted-proxy 兼容回归未固化；供应链仍为 UNVERIFIED/FAIL |
+| Alembic | fresh 1.19.0 current/heads 为 `0006_coze_task_operations (head)`；同库 1.18.5 check 无 drift | fresh 1.19.0 check 报约束名 remove/add drift；工具链未锁定；未执行生产数据库 downgrade |
 | scsia.org | 浏览器可读；backend DNS `198.18.0.208` 被 SSRF guard 拒绝；最新任务失败、0 文档、接口 422 | 不是 live crawl 成功；需要正常公网 DNS/出口及图片/OCR 抽取验收 |
 
-因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL 和本地服务启动门禁已完成；剩余生产门禁是：当前加固镜像 fresh build/Scout/SBOM、真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇真实官方站点抓取、真实索引/Qdrant points、代表性评测与负载、备份恢复、Git checkpoint 和 live Playwright。
+因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL、fresh build、本地服务和隔离备份恢复已完成；剩余生产门禁是：修复/回归 trusted-proxy 解析、锁定并验证 Alembic 工具链、处置 frontend 2 high、经授权完成 Scout/SBOM/npm detail、真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇真实官方站点抓取、真实索引/Qdrant points、代表性评测与负载、release checkpoint 和 cited-answer live Playwright。
