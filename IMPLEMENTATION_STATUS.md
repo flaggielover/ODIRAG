@@ -6,7 +6,7 @@ Last updated: 2026-08-06
 
 - Phase: Phase 16 - Production readiness audit and autonomous source discovery
 - Status: Local compatibility, migration, dependency, image-scan, and eight-service gates complete; external production acceptance pending
-- Next Action: Supply target-environment evidence for real providers, representative source crawling/indexing, production TLS/secrets, CI provenance, and operational recovery.
+- Next Action: Securely inject the Coze batch API token, rerun the bounded `scsia.org` batch acceptance, then supply the remaining provider, indexing, production TLS/secrets, CI provenance, and recovery evidence.
 
 ## Latest Verification Checkpoint
 
@@ -21,7 +21,7 @@ Last updated: 2026-08-06
 - 历史基线（已由 2026-08-06 最终复核替代）：后端曾记录 `210 passed`，前端曾记录 Vitest `16/16`；这些数字不代表当前门禁。
 - 历史供应链基线（已解决）：旧 backend/frontend 镜像曾分别报告 2 critical/4 high 与 6 critical/27 high；当前镜像已改用 `python:3.12-alpine3.24`、`nginx:1.30.4-alpine-slim`，移除 runtime pip，并完成 Scout/npm 复扫。
 - 当前本地 Compose：WSL2 与 Docker Engine 已无损恢复，Docker Client/Server 均为 29.6.2、Compose v5.3.1；PostgreSQL、Redis、Qdrant、backend、worker、scheduler、frontend、Nginx 八个服务全部 healthy。8080 首页、Nginx health、反向代理 API 均为 HTTP 200；API dependencies 全部 healthy。Qdrant health 200，但 collection 数为 0，因为数据库仍无已索引文档。
-- Coze live preflight：`/api/system/coze/status` 显示 disabled、token 未配置、batch workflow 未配置；`scripts/live_accept_coze_batch.py` 按设计退出码 `2`，状态 `batch_workflow_not_published`。没有伪造 live 成功。
+- Coze live preflight：新批量部署 URL 已写入本机未提交的 `.env`，`backend`、`worker`、`scheduler` 滚动重建后继续 healthy；容器配置确认 `enabled=true`、`batch_workflow_configured=true`、`contract=batch_crawl`，但 `token_configured=false`。部署 endpoint 的无凭据 POST 返回 HTTP 401，证明地址可达且鉴权生效；认证后的 `scripts/live_accept_coze_batch.py --source-column-id 1` 按设计退出码 `3`、状态 `coze_token_not_configured`，且在创建任务前停止。测试 fixture 已显式隔离本机 Coze 配置，完整后端回归仍为 `249 passed`。没有伪造 live 成功。
 - 隔离 API 冒烟：临时 Uvicorn + SQLite + deterministic provider 下，`/api/system/health` 返回 HTTP 200（database healthy、Redis unavailable、Qdrant disabled），管理员登录、Coze 状态、来源列表和抓取任务列表均 HTTP 200；临时数据库与日志已清理。
 
 ## Assumptions
@@ -143,7 +143,7 @@ Last updated: 2026-08-06
 - 2026-08-06 final regression: backend 249 passed with 80.52% coverage; Ruff/Black/mypy passed (206 files/154 source files); frontend lint/type-check/Vitest 17/build passed; fixture Playwright 9 passed and 1 live test skipped. The explicit real-stack test failed at cited chat with `A required provider is unavailable`, confirming no fake embedding fallback.
 - 2026-08-06 supply-chain remediation: direct dev dependency `@playwright/test` and transitive `playwright` were pinned to 1.55.1, closing GHSA-7mvr-c777-76hp without a major upgrade. Both npm audit modes report zero. Final backend builder `pip check` passed with Alembic 1.18.5. Docker Scout reports 0C/0H/0M/0L for final backend digest `dd27a657d1bf` (133 packages) and frontend digest `2d41a3e3c971` (26 packages); builder digest is `cd7bcad2eceb`.
 - 2026-08-06 Docker data relocation: active WSL VHDs are on D through a verified NTFS junction; initial backup, rollback snapshot, and failed blank-disk quarantine are retained under ignored `D:\RAG\.docker`. Current active data survived Docker Desktop stop/start and eight-service recreation; no Docker data, project volume, or database was deleted.
-- Coze batch preflight: auth and `/api/system/coze/status` passed with all live flags false; `scripts/live_accept_coze_batch.py` returned exit code 2 / `batch_workflow_not_published` without creating a task.
+- Coze batch preflight: the published batch deployment URL is loaded by backend/worker/scheduler with `enabled=true`, `batch_workflow_configured=true`, and `contract=batch_crawl`; an unauthenticated POST reached the deployment and returned HTTP 401. The API token remains absent. Authenticated `scripts/live_accept_coze_batch.py --source-column-id 1` returned exit code 3 / `coze_token_not_configured` before task creation, so live acceptance remains blocked rather than fabricated. Test settings now explicitly isolate local Coze environment values; the full backend suite remains 249 passed.
 - Phase 16 reports/checklist generated: `PRODUCTION_READINESS_REPORT.md` and `PRODUCTION_ACCEPTANCE_CHECKLIST.md`; production verdict remains NOT ACCEPTED pending live evidence
 - scsia.org example: browser read-only inspection reached the notice/detail routes; source `1` and column `1` were created as an explicit association experiment, but backend DNS resolved `scsia.org` to `198.18.0.208`, so SSRF public-network validation rejected connectivity and inline crawl. Latest task `3` remained failed/retryable and no documents were persisted. The refreshed backend returned structured `422 CRAWL_SOURCE_UNSAFE` with a request ID.
 

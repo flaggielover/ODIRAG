@@ -287,7 +287,7 @@ content gap detection → candidate official-site discovery → official-status 
 | column discovery | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | selector heuristics对 JS 网站有限 |
 | trial crawl | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | 只抓 bounded HTML；真实反爬/附件未验证 |
 | explicit Local Provider crawl contract | crawler/providers.py；services/crawl.py；crawler/state.py；repositories/crawl.py | test_fixture_crawl.py；test_crawl_reliability.py；provider unit tests；review convergence test | FIXTURE-VERIFIED | 仅确定性 fixture；真实公网 DNS/反爬和附件质量未验证；审核完成后等待任务会收敛为 completed |
-| Coze batch invocation/raw response/acceptance summary | crawler/providers.py；services/crawl.py；api/routes/crawl_tasks.py；frontend/src/views/CrawlTaskDetailView.vue | Coze provider/worker fixtures；CrawlTaskDetailView.spec.ts；coze-crawl.spec.ts | CONTRACT-VERIFIED | 新批量 workflow URL/token 尚未配置；不能宣称真实 Coze 结果 |
+| Coze batch invocation/raw response/acceptance summary | crawler/providers.py；services/crawl.py；api/routes/crawl_tasks.py；frontend/src/views/CrawlTaskDetailView.vue | Coze provider/worker fixtures；CrawlTaskDetailView.spec.ts；coze-crawl.spec.ts；认证 live preflight | CONTRACT-VERIFIED | 新批量 workflow URL 已发布并被本机三个服务加载，但 API token 尚未配置；真实请求、响应契约、文章持久化和质量仍未验证，不能宣称真实 Coze 成功 |
 | quality scoring | services/source_discovery.py；config thresholds | source discovery integration tests | FIXTURE-VERIFIED | 权重是启发式，未用生产标注集校准 |
 | manual approve/reject | routes/source_discovery.py；repository atomic update | integration + Playwright tests | FIXTURE-VERIFIED | 只有 admin，没有双人审批 |
 | activation to Source/SourceColumn | services/source_discovery.py；models/source.py | integration + Playwright tests；activation compensation test | FIXTURE-VERIFIED | PostgreSQL uniqueness/并发未 live；激活后不自动启动 crawl；异常补偿路径尚未在真实 PostgreSQL 演练 |
@@ -362,7 +362,7 @@ to the existing manual API path.
 | current real Compose Playwright | FAIL-EXPECTED；登录、sources、documents、chat 页面成功；查询返回 `A required provider is unavailable`，引用断言失败 | `embedding_provider=remote` 且无 key，数据库/Qdrant 无已索引文档；不是前端 live acceptance pass |
 | authenticated API / acceptance-summary | PASS-LOCAL；login、Coze status、sources、documents、crawl-tasks、acceptance-summary、invocations、failed-urls 均通过 | 现有 3 个 scsia 失败任务均为 0 documents/chunks/Qdrant points；不是成功抓取/索引证据 |
 | Qdrant live local state | PASS-LOCAL health；`/healthz` 200；collection count 0 | 服务正常但无已索引文档，collection/schema/point 持久化仍未验收 |
-| Coze batch live preflight | PASS-EXPECTED；`GET /api/system/coze/status` 显示 disabled/unconfigured；脚本退出码 2、`batch_workflow_not_published` | 没有批量部署 URL/token；不是 Live 成功 |
+| Coze batch live preflight | PARTIAL；新部署 URL 已加载，容器确认 enabled/batch configured，八服务 healthy；endpoint 无凭据 POST 返回 401；认证脚本退出码 3、`coze_token_not_configured`，在任务创建前停止；本机 Coze 配置已与测试 fixture 隔离，完整后端仍为 249 passed | 缺 API token，尚未向 Coze 发出带凭据的真实工作流请求；不是 Live 成功 |
 
 ### scsia.org 实验记录（非 PASS-LIVE）
 

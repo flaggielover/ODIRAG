@@ -439,6 +439,13 @@ docker compose exec -T backend python -c "from app.config import get_settings; s
 `COZE_MAX_RETRIES=2`。旧单篇部署如需验证，使用独立的 `COZE_LEGACY_API_URL`；不要增加
 `workflow_id` 或 Coze 远端轮询配置。然后执行：
 
+2026-08-06 本机检查点：新批量部署 URL 已配置，三个消费服务重建后 healthy，状态为
+`enabled=true`、`batch_workflow_configured=true`、`token_configured=false`；endpoint 无凭据
+POST 返回 HTTP 401，证明地址可达且鉴权生效。认证 preflight
+返回退出码 `3` / `coze_token_not_configured`，没有创建任务。只有把 Token 安全写入本机
+未提交的 `.env` 并重新创建 `backend`、`worker`、`scheduler` 后，才可继续下列 Live 命令；
+不得把当前检查点解释为真实 Coze 验收通过。
+
 先设置 `ODIRAG_SOURCE_COLUMN_ID` 为一个已人工批准并启用的真实栏目 ID；以下命令会在变量为空时立即失败：
 
 ~~~powershell
