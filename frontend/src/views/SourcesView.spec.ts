@@ -25,7 +25,7 @@ const source: Source = {
   city: null,
   organization_level: null,
   organization_type: 'association',
-  official_status: 'official',
+  official_status: 'association',
   homepage_url: 'https://scsia.org/',
   enabled: true,
   priority: 10,
@@ -80,5 +80,22 @@ describe('SourcesView', () => {
 
     expect(wrapper.get('[data-testid="coze-contract-status-batch"]').text()).toContain('unavailable')
     expect(wrapper.get('[data-testid="coze-contract-status-legacy"]').text()).toContain('healthy')
+  })
+
+  it('offers only implemented crawl providers when editing a source', async () => {
+    const wrapper = mount(SourcesView, {
+      global: {
+        stubs: {
+          AsyncState: { template: '<div><slot /></div>' },
+          ModalDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          PageHeader: { template: '<div><slot name="actions" /></div>' },
+          StatusBadge: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    const values = wrapper.findAll('#source-provider option').map((option) => option.attributes('value'))
+    expect(values).toEqual(['coze', 'local'])
   })
 })

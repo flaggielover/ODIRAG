@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ExecutionMode = Literal["queued", "inline"]
 
@@ -17,6 +17,14 @@ class SourceDiscoveryRunCreate(BaseModel):
     required_document_count: int = Field(default=3, ge=0, le=10_000)
     max_candidates: int | None = Field(default=None, ge=1, le=100)
     execution_mode: ExecutionMode = "queued"
+
+    @field_validator("topic")
+    @classmethod
+    def normalize_topic(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("topic must contain non-whitespace characters")
+        return normalized
 
 
 class SourceDiscoveryRunResponse(BaseModel):

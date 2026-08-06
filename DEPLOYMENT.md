@@ -119,6 +119,13 @@ peer address, so client-supplied forwarding chains cannot select another bucket.
 Compose subnet/IP, update both settings together. A directly exposed backend must leave
 `ODIRAG_TRUSTED_PROXY_IPS` empty.
 
+`ODIRAG_TRUSTED_PROXY_IPS` accepts either a JSON string array such as
+`["172.30.0.10", "10.0.0.0/8"]` or the historical comma-separated form
+`172.30.0.10,10.0.0.0/8`. Surrounding whitespace is removed, and an empty value disables
+forwarded-address trust. Every non-empty item must be an IP address or CIDR; malformed JSON,
+non-string JSON entries, and invalid network values stop backend startup with a redacted
+configuration error.
+
 Remote embedding/LLM/rerank keys must be backend secrets. If a provider is intentionally absent,
 leave its feature unavailable and rely on health/error reporting; never insert a fake production
 response. Pin and review image tags before release even though the development template exposes
@@ -139,6 +146,18 @@ deployment with a controlled gap run, inspect `/api/source-discovery/runs/{id}/e
 candidate remains `pending_approval`, approve it manually, then activate it and verify the created
 source/columns. This workstation validated the Brave response contract with an HTTP fixture and the
 workflow with SQLite; it did not execute a live Brave search or PostgreSQL/Redis worker delivery.
+
+Unattended gap scanning is opt-in and remains a bounded proposal workflow. Set
+`ODIRAG_SOURCE_DISCOVERY_AUTO_ENABLED=true` together with a JSON array (or comma-separated list) in
+`ODIRAG_SOURCE_DISCOVERY_AUTO_TOPICS`. Celery Beat then runs
+`odirag.source_discovery.scan_gaps` at `ODIRAG_SOURCE_DISCOVERY_AUTO_INTERVAL_SECONDS` (minimum
+five minutes; the compatibility alias `ODIRAG_SOURCE_DISCOVERY_AUTO_MIN_INTERVAL_SECONDS` is also
+accepted). Existing `pending`, `running`, or `awaiting_approval` runs for the same topic are
+skipped, and any recent run for that topic is held until the interval expires; a new run is queued
+only when the database still reports a gap. Candidates never activate automatically. Leave the flag false or the topic list empty until the Brave credential,
+official suffix policy, review owner, and alert routing are ready.
+Run exactly one Celery Beat scheduler for this task. The active/cooldown check limits duplicate
+work but is not an atomic distributed lock across multiple Beat replicas.
 
 ## Production Gate
 

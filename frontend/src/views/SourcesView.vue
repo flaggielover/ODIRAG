@@ -254,7 +254,7 @@ function isCozeContractConfigured(contract: CozeContract): boolean {
       <div class="form-field"><label for="source-name">名称</label><input id="source-name" v-model="form.name" class="input" required /></div>
       <div class="form-field"><label for="source-domain">域名</label><input id="source-domain" v-model="form.domain" class="input" required /></div>
       <div class="form-field"><label for="source-homepage">主页 URL</label><input id="source-homepage" v-model="form.homepage_url" class="input" type="url" required /></div>
-      <div class="form-field"><label for="source-provider">抓取 Provider</label><select id="source-provider" v-model="form.crawl_provider" class="select"><option value="coze">Coze 工作流（默认）</option><option value="local">Local（调试/兜底）</option><option value="playwright">Playwright</option></select></div>
+      <div class="form-field"><label for="source-provider">抓取 Provider</label><select id="source-provider" v-model="form.crawl_provider" class="select"><option value="coze">Coze 工作流（默认）</option><option value="local">Local（调试/兜底）</option></select></div>
       <div class="form-field"><label for="source-contract">Coze 契约</label><select id="source-contract" v-model="form.coze_contract_mode" class="select"><option value="batch_crawl">批量抓取</option><option value="legacy_single_article">单篇筛选（兼容）</option></select></div>
       <div class="form-field"><label for="source-region">地区</label><input id="source-region" v-model="form.region" class="input" /></div>
       <div class="form-field"><label for="source-city">城市</label><input id="source-city" v-model="form.city" class="input" /></div>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -31,7 +31,14 @@ class SourceDiscoveryRepository:
         required_source_count: int,
         required_document_count: int,
     ) -> tuple[int, int, dict[str, Any]]:
-        source_statement = select(func.count(Source.id)).where(Source.enabled.is_(True))
+        source_statement = (
+            select(func.count(func.distinct(Source.id)))
+            .join(Document, Document.source_id == Source.id)
+            .where(
+                Source.enabled.is_(True),
+                Document.final_status.in_(["approved", "indexed"]),
+            )
+        )
         document_statement = select(func.count(Document.id)).where(
             Document.final_status.in_(["approved", "indexed"])
         )
@@ -39,11 +46,14 @@ class SourceDiscoveryRepository:
             source_statement = source_statement.where(Source.region == region)
             document_statement = document_statement.where(Document.region == region)
         phrase = topic.strip()
-        if phrase:
-            pattern = f"%{phrase}%"
-            document_statement = document_statement.where(
-                or_(Document.title.ilike(pattern), Document.content.ilike(pattern))
-            )
+        escaped_phrase = phrase.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_phrase}%"
+        topic_match = or_(
+            Document.title.ilike(pattern, escape="\\"),
+            Document.content.ilike(pattern, escape="\\"),
+        )
+        source_statement = source_statement.where(topic_match)
+        document_statement = document_statement.where(topic_match)
         source_count = int((await self.session.execute(source_statement)).scalar_one() or 0)
         document_count = int((await self.session.execute(document_statement)).scalar_one() or 0)
         gap_detected = (
@@ -57,7 +67,8 @@ class SourceDiscoveryRepository:
             "existing_source_count": source_count,
             "existing_document_count": document_count,
             "gap_detected": gap_detected,
-            "matching_document_query": "title ILIKE topic OR content ILIKE topic",
+            "matching_source_query": "enabled source with an approved/indexed matching document",
+            "matching_document_query": "title/content contains the literal topic",
         }
         return source_count, document_count, evidence
 
@@ -66,6 +77,59 @@ class SourceDiscoveryRepository:
         await self.session.commit()
         await self.session.refresh(run)
         return run
+
+    async def auto_run_is_due(
+        self,
+        *,
+        topic: str,
+        min_interval_seconds: int,
+        now: datetime | None = None,
+    ) -> tuple[bool, str]:
+        """Check whether an unattended run may be created for ``topic``.
+
+        The scheduler deliberately scopes this guard to the topic, rather than
+        to a region, so a manual run cannot be duplicated by an automatic run
+        with a different optional region.  Active work always wins over the
+        cooldown; completed, no-gap, and failed runs are rate-limited by their
+        creation time.
+        """
+        if min_interval_seconds < 0:
+            raise ValueError("min_interval_seconds must be non-negative")
+
+        normalized_topic = topic.strip().casefold()
+        if not normalized_topic:
+            return False, "empty_topic"
+
+        topic_expression = func.lower(func.trim(SourceDiscoveryRun.topic))
+        active_result = await self.session.execute(
+            select(SourceDiscoveryRun.id)
+            .where(
+                topic_expression == normalized_topic,
+                SourceDiscoveryRun.status.in_(["pending", "running", "awaiting_approval"]),
+            )
+            .limit(1)
+        )
+        if active_result.scalar_one_or_none() is not None:
+            return False, "active_run"
+
+        latest_result = await self.session.execute(
+            select(SourceDiscoveryRun.created_at)
+            .where(topic_expression == normalized_topic)
+            .order_by(SourceDiscoveryRun.created_at.desc(), SourceDiscoveryRun.id.desc())
+            .limit(1)
+        )
+        latest_created_at = latest_result.scalar_one_or_none()
+        if latest_created_at is None:
+            return True, "due"
+
+        if latest_created_at.tzinfo is None:
+            latest_created_at = latest_created_at.replace(tzinfo=UTC)
+        current_time = now or datetime.now(UTC)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=UTC)
+        if latest_created_at > current_time - timedelta(seconds=min_interval_seconds):
+            return False, "cooldown"
+        return True, "due"
 
     async def get_run(self, run_id: int) -> SourceDiscoveryRun | None:
         result = await self.session.execute(

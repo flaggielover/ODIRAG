@@ -31,7 +31,7 @@ class SourceCreate(BaseModel):
     enabled: bool = True
     priority: int = Field(default=0, ge=0, le=10_000)
     crawl_frequency: str = Field(default="daily", min_length=1, max_length=64)
-    crawl_provider: Literal["coze", "local", "playwright"] = "coze"
+    crawl_provider: Literal["coze", "local"] = "coze"
     coze_contract_mode: Literal["legacy_single_article", "batch_crawl"] = "batch_crawl"
     columns: list[SourceColumnCreate] = Field(default_factory=list)
 
@@ -53,7 +53,7 @@ class SourceUpdate(BaseModel):
     enabled: bool | None = None
     priority: int | None = Field(default=None, ge=0, le=10_000)
     crawl_frequency: str | None = Field(default=None, min_length=1, max_length=64)
-    crawl_provider: Literal["coze", "local", "playwright"] | None = None
+    crawl_provider: Literal["coze", "local"] | None = None
     coze_contract_mode: Literal["legacy_single_article", "batch_crawl"] | None = None
 
 

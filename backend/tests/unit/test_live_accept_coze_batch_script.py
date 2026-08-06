@@ -179,3 +179,47 @@ def test_output_summary_contains_no_credentials_or_raw_response() -> None:
     assert "must-not-appear" not in rendered
     assert "request_json" not in rendered
     assert "raw_response_json" not in rendered
+
+
+def test_completed_invocation_with_empty_result_fails_acceptance() -> None:
+    api = FakeApi(
+        [
+            _configured(),
+            {
+                "id": 71,
+                "status": "completed",
+                "current_stage": "completed",
+                "accepted_count": 0,
+                "rejected_count": 0,
+                "pending_review_count": 0,
+                "failed_count": 0,
+                "discovered_count": 0,
+                "fetched_count": 0,
+                "provider_error_code": None,
+            },
+            [
+                {
+                    "contract": "batch_crawl",
+                    "status": "completed",
+                    "http_status_code": 200,
+                }
+            ],
+            {
+                "crawl_task_id": 71,
+                "database_document_count": 0,
+                "chunk_count": 0,
+                "qdrant_point_count": 0,
+            },
+        ]
+    )
+
+    exit_code, result = SCRIPT.run_acceptance(
+        api,
+        source_column_id=10,
+        timeout_seconds=1,
+        poll_interval_seconds=0,
+    )
+
+    assert exit_code == SCRIPT.EXIT_TASK_FAILED
+    assert result["status"] == "batch_result_empty"
+    assert result["batch_invocation_count"] == 1

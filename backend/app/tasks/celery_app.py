@@ -41,6 +41,13 @@ celery_app.conf.update(
             "task": "odirag.crawl.recover",
             "schedule": 60.0,
         },
+        "scan-source-discovery-gaps": {
+            "task": "odirag.source_discovery.scan_gaps",
+            "schedule": settings.source_discovery_auto_interval_seconds,
+            "options": {
+                "expires": max(settings.source_discovery_auto_interval_seconds - 30, 60),
+            },
+        },
     },
 )
 

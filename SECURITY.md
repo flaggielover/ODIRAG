@@ -53,6 +53,11 @@ Only the TLS ingress should be public. PostgreSQL, Redis, Qdrant, backend manage
 worker traffic belong on private networks with service authentication/TLS where supported. Keep
 CORS origins exact; CORS is not authorization.
 
+`ODIRAG_TRUSTED_PROXY_IPS` is an allowlist of peer IP addresses/CIDRs, not a proxy URL setting.
+It accepts a JSON string array, the legacy comma-separated form, or an empty value. Invalid values
+fail closed during configuration loading, and validation output suppresses the supplied value so
+an accidentally pasted proxy credential is not copied into startup logs.
+
 Application URL checks reduce SSRF risk but cannot completely eliminate DNS rebinding between
 validation and connection. Production crawling should also use an egress proxy/firewall that
 blocks private and cloud metadata ranges and, ideally, pins the validated destination IP while

@@ -14,8 +14,9 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY backend /build/backend
+COPY backend/requirements.lock /build/backend/requirements.lock
 RUN python -m pip install --upgrade pip \
-    && python -m pip install /build/backend
+    && python -m pip install --constraint /build/backend/requirements.lock /build/backend
 
 FROM ${PYTHON_IMAGE} AS runtime
 
@@ -30,7 +31,13 @@ RUN site_packages="$(python -c 'import sysconfig; print(sysconfig.get_paths()["p
     && rm -rf \
         /opt/venv/bin/pip* \
         "${site_packages}/pip" \
-        "${site_packages}"/pip-*.dist-info
+        "${site_packages}"/pip-*.dist-info \
+        /usr/local/bin/pip* \
+        /usr/local/lib/python*/ensurepip \
+        /usr/local/lib/python*/site-packages/pip \
+        /usr/local/lib/python*/site-packages/pip-*.dist-info \
+    && addgroup -S -g 10001 odirag \
+    && adduser -S -D -H -u 10001 -G odirag odirag
 WORKDIR /app/backend
 COPY --chown=10001:10001 backend /app/backend
 COPY --chown=10001:10001 config /app/config
@@ -51,7 +58,7 @@ RUN mkdir -p \
         /app/deployment/container-entrypoint.sh \
         /app/deployment/initialize-demo.sh
 
-USER 10001:10001
+USER odirag:odirag
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=20s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/system/health', timeout=3)" || exit 1

@@ -40,6 +40,22 @@ POST /api/source-discovery/runs
 
 如果 Celery 入队失败，API 先把运行改为 `failed` 并写 `queue_failure` 事件，再返回 503。重试复用候选审计记录、删除旧的试抓栏目并重新执行，避免 `(run_id, homepage_url)` 唯一约束造成永久空跑。
 
+## 4.1 可选无人值守缺口调度
+
+可操作的部署示例与验收命令另见 [`13_source_discovery_auto_schedule.md`](13_source_discovery_auto_schedule.md)。
+
+栏目扩展也可以由 Celery Beat 定期提出候选运行，但默认关闭。只有同时设置
+`ODIRAG_SOURCE_DISCOVERY_AUTO_ENABLED=true` 和非空的
+`ODIRAG_SOURCE_DISCOVERY_AUTO_TOPICS` 才会创建调度请求；主题支持 JSON 字符串数组和历史逗号
+分隔格式，空白会被清理并进行不区分大小写的去重。`ODIRAG_SOURCE_DISCOVERY_AUTO_INTERVAL_SECONDS`
+控制 Beat 周期和同主题冷却窗口，最小值为 300 秒。
+
+每次调度先查询内容缺口，再检查同主题是否存在 `pending`、`running` 或
+`awaiting_approval` 运行，以及最近运行是否仍在冷却期。满足条件后才创建运行并投递
+`odirag.source_discovery.run`；队列故障会把运行置为 `failed`，写入 `queue_failure` 事件，并在任务结果
+中返回 `partial_failed` 和失败计数。调度任务本身不直连候选 Provider；入队的 worker 负责执行发现，
+但候选仍停在人工审批阶段。整个流程不会绕过 HTTPS/SSRF 或人工审批边界。
+
 ## 4. 核心类与文件
 
 - `backend/app/models/source_discovery.py`：四张 Phase 16 业务表。
@@ -159,4 +175,3 @@ Repository 按主题和地区统计启用来源与已批准文档，和请求中
 ## 12. 实践修改练习
 
 为不同地区增加“官方身份策略”配置表，而不是只使用全局后缀列表。要求：策略按地区版本化；每条规则记录生效时间、允许后缀和人工说明；一次 discovery run 必须保存使用的策略版本快照；旧运行回放时不得读取新规则；迁移支持 PostgreSQL 和 SQLite；API 提供只读策略与管理员发布接口；测试覆盖规则变更、并发发布、旧快照回放和无匹配策略时的安全拒绝。
-

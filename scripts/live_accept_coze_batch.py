@@ -242,6 +242,13 @@ def run_acceptance(
     if not 200 <= http_status < 300:
         summary["status"] = "batch_invocation_failed"
         return EXIT_TASK_FAILED, summary
+    if (
+        summary["discovered_count"] < 1
+        or summary["fetched_count"] < 1
+        or summary["database_document_count"] < 1
+    ):
+        summary["status"] = "batch_result_empty"
+        return EXIT_TASK_FAILED, summary
     return EXIT_OK, summary
 
 

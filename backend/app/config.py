@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from ipaddress import ip_network
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
         populate_by_name=True,
+        hide_input_in_errors=True,
     )
 
     app_name: str = "ODIRAG API"
@@ -43,7 +45,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("../data")
     crawler_timeout_seconds: float = Field(default=20.0, gt=0, le=300)
     crawler_max_redirects: int = Field(default=5, ge=0, le=20)
-    source_discovery_provider: Literal["brave", "disabled", "deterministic"] = "brave"
+    source_discovery_provider: Literal["brave", "disabled"] = "brave"
     source_discovery_search_url: str = "https://api.search.brave.com/res/v1/web/search"
     source_discovery_api_key: SecretStr | None = None
     source_discovery_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
@@ -52,6 +54,25 @@ class Settings(BaseSettings):
     source_discovery_trial_max_documents: int = Field(default=5, ge=1, le=50)
     source_discovery_trial_min_chars: int = Field(default=160, ge=20, le=100_000)
     source_discovery_quality_threshold: float = Field(default=0.65, ge=0, le=1)
+    # Periodic source-pool expansion is opt-in.  An empty topic list always makes
+    # the scheduler a no-op, even when the task itself is enabled.
+    source_discovery_auto_enabled: bool = False
+    source_discovery_auto_topics: Annotated[list[str], NoDecode] = Field(
+        default_factory=list, max_length=100
+    )
+    source_discovery_auto_interval_seconds: int = Field(
+        default=3600,
+        ge=300,
+        le=7 * 24 * 3600,
+        validation_alias=AliasChoices(
+            "ODIRAG_SOURCE_DISCOVERY_AUTO_INTERVAL_SECONDS",
+            "ODIRAG_SOURCE_DISCOVERY_AUTO_MIN_INTERVAL_SECONDS",
+        ),
+    )
+    source_discovery_auto_region: str | None = Field(default=None, max_length=128)
+    source_discovery_auto_organization_level: str | None = Field(default=None, max_length=64)
+    source_discovery_auto_required_source_count: int = Field(default=1, ge=1, le=100)
+    source_discovery_auto_required_document_count: int = Field(default=3, ge=0, le=10_000)
     source_discovery_official_suffixes: list[str] = Field(
         default_factory=lambda: [".gov.cn", ".gov", ".edu.cn"]
     )
@@ -189,7 +210,7 @@ class Settings(BaseSettings):
     rate_limit_default_requests: int = Field(default=600, ge=1, le=1_000_000)
     # Only these direct peers may supply a single X-Forwarded-For client address.
     # Leave empty when the ASGI server is exposed directly.
-    trusted_proxy_ips: list[str] = Field(default_factory=list)
+    trusted_proxy_ips: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     @field_validator(
         "qdrant_api_key",
@@ -227,9 +248,83 @@ class Settings(BaseSettings):
     @field_validator("trusted_proxy_ips", mode="before")
     @classmethod
     def parse_trusted_proxy_ips(cls, value: object) -> object:
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        if not isinstance(value, str):
+            return value
+
+        raw_value = value.strip()
+        if not raw_value:
+            return []
+
+        if raw_value.startswith("["):
+            try:
+                decoded = json.loads(raw_value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "trusted_proxy_ips must be a valid JSON string array or a comma-separated list"
+                ) from exc
+            if not isinstance(decoded, list) or any(not isinstance(item, str) for item in decoded):
+                raise ValueError(
+                    "trusted_proxy_ips must be a JSON string array or a comma-separated list"
+                )
+            return [item.strip() for item in decoded if item.strip()]
+
+        return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+    @field_validator("source_discovery_auto_topics", mode="before")
+    @classmethod
+    def parse_source_discovery_auto_topics(cls, value: object) -> object:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            if any(not isinstance(item, str) for item in value):
+                raise ValueError("source_discovery_auto_topics must contain only strings")
+            return list(value)
+        if not isinstance(value, str):
+            raise ValueError(
+                "source_discovery_auto_topics must be a JSON string array or a comma-separated list"
+            )
+
+        raw_value = value.strip()
+        if not raw_value:
+            return []
+        if raw_value.startswith("["):
+            try:
+                decoded = json.loads(raw_value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "source_discovery_auto_topics must be a valid JSON string array "
+                    "or a comma-separated list"
+                ) from exc
+            if not isinstance(decoded, list) or any(not isinstance(item, str) for item in decoded):
+                raise ValueError(
+                    "source_discovery_auto_topics must be a JSON string array "
+                    "or a comma-separated list"
+                )
+            return decoded
+        if raw_value.startswith(("{", '"')):
+            raise ValueError(
+                "source_discovery_auto_topics must be a JSON string array or a comma-separated list"
+            )
+        return raw_value.split(",")
+
+    @field_validator("source_discovery_auto_topics")
+    @classmethod
+    def normalize_source_discovery_auto_topics(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            topic = item.strip()
+            if not topic:
+                continue
+            if len(topic) > 255:
+                raise ValueError(
+                    "source_discovery_auto_topics entries must be at most 255 characters"
+                )
+            dedupe_key = topic.casefold()
+            if dedupe_key not in seen:
+                normalized.append(topic)
+                seen.add(dedupe_key)
+        return normalized
 
     @field_validator("trusted_proxy_ips")
     @classmethod
@@ -238,7 +333,7 @@ class Settings(BaseSettings):
             try:
                 ip_network(item, strict=False)
             except ValueError as exc:
-                message = f"trusted_proxy_ips contains an invalid IP or CIDR: {item}"
+                message = "trusted_proxy_ips contains an invalid IP address or CIDR"
                 raise ValueError(message) from exc
         return value
 
@@ -261,8 +356,6 @@ class Settings(BaseSettings):
                 raise ValueError("rate limiting must be enabled outside development/test")
             if self.rate_limit_backend != "redis":
                 raise ValueError("rate_limit_backend must be redis outside development/test")
-            if self.source_discovery_provider == "deterministic":
-                raise ValueError("deterministic source discovery is restricted to development/test")
             if self.source_discovery_provider == "brave":
                 search_endpoint = urlsplit(self.source_discovery_search_url)
                 if (
@@ -272,6 +365,14 @@ class Settings(BaseSettings):
                     raise ValueError(
                         "production Brave source discovery requires the official HTTPS endpoint"
                     )
+            if self.source_discovery_auto_enabled and not self.source_discovery_auto_topics:
+                raise ValueError(
+                    "source_discovery_auto_topics is required when automatic discovery is enabled"
+                )
+            if self.source_discovery_auto_enabled and self.source_discovery_provider == "disabled":
+                raise ValueError(
+                    "automatic source discovery requires an enabled discovery provider"
+                )
             demo_only_providers = {
                 "embedding_provider": self.embedding_provider == "deterministic",
                 "embedding_cache_provider": self.embedding_cache_provider == "memory",

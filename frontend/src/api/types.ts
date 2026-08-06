@@ -82,7 +82,7 @@ export interface SourceInput {
   enabled: boolean
   priority: number
   crawl_frequency: string
-  crawl_provider?: CrawlProvider
+  crawl_provider?: SupportedCrawlProvider
   coze_contract_mode?: CozeContract
   columns: Array<{
     column_key: string
@@ -105,7 +105,8 @@ export interface SourceTestResult {
   error_type: string | null
 }
 
-export type CrawlProvider = 'coze' | 'local' | 'playwright'
+export type SupportedCrawlProvider = 'coze' | 'local'
+export type CrawlProvider = SupportedCrawlProvider | 'playwright'
 export type CozeContract = 'legacy_single_article' | 'batch_crawl'
 
 export interface CozeStatus {

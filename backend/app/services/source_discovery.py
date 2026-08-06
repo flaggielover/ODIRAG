@@ -353,7 +353,7 @@ class SourceDiscoveryService:
         candidate.validation_final_url = response.url
         candidate.official_score = Decimal(str(round(score, 4)))
         candidate.official_evidence_json = evidence
-        if not same_site or not suffix:
+        if not same_site or not suffix or final.scheme != "https":
             candidate.official_status = "unverified"
             candidate.status = "validation_failed"
             candidate.rejection_reason = "OFFICIAL_STATUS_NOT_VERIFIED"
@@ -434,7 +434,10 @@ class SourceDiscoveryService:
                 selectors_json={
                     "list_link": "a[href]",
                     "title": "h1, title",
-                    "content": "article, main, .content, #content, body",
+                    "content": (
+                        "article, main, [role='main'], .article, .detail, "
+                        ".content, #content, .article-content, .detail-content"
+                    ),
                 },
                 pagination_json={"next_selector": "a[rel='next']"},
                 discovery_evidence_json={
@@ -497,22 +500,57 @@ class SourceDiscoveryService:
                 if len(detail_urls) >= self.settings.source_discovery_trial_max_documents:
                     break
             if not detail_urls:
-                detail_urls = [listing.url]
+                stats = TrialStats(0, 0, 0, 1, 0)
+                column.trial_discovered_count = 0
+                column.trial_fetched_count = 0
+                column.trial_success_count = 0
+                column.trial_failed_count = 1
+                column.trial_average_chars = 0
+                column.quality_score = Decimal("0")
+                column.status = "failed"
+                column.error_message = "NO_DETAIL_LINKS"
+                await self.repository.add_event(
+                    SourceDiscoveryEvent(
+                        run_id=run.id,
+                        candidate_id=candidate.id,
+                        stage="trial_crawl",
+                        from_status="columns_discovered",
+                        to_status="failed",
+                        message="Trial crawl found no distinct same-site detail links.",
+                        details_json={
+                            "column_id": column.id,
+                            "error_code": "NO_DETAIL_LINKS",
+                            "discovered": 0,
+                            "fetched": 0,
+                            "success": 0,
+                            "failed": 1,
+                        },
+                    )
+                )
+                await self.repository.commit()
+                return stats
             success = 0
             failed = 0
             chars: list[int] = []
+            content_selector = column.selectors_json.get("content")
+            if not isinstance(content_selector, str) or not content_selector.strip():
+                content_selector = "article, main, [role='main'], .content, #content"
             for detail_url in detail_urls:
                 try:
-                    response = (
-                        listing
-                        if detail_url == listing.url
-                        else await self.fetcher.fetch(detail_url)
-                    )
+                    response = await self.fetcher.fetch(detail_url)
                     parsed = BeautifulSoup(response.text, "lxml")
-                    for node in parsed.select("script, style, noscript"):
+                    for node in parsed.select(
+                        "script, style, noscript, nav, header, footer, aside, form"
+                    ):
                         node.decompose()
-                    text = parsed.get_text(" ", strip=True)
-                    if len(text) < self.settings.source_discovery_trial_min_chars:
+                    content_nodes = parsed.select(content_selector)
+                    texts = [node.get_text(" ", strip=True) for node in content_nodes]
+                    text = max(texts, key=len, default="")
+                    if len(
+                        text
+                    ) < self.settings.source_discovery_trial_min_chars or not _topic_matches(
+                        text, run.topic
+                    ):
                         failed += 1
                         continue
                     success += 1
@@ -538,7 +576,7 @@ class SourceDiscoveryService:
             )
             column.quality_score = Decimal(str(round(0.5 * ratio + 0.5 * richness, 4)))
             column.status = "trial_crawled" if stats.success else "failed"
-            column.error_message = None if stats.success else "NO_QUALITY_DOCUMENTS"
+            column.error_message = None if stats.success else "NO_RELEVANT_DETAIL_DOCUMENTS"
             await self.repository.add_event(
                 SourceDiscoveryEvent(
                     run_id=run.id,
@@ -554,6 +592,8 @@ class SourceDiscoveryService:
                         "success": stats.success,
                         "failed": stats.failed,
                         "average_chars": stats.average_chars,
+                        "content_selector": content_selector,
+                        "topic_relevance_required": True,
                     },
                 )
             )
@@ -909,6 +949,20 @@ def build_source_discovery_service(
     fetcher: HttpFetcher | None = None,
 ) -> SourceDiscoveryService:
     return SourceDiscoveryService(repository, settings, provider=provider, fetcher=fetcher)
+
+
+def _topic_matches(text: str, topic: str) -> bool:
+    normalized_text = " ".join(text.lower().split())
+    normalized_topic = " ".join(topic.lower().split())
+    if not normalized_topic:
+        return False
+    if normalized_topic in normalized_text:
+        return True
+    tokens = [token for token in normalized_topic.split() if len(token) >= 2]
+    if not tokens:
+        return False
+    required = (len(tokens) + 1) // 2
+    return sum(token in normalized_text for token in tokens) >= required
 
 
 def _build_query(topic: str, region: str | None, organization_level: str | None) -> str:

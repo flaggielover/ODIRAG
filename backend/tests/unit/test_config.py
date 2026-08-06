@@ -1,3 +1,6 @@
+from pathlib import Path
+from uuid import uuid4
+
 import pytest
 from pydantic import ValidationError
 
@@ -44,15 +47,118 @@ def test_production_accepts_empty_optional_secret_as_unset() -> None:
     assert settings.admin_password_hash is not None
 
 
-def test_production_rejects_deterministic_source_discovery() -> None:
-    with pytest.raises(ValidationError, match="deterministic source discovery"):
+def test_source_discovery_rejects_non_runtime_provider() -> None:
+    with pytest.raises(ValidationError, match="source_discovery_provider"):
+        Settings(
+            source_discovery_provider="deterministic",
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ('["health", " education ", "health"]', ["health", "education"]),
+        ("Health, education, health", ["Health", "education"]),
+        ("   ", []),
+    ],
+)
+def test_automatic_source_discovery_topics_accept_json_csv_and_empty(
+    value: str, expected: list[str]
+) -> None:
+    settings = Settings(source_discovery_auto_topics=value)
+    assert settings.source_discovery_auto_topics == expected
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ('["policy", " industry "]', ["policy", "industry"]),
+        ("policy, industry", ["policy", "industry"]),
+        ("", []),
+    ],
+)
+def test_automatic_source_discovery_topics_environment_formats(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_value: str,
+    expected: list[str],
+) -> None:
+    monkeypatch.setenv("ODIRAG_SOURCE_DISCOVERY_AUTO_TOPICS", raw_value)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.source_discovery_auto_topics == expected
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    [
+        '["policy"',
+        '["policy", 42]',
+        '{"topic":"policy"}',
+        '"policy"',
+    ],
+)
+def test_invalid_automatic_source_discovery_topics_are_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("ODIRAG_SOURCE_DISCOVERY_AUTO_TOPICS", raw_value)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+
+    message = str(exc_info.value)
+    assert "source_discovery_auto_topics" in message
+    assert raw_value not in message
+
+
+def test_automatic_source_discovery_interval_has_a_safe_lower_bound() -> None:
+    with pytest.raises(ValidationError, match="source_discovery_auto_interval_seconds"):
+        Settings(source_discovery_auto_interval_seconds=299)
+
+
+def test_automatic_source_discovery_accepts_min_interval_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ODIRAG_SOURCE_DISCOVERY_AUTO_INTERVAL_SECONDS", raising=False)
+    monkeypatch.setenv("ODIRAG_SOURCE_DISCOVERY_AUTO_MIN_INTERVAL_SECONDS", "600")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.source_discovery_auto_interval_seconds == 600
+
+
+def test_automatic_source_discovery_requires_topics_in_production() -> None:
+    with pytest.raises(ValidationError, match="source_discovery_auto_topics"):
         Settings(
             environment="production",
             jwt_secret_key="a-production-secret-that-is-long-enough",
             bootstrap_admin=False,
             admin_password="",
-            source_discovery_provider="deterministic",
             cors_origins=["https://admin.example"],
+            source_discovery_auto_enabled=True,
+            embedding_provider="remote",
+            embedding_cache_provider="redis",
+            vector_store_provider="qdrant",
+            rerank_provider="none",
+        )
+
+
+def test_automatic_source_discovery_rejects_disabled_provider_in_production() -> None:
+    with pytest.raises(ValidationError, match="enabled discovery provider"):
+        Settings(
+            environment="production",
+            jwt_secret_key="a-production-secret-that-is-long-enough",
+            bootstrap_admin=False,
+            admin_password="",
+            cors_origins=["https://admin.example"],
+            source_discovery_provider="disabled",
+            source_discovery_auto_enabled=True,
+            source_discovery_auto_topics=["health"],
+            embedding_provider="remote",
+            embedding_cache_provider="redis",
+            vector_store_provider="qdrant",
+            rerank_provider="none",
         )
 
 
@@ -131,6 +237,77 @@ def test_trusted_proxy_ips_are_normalized_and_validated() -> None:
 
     with pytest.raises(ValidationError, match="trusted_proxy_ips"):
         Settings(trusted_proxy_ips=["not-an-ip"])
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("172.30.0.10, 2001:db8::/64", ["172.30.0.10", "2001:db8::/64"]),
+        ('[" 172.30.0.10 ", "2001:db8::/64"]', ["172.30.0.10", "2001:db8::/64"]),
+        ("", []),
+        ("   ", []),
+        ("[]", []),
+    ],
+)
+def test_trusted_proxy_ips_environment_formats(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_value: str,
+    expected: list[str],
+) -> None:
+    monkeypatch.setenv("ODIRAG_TRUSTED_PROXY_IPS", raw_value)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.trusted_proxy_ips == expected
+
+
+def test_compose_csv_trusted_proxy_environment_regression(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ODIRAG_TRUSTED_PROXY_IPS", " 172.30.0.10 , 10.0.0.0/8 ")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.trusted_proxy_ips == ["172.30.0.10", "10.0.0.0/8"]
+
+
+def test_dotenv_csv_trusted_proxy_environment_regression() -> None:
+    env_file = Path(".tmp") / f"config-compat-{uuid4().hex}.env"
+    try:
+        env_file.write_text(
+            "ODIRAG_TRUSTED_PROXY_IPS= 172.30.0.10 , 10.0.0.0/8 \n",
+            encoding="utf-8",
+        )
+
+        settings = Settings(_env_file=env_file)
+
+        assert settings.trusted_proxy_ips == ["172.30.0.10", "10.0.0.0/8"]
+    finally:
+        env_file.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    [
+        '["172.30.0.10"',
+        '["http://proxy-user:proxy-password@example.invalid"]',
+        '["172.30.0.10", 42]',
+    ],
+)
+def test_invalid_trusted_proxy_environment_errors_are_safe(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("ODIRAG_TRUSTED_PROXY_IPS", raw_value)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+
+    message = str(exc_info.value)
+    assert "trusted_proxy_ips" in message
+    assert "proxy-user" not in message
+    assert "proxy-password" not in message
+    assert raw_value not in message
 
 
 def test_celery_urls_derive_separate_redis_databases() -> None:

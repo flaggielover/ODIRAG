@@ -123,14 +123,6 @@ class DisabledCandidateDiscoveryProvider:
 def build_candidate_provider(settings: Settings) -> CandidateDiscoveryProvider:
     if settings.source_discovery_provider == "disabled":
         return DisabledCandidateDiscoveryProvider()
-    if settings.source_discovery_provider == "deterministic":
-        if settings.environment not in {"development", "test"}:
-            raise ProviderUnavailableError(
-                "source-discovery", "deterministic provider is restricted to development/test"
-            )
-        raise ProviderUnavailableError(
-            "source-discovery", "deterministic provider must be injected by a test or demo"
-        )
     return BraveCandidateDiscoveryProvider(
         endpoint=settings.source_discovery_search_url,
         api_key=(

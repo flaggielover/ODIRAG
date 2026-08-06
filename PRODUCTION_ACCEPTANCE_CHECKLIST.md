@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-05。每一项都必须在目标环境执行并保存原始输出。本机 WSL2/Docker Desktop 已无损恢复；当前 backend/frontend 已 fresh build，八个 development 服务、隔离 PostgreSQL 备份恢复、Redis、Qdrant health、worker、scheduler、Nginx 1.30.4、frontend、8080 API 和 acceptance-summary 已通过真实本地验收。fresh build 同时暴露 trusted-proxy 环境值兼容回归、Alembic 1.19.0 drift 和 frontend builder 2 high；Scout/SBOM/npm advisory detail 因外部元数据上传未获明确授权而未执行。生产 secret、远程 provider 凭据、真实索引/Qdrant points 和代表性真实抓取也仍未验收。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-06。每一项都必须在目标环境执行并保存原始输出。本机 WSL2/Docker Desktop 已无损恢复；backend/frontend 已 fresh build，八个 development 服务、隔离 PostgreSQL 迁移 round-trip/备份恢复、Redis、Qdrant health、worker、scheduler、Nginx 1.30.4-alpine-slim、frontend、8080 API 和 acceptance-summary 已通过真实本地验收。trusted-proxy CSV/JSON/empty 兼容、Alembic 1.18.5 锁定、前端 2 high 修复、两种 npm audit、SBOM 输入检查和 backend/frontend Scout 均已闭环。生产 secret、真实 provider、代表性抓取/索引/Qdrant points、TLS、CI/registry provenance 仍未验收。
 
 ## 证据规则
 
@@ -191,10 +191,10 @@ docker compose exec -T backend alembic check
 $acceptanceDb = 'odirag_acceptance_migration'
 docker compose exec -T postgres psql -U $pgUser -d $pgDb -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $acceptanceDb;"
 docker compose exec -T postgres psql -U $pgUser -d $pgDb -v ON_ERROR_STOP=1 -c "CREATE DATABASE $acceptanceDb;"
-docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; alembic upgrade head'
-docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; alembic downgrade 0003_crawl_reliability'
-docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; alembic upgrade head'
-docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; alembic current'
+docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; /opt/venv/bin/alembic upgrade head'
+docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; /opt/venv/bin/alembic downgrade 0003_crawl_reliability'
+docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; /opt/venv/bin/alembic upgrade head'
+docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; /opt/venv/bin/alembic current'
 ~~~
 
 预期：upgrade、downgrade、再 upgrade 都退出 0，最终 `0006_coze_task_operations (head)`。完成后清理专用数据库或按组织保留审计证据。
@@ -663,21 +663,21 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 
 只有 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、frontend、Alembic 和所选真实 provider 全部 PASS-LIVE，且日志/trace/备份恢复证据已归档，才可把部署标为生产接受。
 
-### 本机 development 栈证据（2026-08-05，当前恢复检查点）
+### 本机 development 栈证据（2026-08-06，最终本地检查点）
 
 以下结果是真实本地 Compose 运行结果，标记为 `VERIFIED-LOCAL`。它们证明当前 development 栈，但不能替代目标生产环境的 `PASS-LIVE`：
 
 | 项目 | 结果 | 边界 |
 | --- | --- | --- |
-| Compose 服务 | fresh backend/frontend runtime 下当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；Nginx 为 1.30.4 | 当前需 JSON trusted-proxy 临时值；普通默认 recreation 在兼容修复前会失败；development 配置未证明生产 secret/TLS/provenance |
-| PostgreSQL | `pg_isready` accepting connections；server/client UTF8；current/heads 为 `0006_coze_task_operations (head)`；`alembic check` 无漂移；6 张 Phase16/Coze 表存在；独立临时容器/卷备份恢复及 9 表 count 对比通过 | 未执行生产规模备份、RPO/RTO、连接池耗尽和专用 PostgreSQL downgrade |
+| Compose 服务 | fresh backend/frontend runtime 下当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；Nginx 为 1.30.4-alpine-slim；8080 与首页/API 均为 200 | development 配置未证明生产 secret/TLS、目标持久化和 registry provenance |
+| PostgreSQL | `pg_isready` accepting connections；current 为 `0006_coze_task_operations (head)`；existing DB `alembic check` 无漂移；专用 PostgreSQL 完成 fresh upgrade→downgrade 0003→upgrade；隔离备份恢复及 9 表 count 对比通过 | 未对生产业务库直接 downgrade；未验证生产规模、RPO/RTO、连接池耗尽和维护窗口 |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
 | Qdrant | `/healthz` HTTP 200；当前 collection 数为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
-| worker/scheduler | worker inspect ping 成功；scheduler PID 存在；日志观察到 recovery/monitoring 调度 | 未执行真实 queued crawl/source-discovery 完成和故障恢复演练 |
+| worker/scheduler | worker inspect ping 成功；任务注册包含 `odirag.source_discovery.scan_gaps`；scheduler healthy 并发送 recovery；显式非 root UID/GID 10001，无旧 superuser 警告 | 自动 gap scan 默认关闭；未执行真实 Brave/Coze queued crawl 和长期 beat/故障恢复演练 |
 | Nginx/frontend | fresh frontend 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；真实栈 Playwright 到达 chat | live Playwright 在引用断言处失败：remote embedding 无 key 且无索引内容；HTTPS/生产浏览器门禁未通过 |
 | Docker/WSL 恢复 | Docker Desktop 4.85.0、Client/Server 29.6.2、Compose v5.3.1；`docker-desktop` WSL2 running；未删除 VHD/Volume/数据库 | 卡死 Desktop 进程已恢复；仍需目标主机容灾/重启演练 |
-| fresh 镜像与供应链 | backend/frontend `--pull --no-cache` 和两个 builder stage 构建成功；fresh runtime 八服务 healthy；backend runtime 移除 pip | frontend builder 报 2 high；Scout/SBOM/npm detail 未获外部元数据上传授权；trusted-proxy 兼容回归未固化；供应链仍为 UNVERIFIED/FAIL |
-| Alembic | fresh 1.19.0 current/heads 为 `0006_coze_task_operations (head)`；同库 1.18.5 check 无 drift | fresh 1.19.0 check 报约束名 remove/add drift；工具链未锁定；未执行生产数据库 downgrade |
+| fresh 镜像与供应链 | backend/frontend `--pull --no-cache` 和最新 builder 构建成功；runtime 排除 `.env`/tests、移除 pip、使用非 root 后端和 slim Nginx；npm 两种 audit 为 0；Scout backend 133 packages、frontend 26 packages，均 0C/0H/0M/0L | 只证明本地 digests `dd27a657d1bf` / `2d41a3e3c971`；CI、目标 registry 复扫、签名和 provenance 未验证 |
+| Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing/fresh PostgreSQL 均到 `0006` 且 `check` 无漂移；专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
 | scsia.org | 浏览器可读；backend DNS `198.18.0.208` 被 SSRF guard 拒绝；最新任务失败、0 文档、接口 422 | 不是 live crawl 成功；需要正常公网 DNS/出口及图片/OCR 抽取验收 |
 
-因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL、fresh build、本地服务和隔离备份恢复已完成；剩余生产门禁是：修复/回归 trusted-proxy 解析、锁定并验证 Alembic 工具链、处置 frontend 2 high、经授权完成 Scout/SBOM/npm detail、真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇真实官方站点抓取、真实索引/Qdrant points、代表性评测与负载、release checkpoint 和 cited-answer live Playwright。
+因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL、配置兼容、Alembic、fresh build、本地八服务、隔离迁移/备份恢复、npm 和本地 Scout 已完成；剩余生产门禁是：真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇代表性官方站点抓取、真实索引/Qdrant points、代表性评测与负载、生产 TLS/secret、CI/registry provenance、release checkpoint 和 cited-answer live Playwright。

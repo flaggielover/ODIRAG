@@ -156,6 +156,24 @@ async def test_source_crud_api(client: httpx.AsyncClient, auth_headers: dict[str
     assert deleted.status_code == 204
 
 
+async def test_source_api_does_not_advertise_unimplemented_playwright_provider(
+    client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    created = await client.post(
+        "/api/sources",
+        headers=auth_headers,
+        json={
+            "source_key": "unsupported-playwright",
+            "name": "Unsupported Playwright source",
+            "domain": "example.gov",
+            "homepage_url": "https://example.gov/",
+            "crawl_provider": "playwright",
+        },
+    )
+
+    assert created.status_code == 422
+
+
 async def test_crawl_queue_failure_is_persisted_and_retryable(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],

@@ -58,7 +58,10 @@ class RemoteEmbeddingProvider:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        # Environment values commonly contain accidental surrounding whitespace.
+        # Treat a whitespace-only value as an unconfigured credential so it cannot
+        # be sent as an Authorization header or masquerade as a live provider.
+        self.api_key = api_key.strip() if api_key and api_key.strip() else None
         self.model_name = model_name
         self.dimensions = dimensions
         self.timeout_seconds = timeout_seconds

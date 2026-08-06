@@ -29,10 +29,12 @@ class FixtureCandidateProvider:
     url: str = "https://agency.gov.cn/"
     name: str = "fixture-test"
     called: int = 0
+    expected_query_term: str | None = "support"
 
     async def search(self, query: str, *, limit: int) -> list[CandidateHit]:
         self.called += 1
-        assert "support" in query.lower()
+        if self.expected_query_term:
+            assert self.expected_query_term in query.lower()
         assert limit > 0
         return [
             CandidateHit(
@@ -208,6 +210,17 @@ async def test_source_discovery_stops_when_database_coverage_has_no_gap(
                 index_status="pending",
             )
         )
+        session.add(
+            Source(
+                source_key="unrelated-coverage-source",
+                name="Unrelated coverage source",
+                domain="unrelated.gov.cn",
+                region="Sichuan",
+                homepage_url="https://unrelated.gov.cn/",
+                official_status="official",
+                enabled=True,
+            )
+        )
         await session.commit()
 
     created = await client.post(
@@ -225,8 +238,69 @@ async def test_source_discovery_stops_when_database_coverage_has_no_gap(
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "no_gap"
     assert created.json()["gap_detected"] is False
+    assert created.json()["existing_source_count"] == 1
     assert created.json()["existing_document_count"] == 1
     assert provider.called == 0
+
+
+async def test_source_discovery_rejects_blank_topic(
+    client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    created = await client.post(
+        "/api/source-discovery/runs",
+        headers=auth_headers,
+        json={"topic": "   ", "execution_mode": "inline"},
+    )
+
+    assert created.status_code == 422
+
+
+async def test_source_discovery_treats_topic_wildcards_as_literals(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    provider = FixtureCandidateProvider(expected_query_term=None)
+    app.state.source_discovery_provider = provider
+    async with app.state.database.session_factory() as session:
+        source = Source(
+            source_key="wildcard-source",
+            name="Wildcard source",
+            domain="wildcard.gov.cn",
+            homepage_url="https://wildcard.gov.cn/",
+            official_status="official",
+            enabled=True,
+        )
+        session.add(source)
+        await session.flush()
+        session.add(
+            Document(
+                document_id="wildcard-document",
+                source_id=source.id,
+                title="Ordinary policy",
+                source_url="https://wildcard.gov.cn/policy",
+                canonical_url="https://wildcard.gov.cn/policy",
+                content="Ordinary policy content without a percent character",
+                final_status="approved",
+                index_status="pending",
+            )
+        )
+        await session.commit()
+
+    created = await client.post(
+        "/api/source-discovery/runs",
+        headers=auth_headers,
+        json={
+            "topic": "%",
+            "required_source_count": 1,
+            "required_document_count": 1,
+            "execution_mode": "inline",
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["gap_detected"] is True
+    assert created.json()["existing_source_count"] == 0
+    assert created.json()["existing_document_count"] == 0
+    assert provider.called == 1
 
 
 async def test_source_discovery_does_not_promote_unverified_domain(
@@ -263,6 +337,148 @@ async def test_source_discovery_does_not_promote_unverified_domain(
     metrics = await client.get("/api/source-discovery/metrics", headers=auth_headers)
     assert metrics.json()["run_status_counts"]["failed"] == 1
     assert metrics.json()["candidate_status_counts"]["validation_failed"] == 1
+
+
+async def test_source_discovery_requires_https_for_official_status(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    provider = FixtureCandidateProvider(url="http://agency.gov.cn/")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_site_handler)) as site_client:
+        app.state.source_discovery_provider = provider
+        app.state.source_discovery_fetcher = HttpFetcher(
+            client=site_client,
+            resolver=_public_addresses,
+            timeout_seconds=1,
+            max_bytes=1024 * 1024,
+        )
+        created = await client.post(
+            "/api/source-discovery/runs",
+            headers=auth_headers,
+            json={
+                "topic": "support",
+                "required_source_count": 10,
+                "required_document_count": 10,
+                "execution_mode": "inline",
+            },
+        )
+
+    assert created.status_code == 201, created.text
+    candidates = await client.get(
+        f"/api/source-discovery/runs/{created.json()['id']}/candidates",
+        headers=auth_headers,
+    )
+    candidate = candidates.json()[0]
+    assert candidate["status"] == "validation_failed"
+    assert candidate["official_status"] == "unverified"
+    assert candidate["official_evidence_json"]["https"] is False
+
+
+async def test_trial_crawl_rejects_column_without_detail_links(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                request=request,
+                text=(
+                    "<html><body><h1>Official Government Agency</h1>"
+                    '<a href="/policies/">Policy notices</a></body></html>'
+                ),
+            )
+        if request.url.path == "/policies/":
+            return httpx.Response(
+                200,
+                request=request,
+                text=f"<html><body><nav>{'Navigation ' * 200}</nav></body></html>",
+            )
+        return httpx.Response(404, request=request)
+
+    provider = FixtureCandidateProvider()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as site_client:
+        app.state.source_discovery_provider = provider
+        app.state.source_discovery_fetcher = HttpFetcher(
+            client=site_client,
+            resolver=_public_addresses,
+            timeout_seconds=1,
+            max_bytes=1024 * 1024,
+        )
+        created = await client.post(
+            "/api/source-discovery/runs",
+            headers=auth_headers,
+            json={
+                "topic": "support",
+                "required_source_count": 10,
+                "required_document_count": 10,
+                "execution_mode": "inline",
+            },
+        )
+
+    candidates = await client.get(
+        f"/api/source-discovery/runs/{created.json()['id']}/candidates",
+        headers=auth_headers,
+    )
+    column = candidates.json()[0]["columns"][0]
+    assert column["status"] == "failed"
+    assert column["error_message"] == "NO_DETAIL_LINKS"
+    assert column["trial_success_count"] == 0
+
+
+async def test_trial_crawl_rejects_unrelated_long_detail_page(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                request=request,
+                text=(
+                    "<html><body><h1>Official Government Agency</h1>"
+                    '<a href="/policies/">Policy notices</a></body></html>'
+                ),
+            )
+        if request.url.path == "/policies/":
+            return httpx.Response(
+                200,
+                request=request,
+                text='<html><body><a href="/about.html">About the agency</a></body></html>',
+            )
+        if request.url.path == "/about.html":
+            return httpx.Response(
+                200,
+                request=request,
+                text=f"<html><main>{'Contact directory and office hours. ' * 30}</main></html>",
+            )
+        return httpx.Response(404, request=request)
+
+    provider = FixtureCandidateProvider()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as site_client:
+        app.state.source_discovery_provider = provider
+        app.state.source_discovery_fetcher = HttpFetcher(
+            client=site_client,
+            resolver=_public_addresses,
+            timeout_seconds=1,
+            max_bytes=1024 * 1024,
+        )
+        created = await client.post(
+            "/api/source-discovery/runs",
+            headers=auth_headers,
+            json={
+                "topic": "support",
+                "required_source_count": 10,
+                "required_document_count": 10,
+                "execution_mode": "inline",
+            },
+        )
+
+    candidates = await client.get(
+        f"/api/source-discovery/runs/{created.json()['id']}/candidates",
+        headers=auth_headers,
+    )
+    column = candidates.json()[0]["columns"][0]
+    assert column["status"] == "failed"
+    assert column["error_message"] == "NO_RELEVANT_DETAIL_DOCUMENTS"
+    assert column["trial_success_count"] == 0
 
 
 async def test_source_discovery_reports_missing_live_provider_credentials(

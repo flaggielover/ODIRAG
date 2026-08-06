@@ -12,7 +12,7 @@ class CrawlTaskCreate(BaseModel):
     trigger_type: Literal["manual", "schedule", "retry"] = "manual"
     execution_mode: Literal["queued", "inline"] = "queued"
     provider_contract: Literal["legacy_single_article", "batch_crawl"] | None = None
-    provider: Literal["coze", "local", "playwright"] | None = None
+    provider: Literal["coze", "local"] | None = None
     contract_mode: Literal["legacy_single_article", "batch_crawl"] | None = None
     max_articles: int = Field(default=5, ge=1, le=100)
     max_pages: int = Field(default=1, ge=1, le=100)

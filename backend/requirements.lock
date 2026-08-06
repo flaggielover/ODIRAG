@@ -1,0 +1,8 @@
+# Production dependency constraints for the backend image.
+#
+# This file is consumed as a pip constraints file by Dockerfile.backend.  The
+# project metadata remains the source of the dependency set; this artifact
+# pins the migration tool to the version exercised against PostgreSQL so a
+# fresh image cannot silently select Alembic 1.19's constraint comparison
+# behavior.
+alembic==1.18.5
