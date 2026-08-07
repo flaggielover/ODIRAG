@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-07。每一项都必须在目标环境执行并保存原始输出。本机 WSL/Docker 数据已无损迁移到 D 盘；Docker Desktop/Engine、八个 development 服务、PostgreSQL 迁移 round-trip/备份恢复、Redis、Qdrant health、worker、scheduler、Nginx、frontend、8080 API 和 acceptance-summary 均有真实本地证据。backend/worker/scheduler 当前运行 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，其 Scout 为 133 packages、`0C/0H/0M/0L`。新 Coze 部署后的 task 8 真实取得 HTTP 200/invocation completed 和 `SPA_API_NOT_DISCOVERED` 诊断，但业务终态为 `partial_failed`、0 documents/chunks/points，验收 `batch_result_empty`（exit 1）。这比 task 7 的 `NO_ARTICLES` 更可诊断，仍不是内容 PASS-LIVE。生产 secret、真实内容抓取/provider、索引、TLS、CI/registry provenance 仍未验收。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-07。每一项都必须在目标环境执行并保存原始输出。本机 Docker/八服务健康，backend/worker/scheduler 当前 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7` 的 Scout 为 `0C/0H/0M/0L`。用户重新发布 Coze 后，task 9 bounded run 真实完成：5 articles/discovered/fetched、5 documents/lineage、raw/schema/decisions 一致、0 task/provider failures。因此 discovery/fetch/raw/schema/DB persistence 为 PASS-LIVE。全部 5 篇 rejected，其中 3 篇 image-only/needs OCR；0 chunks、0 Qdrant collections/points。acceptance-summary 又因空 collection count 的 Qdrant 404 返回 503。故内容可用性、OCR、索引、引用问答和整体生产接受仍 blocked。
 
 ## 证据规则
 
@@ -480,6 +480,25 @@ chunks 和 Qdrant points 均为 0。warnings 包含 `SPA_API_NOT_DISCOVERED`，�
 0 documents、0 chunks；Qdrant collection 数为 0。监控打开 `high_failure_rate` high/open 告警，
 observed `0.4` 超过 threshold `0.2`；相关回归 `49 passed`。这些仍是失败诊断证据。
 
+2026-08-07 task 9 当前真实 checkpoint（不记录部署 URL、Token、Authorization、凭据或正文）：
+
+- bounded 参数为 `max_pages=1`、`max_articles=5`；task/current stage/provider status 均为 `completed`，provider error 为 null；
+- invocation HTTP 200/completed、attempts 1、retries 0、duration 22,757 ms；`raw_response_json=true`、`normalized=true`，normalized `task_id` 是 string `"9"`；
+- 在当前 backend 容器中从 PostgreSQL 读取 raw response，再用 `parse_batch_crawl_response` 校验，Pydantic schema passed，articles/discovered/fetched 均为 5；
+- accepted 0、rejected 5、pending 0、failed 0、provider failed URLs 0；task、normalized 和 persisted results 决策一致；
+- PostgreSQL 为 5 documents、5 lineage、0 chunks、1 invocation；Qdrant 为 0 collections/points。
+
+首篇元数据：标题“关于公布四川省2026年第六批软件企业及软件产品评估结果的通知”，URL
+`https://www.scsia.org/portal/new/7587`，content length 0、needs OCR、image extraction、9 images、
+decision rejected、index pending。五篇中三篇 image-only/needs-OCR/content length 0，另两篇 content length
+349/203，全部 rejected。抓取层因此是 PASS-LIVE，但 OCR、正文可用性、质量复核、chunking、indexing 和
+cited-answer 均不是 PASS-LIVE。
+
+`embedding_provider=remote` 且 key 未配置，但 embedding 未参与本次 crawl；task 9 completed 且 failed 0，
+不得据此把抓取判为失败。`live_accept_coze_batch.py` 在任务完成后读取 acceptance-summary 时收到 HTTP 503
+`PROVIDER_UNAVAILABLE`，根因是不存在的 `odirag_chunks` collection count 在 Qdrant 返回 404；另有
+qdrant-client 1.19/server 1.14 compatibility warning。两项均为后续本地修复，不撤销 task 9 抓取层 PASS-LIVE。
+
 先设置 `ODIRAG_SOURCE_COLUMN_ID` 为一个已人工批准并启用的真实栏目 ID；以下命令会在变量为空时立即失败：
 
 ~~~powershell
@@ -500,6 +519,10 @@ worker 完成一次 `batch_crawl` invocation；退出码为 0，单行 JSON 中
 `index_status` 冒充。脚本不输出 token、部署 URL、header 或 raw response。未配置新批量 URL 时退出码必须为 2，
 `status=batch_workflow_not_published`；这不是 Live 成功。节点级施工步骤和十组控制台用例见
 `docs/COZE_BATCH_WORKFLOW_BUILD_SPEC.md`。
+
+当前 task 9 证明 crawl 已成功，但脚本尚不能输出 `live_batch_verified`：它在读取 Qdrant 空 collection
+计数时收到 503。修复后，空 collection 应作为 `qdrant_point_count=0` 返回，并由脚本据此把“crawl PASS”
+与“index NOT PASS”分层报告，而不是把整个 provider/crawl 标成 unavailable。
 
 对已知存在文章的动态页面，`NO_ARTICLES`、0 discovered、0 persisted documents 或 0 Qdrant
 points 均为 FAIL。HTTP 200 和 invocation `completed` 只证明鉴权与 transport，不证明文章发现、
@@ -716,15 +739,15 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 | 项目 | 结果 | 边界 |
 | --- | --- | --- |
 | Compose 服务 | 2026-08-07 Docker Desktop/Engine 恢复后，最终 backend/worker/scheduler image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7` 下 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；8080 与首页/API 均为 200 | development 配置未证明生产 secret/TLS、目标持久化和 registry provenance |
-| PostgreSQL | `pg_isready` accepting connections；current 为 `0006_coze_task_operations (head)`；existing DB `alembic check` 无漂移；专用 PostgreSQL 完成 fresh upgrade→downgrade 0003→upgrade；隔离备份恢复及 9 表 count 对比通过 | 未对生产业务库直接 downgrade；未验证生产规模、RPO/RTO、连接池耗尽和维护窗口 |
+| PostgreSQL | `pg_isready` accepting connections；Alembic current/head/check 通过；task 9 为 5 documents、5 lineage、0 chunks、1 Coze invocation，raw/schema/result 决策一致 | 未验证生产规模、RPO/RTO、连接池耗尽和维护窗口 |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
-| Qdrant | `/healthz` HTTP 200；task 8 后 collection 数仍为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
-| worker/scheduler | worker inspect ping 成功；真实 queued Coze task 8 被 worker 正常执行至业务终态 `partial_failed`；任务注册包含 `odirag.source_discovery.scan_gaps`；scheduler healthy 并发送 recovery；显式非 root UID/GID 10001 | task 8 没有文章产物；自动 gap scan 默认关闭；真实 Brave crawl、长期 beat 和故障恢复演练仍未验收 |
+| Qdrant | `/healthz` HTTP 200；task 9 后 0 collections/points | 0 chunks/all documents rejected；空 collection count 404 当前导致 acceptance-summary 503；qdrant-client 1.19/server 1.14 有 compatibility warning；schema/points 未验收 |
+| worker/scheduler | worker inspect ping 成功；真实 queued Coze task 9 被 worker 正常执行至 completed，failed 0；scheduler healthy | crawl PASS-LIVE；自动 gap scan 默认关闭；真实 Brave crawl、长期 beat 和故障恢复仍未验收 |
 | monitoring | task 8 后 `high_failure_rate` 告警为 severity `high`、status `open`，observed `0.4`、threshold `0.2` | 证明本地规则检测到失败率；生产通知投递、升级、确认、恢复和多实例聚合未验证 |
 | Nginx/frontend | fresh frontend 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；修复旧 upstream IP 缓存后 `nginx -t` 通过，重建 backend 且不重启 Nginx 时代理 health 15/15 次均为 200；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；真实栈 Playwright 到达 chat | live Playwright 在引用断言处失败：remote embedding 无 key 且无索引内容；HTTPS、目标多副本滚动发布和生产浏览器门禁未通过 |
 | Docker/WSL 恢复 | WSL 数据位于 D 盘且未删除 VHD/Volume/数据库；2026-08-07 Client/Server 29.6.2、Compose v5.3.1 与八服务通过 | 目标主机自动启动、生产 secret/TLS、容灾和 registry provenance 未验证 |
 | fresh 镜像与供应链 | backend/frontend `--pull --no-cache` 基线和最新 builder 构建成功；最终 backend 代码层已重建；runtime 排除 `.env`/tests、移除 pip、使用非 root 后端和 slim Nginx；npm 两种 audit 为 0；当前 backend digest `7f090ada232d`（133 packages）与 frontend digest `2d41a3e3c971`（26 packages）的 Scout 结果均为 0C/0H/0M/0L；当前 backend SBOM 敏感模式为 0 | 扫描只证明本地 digests；CI、目标 registry、签名和 provenance 未验证 |
 | Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing/fresh PostgreSQL 均到 `0006` 且 `check` 无漂移；专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
-| scsia.org | 独立 list API HTTP 200 JSON、total 69/rows 5；首条 ID 7587 的 detail API 返回 data、正文长度 995；tasks 1-3 本地 SSRF 拒绝；task 8 真实 Coze 诊断 HTTP 200/completed，但 `partial_failed`、`SPA_API_NOT_DISCOVERED`、`batch_result_empty`、0 文档/chunk/point；监控 high/open | 比 task 7 的 `NO_ARTICLES` 更可诊断，但不是 live crawl 成功；Coze workflow 必须支持已确认的 list/detail JSON API，并在 bounded task 返回真实 articles，之后再完成 10 篇抓取/审核/索引 |
+| scsia.org | task 9 bounded Coze crawl PASS-LIVE：HTTP 200/completed，schema-valid 5 articles，5 documents/lineage，0 failures；首篇 image/needs-OCR/9 images；共 3 image-only、另 2 篇 lengths 349/203；all 5 rejected | OCR/content usability/quality review BLOCKED；0 chunks/Qdrant points；至少 10 篇可用内容、embedding/index/cited-answer 未验收 |
 
-因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL、配置兼容、Alembic、fresh build、本地八服务、隔离迁移/备份恢复、npm 和本地 Scout 已完成；剩余生产门禁是：真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇代表性官方站点抓取、真实索引/Qdrant points、代表性评测与负载、生产 TLS/secret、CI/registry provenance、release checkpoint 和 cited-answer live Playwright。
+因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。task 9 已使 bounded Coze discovery/fetch/raw/schema/DB persistence PASS-LIVE；剩余门禁是 OCR/图片正文提取、质量复核、至少 10 篇可用代表性内容、真实 embedding、Qdrant collection/points、cited-answer，以及 Brave/answer/rerank、生产 TLS/secret、CI/registry provenance 和 release gates。acceptance-summary 空 collection 503 与 qdrant client/server warning 是本地待修复项。

@@ -468,7 +468,7 @@ point 仍全部为 0，验收脚本返回 `status=batch_result_empty`、exit cod
 重试路径增加 fail-closed ID 匹配。当前运行镜像为 `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，
 并已通过本地回归、Compose rollout 与 Scout。
 
-新 Coze 部署后的 task 8 是当前最新真实诊断证据：HTTP 200、invocation `completed`、attempts `1`、
+新 Coze 部署后的 task 8 是历史诊断证据：HTTP 200、invocation `completed`、attempts `1`、
 retries `0`、duration `4141 ms`，normalized `task_id` 是 string `"8"`，workflow version 是
 `batch_crawl-v1`。worker 正常完成执行，但业务任务为 `partial_failed/provider_status=partial_failed`，
 没有 provider error。statistics 只有 `pages_visited=1`，其余发现、抓取、审核和失败计数均为 0；
@@ -476,7 +476,7 @@ warning `SPA_API_NOT_DISCOVERED` 明确说明只取得基础 HTML、没有发现
 0 persisted failures/documents/chunks，Qdrant 为 0 collection，验收 `batch_result_empty`、exit code 1。
 这比 task 7 的 `NO_ARTICLES` 更可诊断，但仍是内容验收 FAIL。
 
-独立 API 验证已把下一次云端修复范围收窄：
+独立 API 验证曾把下一次云端修复范围收窄：
 
 - `https://scsia.org/portal/news/264?pageNum=1&pageSize=5` 返回 HTTP 200 JSON、`total=69`、五行；
 - 首行 ID 为 `7587`，`https://scsia.org/portal/new/7587` 返回 data，`newsContent` 长度为 995；
@@ -489,6 +489,29 @@ warning `SPA_API_NOT_DISCOVERED` 明确说明只取得基础 HTML、没有发现
 
 task 8 后本地监控打开 `high_failure_rate` high/open 告警（observed `0.4`，threshold `0.2`），相关
 回归 `49 passed`。该告警证明失败可见，不证明生产告警投递和恢复闭环。
+
+用户再次发布工作流后，task 9 成为当前真实 checkpoint，并满足上述 bounded article 返回要求：
+
+- 输入 `max_pages=1`、`max_articles=5`；task/current stage/provider status 均为 completed，无 provider error；
+- invocation HTTP 200/completed，attempts 1、retries 0、duration 22,757 ms；`raw_response_json=true`、`normalized=true`，normalized `task_id` 为 strict string `"9"`；
+- 当前 backend 容器从 PostgreSQL 读取 raw response 后调用 `parse_batch_crawl_response`，Pydantic schema validation passed，articles/discovered/fetched 均为 5；
+- accepted 0、rejected 5、pending 0、failed 0、provider failed URLs 0；task、normalized 和 persisted result decisions 一致；
+- PostgreSQL 为 5 documents、5 lineage、0 chunks、1 invocation；Qdrant 为 0 collections/points。
+
+因此本规范的 discovery → fetch → raw/schema validation → DB persistence 层在 task 9 bounded run 中为
+PASS-LIVE。内容可用性与索引层仍未通过：首篇“关于公布四川省2026年第六批软件企业及软件产品评估结果的通知”
+（`https://www.scsia.org/portal/new/7587`）为 image extraction、9 images、needs OCR、content length 0、
+decision rejected、index pending。五篇中三篇 image-only/needs-OCR/content length 0；另两篇 content length
+349/203；全部 rejected。仓库不保存正文。
+
+下一施工顺序改为：OCR/图片正文提取 → 质量复核 → 真实 embedding → Qdrant collection/points → cited answer。
+`embedding_provider=remote` 未配置 key 不影响已经完成的 crawl；不能把 0 chunks 或 embedding unavailable
+倒推成抓取失败。
+
+当前 `live_accept_coze_batch.py` 在任务完成后读取 acceptance-summary 时收到 HTTP 503
+`PROVIDER_UNAVAILABLE`：Qdrant 对不存在的 `odirag_chunks` collection count 返回 404。该错误属于本地
+summary 空 collection 处理，不是 Coze、Schema、crawl 或 embedding 执行失败。qdrant-client 1.19/server 1.14
+compatibility warning 也需后续处理；本次仅记录，不修改代码。
 
 ## 10. 施工后的人工检查清单
 
