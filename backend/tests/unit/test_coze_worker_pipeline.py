@@ -39,6 +39,7 @@ class FixtureProvider:
         self, payload: Mapping[str, Any], *, contract: CrawlContract | None = None
     ) -> CrawlProviderResult:
         assert payload["task_id"]
+        assert isinstance(payload["task_id"], str)
         assert contract == "batch_crawl"
         return CrawlProviderResult(
             contract="batch_crawl",
@@ -137,10 +138,10 @@ def _article(title: str, suffix: str) -> dict[str, Any]:
     }
 
 
-def _batch_response(task_id: int, articles: list[dict[str, Any]]) -> dict[str, Any]:
+def _batch_response(task_id: int | str, articles: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "success": True,
-        "task_id": task_id,
+        "task_id": str(task_id),
         "source": {
             "source_url": "https://example.com/news",
             "source_name": "四川省软件行业协会",
@@ -215,6 +216,11 @@ async def test_one_document_save_failure_keeps_other_articles(
         assert result.accepted_count == 1
         assert result.failed_count == 1
         assert await session.scalar(select(func.count(Document.id))) == 1
+        source = await session.scalar(select(Source))
+        assert source is not None
+        assert source.last_crawl_time is not None
+        assert source.last_successful_crawl_at is None
+        assert source.last_coze_error == "COZE_PARTIAL_FAILED"
         failure = await session.scalar(
             select(CrawlTaskFailure).where(CrawlTaskFailure.crawl_task_id == task_id)
         )
@@ -222,6 +228,132 @@ async def test_one_document_save_failure_keeps_other_articles(
         assert failure.url.endswith("/two")
         assert failure.error_code == "COZE_DOCUMENT_SAVE_FAILED"
         assert failure.retryable is True
+
+
+@pytest.mark.parametrize(
+    ("success", "warnings"),
+    [(False, ["NO_ARTICLES"]), (True, [])],
+)
+async def test_no_articles_batch_uses_distinct_completed_state(
+    app, test_settings, success: bool, warnings: list[str]
+) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        raw = _batch_response(task_id, [])
+        raw["success"] = success
+        raw["warnings"] = warnings
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(raw),
+        )
+
+        result = await service.execute(task_id)
+
+        assert result.status == "completed"
+        assert result.provider_status == "no_articles"
+        assert result.discovered_count == 0
+        source = await session.scalar(select(Source))
+        assert source is not None
+        assert source.last_crawl_time is not None
+        assert source.last_successful_crawl_at is not None
+        assert source.last_coze_status == "no_articles"
+        assert source.last_coze_error is None
+
+
+async def test_mismatched_batch_task_id_fails_before_document_persistence(
+    app, test_settings
+) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        raw = _batch_response("different-task", [_article("串单响应", "mismatch")])
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(raw),
+        )
+
+        result = await service.execute(task_id)
+
+        assert result.status == "failed"
+        assert result.provider_error_code == "COZE_TASK_ID_MISMATCH"
+        assert await session.scalar(select(func.count(Document.id))) == 0
+        invocation = await session.scalar(
+            select(CozeInvocation).where(CozeInvocation.crawl_task_id == task_id)
+        )
+        assert invocation is not None
+        assert invocation.status == "failed"
+        assert invocation.error_code == "COZE_TASK_ID_MISMATCH"
+
+
+async def test_failed_url_retry_rejects_mismatched_batch_task_id(app, test_settings) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        task = await session.get(CrawlTask, task_id)
+        assert task is not None
+        task.status = "partial_failed"
+        task.current_stage = "partial_failed"
+        task.provider_status = "partial_failed"
+        task.failed_count = 1
+        failure = CrawlTaskFailure(
+            crawl_task_id=task_id,
+            url="https://example.com/news/retry",
+            stage="detail_fetch",
+            error_code="HTTP_TIMEOUT",
+            error_message="timed out",
+            retryable=True,
+            status="failed",
+        )
+        session.add(failure)
+        await session.commit()
+        await session.refresh(failure)
+        raw = _batch_response("different-retry", [_article("重试串单", "retry")])
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(raw),
+        )
+
+        result = await service.execute_failed_url(failure.id)
+
+        assert result.status == "failed"
+        assert result.error_code == "COZE_TASK_ID_MISMATCH"
+        assert await session.scalar(select(func.count(Document.id))) == 0
+        invocation = await session.scalar(
+            select(CozeInvocation).where(CozeInvocation.crawl_task_id == task_id)
+        )
+        assert invocation is not None
+        assert invocation.status == "failed"
+        assert invocation.error_code == "COZE_TASK_ID_MISMATCH"
+
+
+async def test_failed_empty_batch_without_no_articles_warning_is_partial_failed(
+    app, test_settings
+) -> None:
+    async with app.state.database.session_factory() as session:
+        task_id = await _seed_task(session)
+        raw = _batch_response(task_id, [])
+        raw["success"] = False
+        raw["warnings"] = ["DYNAMIC_CONTENT_UNSUPPORTED"]
+        service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(raw),
+        )
+
+        result = await service.execute(task_id)
+
+        assert result.status == "partial_failed"
+        source = await session.scalar(select(Source))
+        assert source is not None
+        assert source.last_crawl_time is not None
+        assert source.last_successful_crawl_at is None
+        assert source.last_coze_status == "partial_failed"
+        assert source.last_coze_error == "COZE_PARTIAL_FAILED"
 
 
 async def test_active_sync_cancel_is_not_overwritten_when_remote_returns(

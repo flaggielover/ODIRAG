@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.crawler.fetcher import Fetcher
 from app.crawler.urls import UnsafeUrlError
-from app.schemas.coze import BatchCrawlResponse, parse_batch_crawl_response
+from app.schemas.coze import BatchCrawlRequest, BatchCrawlResponse, parse_batch_crawl_response
 
 CrawlContract = Literal["legacy_single_article", "batch_crawl"]
 
@@ -150,12 +150,24 @@ class CozeCrawlProvider:
                 "Coze API token is not configured",
                 retryable=False,
             )
+        request_payload = dict(payload)
+        if selected == "batch_crawl":
+            try:
+                request_payload = BatchCrawlRequest.model_validate(payload).model_dump(
+                    mode="json", exclude_none=True
+                )
+            except ValidationError as exc:
+                raise CrawlProviderError(
+                    "COZE_REQUEST_INVALID",
+                    "Coze batch crawl request is invalid",
+                    retryable=False,
+                ) from exc
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=self.timeout_seconds)
         started = time.perf_counter()
         try:
             response, attempts = await self._post_with_retry(
-                client, endpoint=endpoint, payload=dict(payload)
+                client, endpoint=endpoint, payload=request_payload
             )
             try:
                 raw_payload = response.json()

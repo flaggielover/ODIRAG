@@ -104,6 +104,10 @@ unavailability.
 Fixture tests cover both deployment contracts, retries, schema failures,
 idempotency, UTF-8, task state recovery, and frontend status rendering. The
 repository includes an explicit Live Acceptance command using
-`max_articles=5` and `max_pages=1`, but it remains unverified until the new
-Coze batch URL is configured and a real response is observed. The existing
-single-article endpoint is not used to claim batch-crawl acceptance.
+`max_articles=5` and `max_pages=1`. As of 2026-08-07, real tasks 4-7 verify
+authentication, the string `task_id` entrance contract, the deployed
+`batch_result` transport envelope, raw persistence, and normalization. The
+scsia.org task 7 still returned `NO_ARTICLES` with zero persisted documents for a
+known populated dynamic SPA, so content ingestion remains failed and the live
+acceptance gate is not passed. The existing single-article endpoint is not used
+to claim batch-crawl acceptance.

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from app.crawler import FetchResponse
 from app.crawler.providers import CrawlContract, CrawlProviderResult
 from app.errors import AppError
-from app.models import Attachment, Document, DocumentReview
+from app.models import Attachment, CrawlTask, Document, DocumentReview
 from app.repositories.crawl import CrawlRepository
 from app.repositories.sources import SourceRepository
 from app.schemas.crawl import CrawlTaskCreate
@@ -165,6 +165,65 @@ async def test_explicit_local_provider_runs_through_worker_contract(app) -> None
             assert review.review_type == "local_extraction"
             assert review.reviewer == "local_crawler"
             assert review.model_name is None
+    finally:
+        shutil.rmtree(settings.data_dir, ignore_errors=True)
+
+
+async def test_local_provider_partial_save_failure_records_attempt_not_success(
+    app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = app.state.settings
+    try:
+        async with app.state.database.session_factory() as session:
+            source = await SourceService(SourceRepository(session)).create(
+                SourceCreate(
+                    source_key="fixture-local-provider-partial-failure",
+                    name="Fixture Local Provider Partial Failure",
+                    domain="fixture.gov",
+                    homepage_url="https://fixture.gov/",
+                    region="鍥涘窛",
+                    crawl_provider="local",
+                    columns=[
+                        SourceColumnCreate(
+                            column_key="policies",
+                            column_name="鏀跨瓥",
+                            column_url="https://fixture.gov/list.html",
+                            max_pages=1,
+                            request_interval_seconds=0,
+                            selectors_json={
+                                "list_link": "a.item",
+                                "title": "h1",
+                                "content": "article",
+                                "publish_date": "time",
+                            },
+                        )
+                    ],
+                )
+            )
+            service = CrawlService(CrawlRepository(session), FixtureFetcher(), settings)
+            original_save = service._save_coze_article
+
+            async def fail_second_document(
+                task: CrawlTask, column: object, article: object
+            ) -> None:
+                if str(getattr(article, "url", "")).endswith("/policy/2.html"):
+                    raise ValueError("fixture document failure")
+                await original_save(task, column, article)
+
+            monkeypatch.setattr(service, "_save_coze_article", fail_second_document)
+            task = await service.create(
+                CrawlTaskCreate(source_column_id=source.columns[0].id, provider="local")
+            )
+            result = await service.execute(task.id)
+
+            assert result.status == "partial_failed"
+            assert result.provider_status == "partial_failed"
+            assert result.failed_count == 1
+            assert result.pending_review_count == 1
+            assert await session.scalar(select(func.count(Document.id))) == 1
+            await session.refresh(source)
+            assert source.last_crawl_time is not None
+            assert source.last_successful_crawl_at is None
     finally:
         shutil.rmtree(settings.data_dir, ignore_errors=True)
 

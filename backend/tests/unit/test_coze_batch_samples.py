@@ -55,3 +55,21 @@ def test_invalid_url_case_is_rejected_before_external_request() -> None:
     payload = json.loads((CASES_DIR / "10_invalid_url.json").read_text(encoding="utf-8"))
     with pytest.raises(ValidationError):
         BatchCrawlRequest.model_validate(payload["input"])
+
+
+def test_batch_task_id_is_a_strict_non_empty_string() -> None:
+    request_payload = json.loads((CASES_DIR / "01_minimal_valid.json").read_text(encoding="utf-8"))[
+        "input"
+    ]
+    response_payload = json.loads(
+        (CASES_DIR / "sample_success_response.json").read_text(encoding="utf-8")
+    )
+
+    BatchCrawlRequest.model_validate(request_payload)
+    BatchCrawlResponse.model_validate(response_payload)
+
+    for invalid in (1, ""):
+        with pytest.raises(ValidationError):
+            BatchCrawlRequest.model_validate({**request_payload, "task_id": invalid})
+        with pytest.raises(ValidationError):
+            BatchCrawlResponse.model_validate({**response_payload, "task_id": invalid})

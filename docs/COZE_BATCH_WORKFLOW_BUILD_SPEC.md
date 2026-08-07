@@ -110,7 +110,7 @@ HTTP 节点只负责受限请求和响应传递；确定性 URL、计数、去�
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 | 示例 |
 |---|---|:---:|---|---|---|
-| `task_id` | string/integer | 是 | 无 | 本地任务 ID；参数校验节点立即转为非空字符串并原样回传 | `"1842"` |
+| `task_id` | string | 是 | 无 | 本地任务 ID；部署入口在工作流节点运行前执行类型校验，因此调用方必须发送非空字符串 | `"1842"` |
 | `source_url` | string | 是 | 无 | 网站首页、栏目页或列表页 URL | `"https://scsia.org/industry"` |
 | `source_name` | string | 否 | `null` | 来源名称，未知时 null | `"四川省软件行业协会"` |
 | `region` | string | 否 | `null` | 地区 | `"四川省"` |
@@ -128,7 +128,7 @@ HTTP 节点只负责受限请求和响应传递；确定性 URL、计数、去�
 | `crawl_rules` | object | 否 | `{}` | 已批准的站点规则，不放秘密 | `{}` |
 | `quality_rules` | object | 否 | `{}` | 仅允许覆盖阈值，不得关闭硬过滤 | `{}` |
 
-UTF-8 是请求和响应的唯一编码。`N01_VALIDATE` 将数字 `task_id` 转成十进制字符串，之后所有节点只传字符串，结束节点也必须作为字符串回传，避免数据库整数/JSON 字符串转换造成追踪丢失。
+UTF-8 是请求和响应的唯一编码。真实部署入口已验证会在 `N01_VALIDATE` 运行前拒绝数字 `task_id`，因此本地调用方和所有工作流节点都只传字符串，结束节点也必须作为字符串回传。
 
 ## 3. 栏目与文章发现
 
@@ -137,7 +137,7 @@ UTF-8 是请求和响应的唯一编码。`N01_VALIDATE` 将数字 `task_id` 转
 3. 所有链接使用基准 URL 绝对化，删除 fragment；只删除明确的跟踪参数（`utm_*`、`spm`、`from`、`share`），保留业务查询参数。host 小写、默认端口删除、path 合并重复斜线。
 4. 文章候选必须是同站或明确官方关联域名；导航、登录、搜索、下载按钮、图片、脚本、mailto、javascript 和锚点不是文章候选。
 5. 翻页按优先级处理：明确 `next` 链接、`rel=next`、页码链接、`page/pn/pageIndex` 参数。每次请求前检查已经访问过的规范 URL；超过 `max_pages` 停止。
-6. 动态加载列表如果 HTML 没有文章链接，不能假设抓取成功；返回 `DYNAMIC_CONTENT_UNSUPPORTED`。
+6. 动态加载列表如果 HTML 没有文章链接，不能假设抓取成功；返回 `DYNAMIC_CONTENT_UNSUPPORTED`。对已知存在文章的 SPA 返回 `NO_ARTICLES` 属于误分类和验收失败。
 7. `max_articles` 在 URL 去重后截断，顺序保持页面出现顺序；`deduplicate=false` 只关闭批内指纹，不得关闭安全 URL 规范化。
 
 ## 4. 文章详情与附件
@@ -213,6 +213,20 @@ UTF-8 是请求和响应的唯一编码。`N01_VALIDATE` 将数字 `task_id` 转
 ```
 
 `articles` 中每项必须满足 `ArticleResult` schema；`failed_urls` 每项必须包含 `url`、`stage`、`error_code`、`error_message`、`retryable`。完整 Draft 2020-12 JSON Schema 位于 `docs/coze_batch_test_cases/batch_crawl_result.schema.json`。本地 Provider 对 HTTP 响应先保存 raw JSON，再进行 Pydantic 校验；顶层非法 JSON、缺少 `success/task_id/articles/statistics` 或类型错误时任务为 `failed`，但 raw response 仍可追踪。文章级失败允许批次 `success=true`，本地任务状态改为 `partial_failed`。
+
+`BatchCrawlResult` 是严格业务对象。真实 `coze.site/run` transport 已观察到外层
+`{"run_id":"...","batch_result":{...}}`；这不是业务 schema 的新增字段。后端保存完整 raw envelope，
+只解包并校验 `batch_result`。直接返回业务对象以及历史 `data/output/result` 包装仍由兼容解析器支持，
+但工作流不得在业务对象外添加自然语言或 Markdown。
+
+请求和响应的 `task_id` 都是 strict non-empty string。后端在发网前校验请求，并在任何文章持久化前
+核对响应 ID 与请求 ID；主批次和失败 URL 重试只要不一致就记录 `COZE_TASK_ID_MISMATCH`、终止处理且
+不保存文档。工作流必须原样回传该值，不能生成新 ID、转换为数字或复用上一轮响应。
+
+全零发现/抓取计数且没有失败项时，只有两种输入可使用终态 `completed` 和
+`provider_status=no_articles`：业务结果明确包含 `NO_ARTICLES`，或 provider 明确返回 `success=true`
+的干净空批次。其他 `success=false` 空结果属于 `partial_failed`。无论哪种 no-articles 形式，Live
+Acceptance 对已知有内容的栏目仍要求至少一个真实持久化文档，因此该状态不会被误当成内容验收通过。
 
 ## 7. 可复制 Prompt
 
@@ -414,6 +428,8 @@ def assemble_result(task_id, source, articles, failed_urls, warnings, pages, sta
 `N22_OUTPUT` 的输出模式选择“对象/JSON”，唯一输出变量绑定 `N21_ASSEMBLE.batch_result`；
 不要把变量放入 Markdown 代码块，不要添加说明文本。`N22_OUTPUT_ERROR` 只用于开始参数非法，
 在 Coze 控制台中应显示明确校验失败并停止；它不伪造一个能通过正常批量 schema 的结果。
+Coze 部署 API 可以自动把该对象放入 `batch_result` transport 字段；不要在 `N21_ASSEMBLE` 中手工
+再套一层同名字段，否则会形成双重包装。
 
 ## 9. 测试和验收
 
@@ -431,6 +447,23 @@ python scripts/live_accept_coze_batch.py --source-column-id <column_id>
 脚本通过认证 API 创建真实 `queued` 任务，固定发送 `provider=coze`、`contract_mode=batch_crawl`、`max_articles=5` 和 `max_pages=1`，随后只轮询本地任务状态。管理员密码未在环境变量中提供时，交互式输入不会回显；脚本永远不输出 token、部署 URL、请求头或 Coze raw response。
 
 成功时退出码为 0，单行 JSON 的 `status` 为 `live_batch_verified`，并包含 `task_id`、`task_status`、`accepted_count`、`rejected_count`、`pending_review_count`、`failed_count`、`batch_invocation_count` 和脱敏 HTTP 状态。没有新批量 URL 时退出码为 2，输出必须是 `{"status":"batch_workflow_not_published"}`；不能宣称 Live 成功。
+
+2026-08-06 真实诊断：task 4 因数字 `task_id` 被入口拒绝；task 5 观察到真实 `batch_result`
+transport；task 6 在两项本地修复后 HTTP 200 且 invocation completed，但对
+`https://scsia.org/Industry_information/Industry_information_1` 返回 `NO_ARTICLES` 和全零计数。
+公开站点 API 已证明该栏目有 69 条记录，因此 task 6 是内容验收 FAIL，不是成功样例。工作流应先修复
+动态页面识别（至少返回 `DYNAMIC_CONTENT_UNSUPPORTED`），再重新发布并执行同一限量验收。
+
+2026-08-07 task 7 live-diagnostic 镜像 `sha256:2bcc5e6530c673d4736c35f19a79c84a39bf3004c81fe48c27655d5457d4746b`
+已滚动到 backend/worker/scheduler，task 7 再次调用真实部署并得到
+HTTP 200、invocation `completed`、task `completed/provider_status=no_articles`。文档、chunk 和 Qdrant
+point 仍全部为 0，验收脚本返回 `status=batch_result_empty`、exit code 1。该结果只验证 transport、
+响应解包和 no-articles 终态，不改变上述内容验收 FAIL；施工完成标准仍是发现并持久化真实文章，或对
+不支持的动态页面明确返回 `DYNAMIC_CONTENT_UNSUPPORTED`。
+
+同日后续生产审查将 canonical request/response schema 收紧为 strict string，并在主批次和失败 URL
+重试路径增加 fail-closed ID 匹配。当前运行镜像为 `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`；
+该镜像通过本地回归、Compose rollout 与 Scout，但未再次调用云端，因此 task 7 仍是最新真实诊断证据。
 
 ## 10. 施工后的人工检查清单
 

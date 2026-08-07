@@ -31,7 +31,7 @@ def _response(*, article_decision: str = "accepted") -> dict:
     }
     return {
         "success": True,
-        "task_id": 1,
+        "task_id": "1",
         "source": {"source_url": "https://example.com/", "source_name": "example"},
         "statistics": {
             "pages_visited": 1,
@@ -65,7 +65,7 @@ async def test_batch_contract_posts_utf8_and_normalizes() -> None:
         max_retries=0,
     )
     result = await provider.start_crawl(
-        {"task_id": 1, "source_url": "https://example.com/", "source_name": "中文"},
+        {"task_id": "1", "source_url": "https://example.com/", "source_name": "中文"},
         contract="batch_crawl",
     )
     normalized, batch = provider.normalize_result(result.raw_response, contract="batch_crawl")
@@ -95,7 +95,7 @@ async def test_batch_contract_retries_server_errors() -> None:
         max_retries=1,
         backoff_base_seconds=0,
     )
-    result = await provider.start_crawl({"task_id": 1, "source_url": "https://example.com/"})
+    result = await provider.start_crawl({"task_id": "1", "source_url": "https://example.com/"})
     assert calls == 2
     assert result.attempts == 2
 
@@ -113,7 +113,7 @@ async def test_auth_and_invalid_json_are_classified() -> None:
         max_retries=2,
     )
     with pytest.raises(CrawlProviderError, match="credentials") as error:
-        await provider.start_crawl({"task_id": 1, "source_url": "https://example.com/"})
+        await provider.start_crawl({"task_id": "1", "source_url": "https://example.com/"})
     assert error.value.code == "COZE_AUTH_FAILED"
 
     async def invalid(_request: httpx.Request) -> httpx.Response:
@@ -121,7 +121,7 @@ async def test_auth_and_invalid_json_are_classified() -> None:
 
     provider._client = httpx.AsyncClient(transport=httpx.MockTransport(invalid))
     with pytest.raises(CrawlProviderError) as error:
-        await provider.start_crawl({"task_id": 1, "source_url": "https://example.com/"})
+        await provider.start_crawl({"task_id": "1", "source_url": "https://example.com/"})
     assert error.value.code == "COZE_INVALID_JSON"
 
 
@@ -137,10 +137,34 @@ async def test_parseable_wrong_batch_contract_is_classified() -> None:
         client=httpx.AsyncClient(transport=httpx.MockTransport(wrong_contract)),
         max_retries=0,
     )
-    result = await provider.start_crawl({"task_id": 1, "source_url": "https://example.com/"})
+    result = await provider.start_crawl({"task_id": "1", "source_url": "https://example.com/"})
     with pytest.raises(CrawlProviderError) as error:
         provider.normalize_result(result.raw_response, contract="batch_crawl")
     assert error.value.code == "COZE_CONTRACT_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_batch_contract_rejects_numeric_task_id_before_request() -> None:
+    called = False
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json=_response())
+
+    provider = CozeCrawlProvider(
+        api_token="secret",
+        legacy_api_url=None,
+        batch_api_url="https://batch.example/run",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_retries=0,
+    )
+
+    with pytest.raises(CrawlProviderError) as error:
+        await provider.start_crawl({"task_id": 1, "source_url": "https://example.com/"})
+
+    assert error.value.code == "COZE_REQUEST_INVALID"
+    assert called is False
 
 
 def test_batch_response_is_strict() -> None:
@@ -156,6 +180,15 @@ def test_batch_response_accepts_complete_historical_json_fence() -> None:
     )
     assert response.statistics.articles_discovered == 1
     assert isinstance(raw, str)
+
+
+def test_batch_response_accepts_deployed_batch_result_wrapper() -> None:
+    payload = {"run_id": "fixture-run", "batch_result": _response()}
+
+    response, raw = parse_batch_crawl_response(payload)
+
+    assert response.statistics.articles_discovered == 1
+    assert raw is payload
 
 
 def test_batch_response_rejects_surrounding_markdown_text() -> None:

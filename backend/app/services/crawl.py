@@ -5,6 +5,7 @@ import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from app.config import Settings
 from app.crawler import (
@@ -310,12 +311,19 @@ class CrawlService:
                     elif article.decision == "pending_review":
                         task.pending_review_count = max(0, task.pending_review_count - 1)
             column.source.last_crawl_time = datetime.now(UTC)
-            column.source.last_successful_crawl_at = datetime.now(UTC)
             task.pending_review_count = await self.repository.count_pending_task_documents(task.id)
             task.provider_error_code = None
             task.provider_error_message = None
-            no_articles = batch.statistics.articles_discovered == 0
-            if task.failed_count or not batch.success:
+            no_articles = (
+                batch.statistics.articles_discovered == 0
+                and batch.statistics.articles_fetched == 0
+                and task.failed_count == 0
+                and (batch.success or "NO_ARTICLES" in batch.warnings)
+            )
+            partial_failed = not no_articles and bool(task.failed_count or not batch.success)
+            if not partial_failed:
+                column.source.last_successful_crawl_at = datetime.now(UTC)
+            if partial_failed:
                 task.provider_status = "partial_failed"
                 self.state.transition(task, "partial_failed", error="LOCAL_PARTIAL_FAILED")
             elif task.pending_review_count:
@@ -381,8 +389,8 @@ class CrawlService:
         await self.repository.session.refresh(task)
         task.provider_contract = contract
         task.contract_mode = contract
-        payload = {
-            "task_id": task.id,
+        payload: dict[str, Any] = {
+            "task_id": str(task.id),
             "source_url": column.column_url,
             "source_name": column.source.name,
             "region": column.source.region,
@@ -466,6 +474,12 @@ class CrawlService:
                     "batch_crawl requires a strict batch response",
                     retryable=False,
                 )
+            if batch.task_id != payload["task_id"]:
+                raise CrawlProviderError(
+                    "COZE_TASK_ID_MISMATCH",
+                    "Coze response task_id does not match the request",
+                    retryable=False,
+                )
             if not await self.repository.advance_task_if_status(
                 task.id,
                 expected_status="normalizing",
@@ -514,19 +528,26 @@ class CrawlService:
                     elif article.decision == "pending_review":
                         task.pending_review_count = max(0, task.pending_review_count - 1)
             column.source.last_crawl_time = datetime.now(UTC)
-            no_articles = batch.statistics.articles_discovered == 0
+            no_articles = (
+                batch.statistics.articles_discovered == 0
+                and batch.statistics.articles_fetched == 0
+                and task.failed_count == 0
+                and (batch.success or "NO_ARTICLES" in batch.warnings)
+            )
+            partial_failed = not no_articles and bool(task.failed_count or not batch.success)
             column.source.last_coze_status = (
                 "partial_failed"
-                if task.failed_count or not batch.success
+                if partial_failed
                 else "no_articles" if no_articles else "completed"
             )
             column.source.last_coze_article_count = len(batch.articles)
-            column.source.last_coze_error = None
-            column.source.last_successful_crawl_at = datetime.now(UTC)
             task.pending_review_count = await self.repository.count_pending_task_documents(task.id)
             task.provider_error_code = None
             task.provider_error_message = None
-            if task.failed_count or not batch.success:
+            column.source.last_coze_error = "COZE_PARTIAL_FAILED" if partial_failed else None
+            if not partial_failed:
+                column.source.last_successful_crawl_at = datetime.now(UTC)
+            if partial_failed:
                 task.provider_status = "partial_failed"
                 self.state.transition(task, "partial_failed", error="COZE_PARTIAL_FAILED")
             elif task.pending_review_count:
@@ -843,6 +864,12 @@ class CrawlService:
             )
             invocation.normalized_response_json = normalized
             invocation.finished_at = datetime.now(UTC)
+            if batch is not None and batch.task_id != payload["task_id"]:
+                raise CrawlProviderError(
+                    "COZE_TASK_ID_MISMATCH",
+                    "Coze response task_id does not match the request",
+                    retryable=False,
+                )
             if (
                 batch is None
                 or batch.failed_urls

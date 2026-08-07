@@ -38,6 +38,10 @@ must produce an explicit status rather than startup or HTTP 500 failure.
 ## Acceptance boundary
 
 Fixture success verifies client behavior and local persistence only. The batch
-workflow remains `UNVERIFIED-LIVE` until a new `COZE_BATCH_API_URL` returns a
-real strict batch response for at most five articles and one page. No test may
-send the new batch payload to the legacy deployment or expose its token.
+workflow remains below PASS-LIVE until a new `COZE_BATCH_API_URL` returns a
+real strict batch response for at most five articles and one page and produces
+real persisted documents. Tasks 4-7 now provide live-diagnostic transport
+evidence, but task 7 returned `NO_ARTICLES` and zero documents for a populated
+dynamic SPA. The current local image adds strict task-ID validation and
+fail-closed response matching without fabricating another live result. No test
+may send the new batch payload to the legacy deployment or expose its token.

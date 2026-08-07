@@ -13,7 +13,7 @@ class CozeStrictModel(BaseModel):
 
 
 class BatchCrawlRequest(CozeStrictModel):
-    task_id: int | str
+    task_id: str = Field(min_length=1, strict=True)
     source_url: HttpUrl
     source_name: str | None = None
     region: str | None = None
@@ -117,7 +117,7 @@ class BatchFailedUrl(CozeStrictModel):
 
 class BatchCrawlResponse(CozeStrictModel):
     success: bool
-    task_id: int | str
+    task_id: str = Field(min_length=1, strict=True)
     source: BatchSource
     statistics: BatchStatistics
     articles: list[BatchArticle]
@@ -163,7 +163,7 @@ def parse_batch_crawl_response(payload: Any) -> tuple[BatchCrawlResponse, Any]:
             candidate = _decode_json_string(candidate)
             continue
         if isinstance(candidate, dict):
-            for key in ("data", "output", "result"):
+            for key in ("data", "output", "result", "batch_result"):
                 nested = candidate.get(key)
                 if isinstance(nested, (str, dict)):
                     candidate = nested
