@@ -4,7 +4,7 @@
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现，未发现 runtime TODO、FIXME、空函数、硬编码检索结果、硬编码仪表盘指标或伪造评估指标。Docker WSL 数据已无损迁移到 D 盘；2026-08-07 交互式恢复后的 Docker Desktop/Engine、Docker Client/Server 29.6.2 与 Compose v5.3.1 均可用，八个 Compose 服务全部 healthy，8080/Nginx/frontend/API 均完成真实本地检查。backend/worker/scheduler 当前运行 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，该 digest 的 Docker Scout 结果为 133 packages、`0C/0H/0M/0L`。pydantic-settings 兼容、Alembic 1.18.5 锁定、Playwright 漏洞修复与 npm audit 均已通过；Nginx 的 Docker DNS 动态解析已修复滚动替换后的旧 upstream IP 问题；Coze batch 现在严格校验字符串任务 ID 并在串单时 fail-closed。后端当前 `257 passed`、覆盖率 `81.33%`。Coze batch 已取得真实鉴权、HTTP、raw envelope 与规范化证据；task 7 invocation HTTP 200/completed，但 scsia.org 仍为 `provider_status=no_articles`、0 文档/0 chunks/0 points，验收状态 `batch_result_empty`（exit 1）。task 7 对应前一版 `2bcc5e6530c6` live-diagnostic 镜像，当前镜像未伪造新的 live 成功。远程 embedding/rerank、Direct LLM、Brave 与 cited-answer 仍未 live 通过。因此生产结论保持不接受。
+代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现，未发现 runtime TODO、FIXME、空函数、硬编码检索结果、硬编码仪表盘指标或伪造评估指标。Docker WSL 数据已无损迁移到 D 盘；2026-08-07 Docker Desktop/Engine、Docker Client/Server 29.6.2 与 Compose v5.3.1 均可用，八个 Compose 服务全部 healthy，8080/Nginx/frontend/API 均完成真实本地检查。backend/worker/scheduler 当前运行 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，该 digest 的 Docker Scout 结果为 133 packages、`0C/0H/0M/0L`。pydantic-settings 兼容、Alembic 1.18.5 锁定、Playwright 漏洞修复与 npm audit 均已通过；Nginx 动态解析与 Coze strict task-ID 防护也已回归。后端完整回归 `257 passed`、覆盖率 `81.33%`，task 8 相关回归另有 `49 passed`。新 Coze 部署后的 task 8 取得 HTTP 200、invocation completed、one attempt/zero retries 和规范化 string `task_id="8"`；worker 正常完成，但业务任务为 `partial_failed/provider_status=partial_failed`，warning `SPA_API_NOT_DISCOVERED`，0 文档/0 chunks/0 points，验收 `batch_result_empty`（exit 1）。远程 embedding/rerank、Direct LLM、Brave 与 cited-answer 仍未 live 通过。因此生产结论保持不接受。
 
 ## 1. 状态定义
 
@@ -21,21 +21,22 @@
 
 ## 2. 关键审计结论
 
-1. **代码、migration 和本地供应链门禁通过，当前 development 运行态已恢复。** backend/frontend fresh runtime、Alembic 1.18.5、PostgreSQL round-trip 与 npm audit 已通过；当前 backend digest `7f090ada232d` 的 Scout 扫描为 133 packages、`0C/0H/0M/0L`。2026-08-07 恢复后的八服务均 healthy，backend/worker/scheduler 已滚动到该 digest；Nginx 动态 DNS 回归在最终三服务 rollout 后保持代理 health 15/15 次 HTTP 200。task 7 已执行并得到可追踪的 HTTP 200/completed/no_articles 结果，但内容验收失败。生产 registry provenance、签名和 CI green 仍未完成。
+1. **代码、migration 和本地供应链门禁通过，当前 development 运行态健康。** backend/frontend fresh runtime、Alembic 1.18.5、PostgreSQL round-trip 与 npm audit 已通过；当前 backend digest `7f090ada232d` 的 Scout 扫描为 133 packages、`0C/0H/0M/0L`。八服务均 healthy，Nginx 动态 DNS 回归在最终三服务 rollout 后保持代理 health 15/15 次 HTTP 200。task 8 已在新 Coze 部署上执行并得到可追踪的 HTTP 200/completed/partial_failed 结果，但内容验收失败。生产 registry provenance、签名和 CI green 仍未完成。
 2. **测试真实性边界清晰但很窄。** backend/tests/conftest.py 统一使用 SQLite memory、InMemoryEmbeddingCache、InMemoryVectorStore、DeterministicEmbeddingProvider 和 DeterministicRerankProvider。
-3. **只有 Coze batch transport 得到 live-diagnostic 证据。** 本机未提交的 Token 已用于真实 tasks 4-7；鉴权、HTTP 500/200、raw envelope、规范化和终态语义均可追踪，但 task 7 没有文章产物并以 `batch_result_empty`（exit 1）结束。Direct LLM、Coze answer/review、remote embedding、remote rerank 和 Brave Search 仍只有 MockTransport/fixture，且没有真实配额、延迟、限流或计费证据。
+3. **只有 Coze batch transport 与失败诊断得到 live-diagnostic 证据。** 本机未提交的 Token 已用于真实 tasks 4-8；鉴权、HTTP 500/200、raw envelope、规范化、strict string ID、workflow version、attempt/retry/duration 和终态语义均可追踪。task 8 将 task 7 的 `NO_ARTICLES` 改进为明确 `SPA_API_NOT_DISCOVERED`，但仍没有文章产物并以 `batch_result_empty`（exit 1）结束。Direct LLM、Coze answer/review、remote embedding、remote rerank 和 Brave Search 仍只有 MockTransport/fixture，且没有真实配额、延迟、限流或计费证据。
 4. **LLM token/cost 已支持真实响应透传，但仍需 live 验收。** Direct/Coze 适配器现在读取响应中的 usage/cost（若 provider 返回），Chat trace 持久化规范化 token 字段；缺失 usage 或价格时明确标记 `not_available`，cost 保持 0 作为 schema 兼容的“未知”值。真实 provider 方言、价格字段、计费和异步语义仍未验收。
 5. **Coze 存在高风险契约假设。** CozeAdapter 假设 POST /v3/chat 的同步响应直接包含 answer messages；真实 Chat v3 可能需要轮询会话和单独读取消息，必须 live 验证后才能接受。
 6. **共享限流代码已完成，目标环境仍未验收。** 非 test 环境默认使用 RedisFixedWindowRateLimiter；Redis 故障 fail-closed 返回结构化 503，不能静默退回进程内计数；Redis 连接/读写有依赖超时。限流身份只使用 IP，伪造 Bearer 不能分裂桶；只有显式可信代理 CIDR 才读取单跳 `X-Forwarded-For`。本地 Compose 已观察到真实 `odirag:ratelimit:*` key 和限流响应头，但 Redis ACL、故障转移、ingress 策略和多副本公平性仍需目标环境验证。
 7. **分布式锁为部分满足。** crawl/source-discovery 通过数据库条件 UPDATE、唯一约束和恢复任务避免重复 claim，但没有通用 Redis distributed lock；worker 文档保存阶段另有条件状态推进，避免并发取消覆盖终态。
 8. **前端功能成立，但偏离指定依赖栈。** Vue 3/TypeScript/Vite/Vue Router、安全 Markdown 已实现；package.json 未使用指南列出的 Pinia、Axios、Element Plus/Naive UI、ECharts。现有 typed fetch/custom components 能工作，但属于架构偏差。backend 明确以 UID 10001 运行；frontend/reverse-proxy Nginx 当前仍由基础镜像 root master 启动、worker 降权，非 root 容器边界不能扩大表述。
 9. **配置文件结构不完全一致。** sites.yaml、filters.yaml、chunking.yaml、prompts 已使用；指南目标中的 knowledge_schema.yaml、retrieval.yaml、rerank.yaml、monitoring.yaml 不存在，相应参数主要通过环境变量/代码 schema 管理。Compose 显式透传 provider 配置，真实 Coze batch Token 仅在 ignored `.env` 中存在且不得写入仓库。
-10. **真实站点内容抓取仍失败。** fixture crawl 覆盖分页、详情、附件和幂等；scsia.org 浏览器/公开 API 证实栏目有 69 条记录。Local crawler 因代理 DNS `198.18.0.208` 被 SSRF guard 正确拒绝；Coze 云端 task 7 到达真实 endpoint、HTTP 200 且 invocation completed，但返回 `NO_ARTICLES`/`batch_result_empty`、0 fetched/0 documents/0 points。HTTP 200 只证明 transport，至少 10 篇真实文章门禁仍未执行成功。
+10. **真实站点内容抓取仍失败。** fixture crawl 覆盖分页、详情、附件和幂等。独立公开 API 验证精确证明 scsia.org 栏目列表 HTTP 200 JSON、`total=69`、首批五行，首条 ID `7587` 的详情返回 data 且 `newsContent` 长度 995。Local crawler 因代理 DNS `198.18.0.208` 被 SSRF guard 正确拒绝；Coze 云端 task 8 到达真实 endpoint、HTTP 200 且 invocation completed，但仅访问基础 HTML、未发现 API，返回 `SPA_API_NOT_DISCOVERED`/`batch_result_empty`、0 fetched/0 documents/0 points。HTTP 200 只证明 transport，至少 10 篇真实文章门禁仍未执行成功。
 11. **扫描 PDF 只有 OCR 标志。** requires_ocr 可追踪，但没有 OCR engine；这不违反 Phase 3 的“标志”要求，却限制扫描件生产覆盖。
 12. **前端 high 和容器扫描已闭环，但只证明当前本地 digest。** 两个 high 均来自直接 dev dependency `@playwright/test` 经传递依赖 `playwright` 命中 GHSA-7mvr-c777-76hp（受影响 `<1.55.1`）；精确升级至 1.55.1 后全依赖和 production-only audit 都为 0，无 major 升级。当前 backend（133 packages，digest `7f090ada232d`）和 frontend（26 packages，digest `2d41a3e3c971`）Scout 均为 0C/0H/0M/0L；当前 backend SBOM 的凭据、环境文件、live endpoint 和业务载荷模式检查均为 0。目标 registry digest、CI 复扫和 provenance 仍需发布环境完成。
 13. **Git 基线和审计检查点已建立，但还不是正式发布标签。** `85d4bdb feat: complete Coze batch crawl readiness` 是批量抓取实现基线，`14bbf40 docs: record production audit checkpoint` 是审计文档检查点；最终发布仍需干净且经复核的 release checkpoint、签名 tag、CI green、SBOM 和镜像 digest。
 14. **本地高优先级竞态与数据边界已回归验证。** Local/Coze worker 在保存前使用条件状态推进，取消或远端失败不会覆盖 `cancelled`；审核提交锁定关联任务并在无 pending 文档时收敛为 `completed`；LLM cost 拒绝非有限/负数/超 Numeric(18,8) 范围值并量化到数据库精度。上述证据仍是 SQLite/fixture 边界，不替代 PostgreSQL 并发演练。
-15. **Coze 任务关联现在 fail-closed。** canonical request/response schema 都要求 strict non-empty string `task_id`；provider 在发网前验证请求且错误不回显载荷；主批次与失败 URL 重试在保存文档前核对响应 ID，错配记录 `COZE_TASK_ID_MISMATCH` 并拒绝任何文档持久化。该防护已由 fixture 回归验证；真实 task 7 的请求/响应 ID 一致，但没有刻意制造 live 串单。
+15. **Coze 任务关联现在 fail-closed。** canonical request/response schema 都要求 strict non-empty string `task_id`；provider 在发网前验证请求且错误不回显载荷；主批次与失败 URL 重试在保存文档前核对响应 ID，错配记录 `COZE_TASK_ID_MISMATCH` 并拒绝任何文档持久化。该防护已由 fixture 回归验证；真实 task 8 的规范化 ID 为 string `"8"` 并与请求一致，但没有刻意制造 live 串单。
+16. **真实失败已进入监控。** task 8 后生成 `high_failure_rate`、severity `high`、status `open` 的本地告警，observed `0.4` 超过 threshold `0.2`。这证明当前本地规则能检测失败率，不证明生产告警投递、升级、确认或恢复闭环。
 
 ## 3. Phase 0-15 需求到代码追踪矩阵
 
@@ -179,7 +180,7 @@
 | full query trace through retrieval/prompt/answer/citation/refusal/latency | services/chat.py；models/observability.py；llm/adapters.py | search/chat/lineage tests；usage/cost propagation tests | PARTIAL | 真实 provider usage/cost 方言、价格和异步生命周期未 live 验证 |
 | answer→citation→chunk→version→crawl→source traversal | repositories/observability.py；routes/chat.py | test_versioning_lineage.py | FIXTURE-VERIFIED | PostgreSQL join/cascade 未 live 验证 |
 | crawler/knowledge/RAG/dependency/cost metrics | metrics.py；services/observability.py | test_metrics.py；monitoring tests | FIXTURE-VERIFIED | 多实例聚合/Prometheus 未实现 |
-| 六类 persisted alerts | services/observability.py；tasks/monitoring.py | test_monitoring_alerts.py | FIXTURE-VERIFIED | 样本为 deterministic/synthetic |
+| 六类 persisted alerts | services/observability.py；tasks/monitoring.py | test_monitoring_alerts.py；task 8 后真实 `high_failure_rate` high/open 告警 | VERIFIED-LOCAL + FIXTURE-VERIFIED | task 8 证明本地 failure-rate 规则以 observed 0.4 / threshold 0.2 打开告警；生产投递、升级、确认、恢复与多实例聚合未验证 |
 | scheduled refresh + lifecycle + opt-in source-gap scan | tasks/celery_app.py；tasks/source_discovery.py；routes/system.py | test_tasks.py；source-discovery task tests；monitoring tests；本地 scheduler 日志 | VERIFIED-LOCAL | 目标环境 beat 长期运行、broker 故障和多副本调度仍未验收；自动扫描默认关闭 |
 
 ### Phase 12 - Vue Frontend
@@ -267,7 +268,7 @@ OpenAPI 生成结果包含指南要求的 auth、sources、crawl-tasks、documen
 | vector store | InMemoryVectorStore；Qdrant FakeClient | real collection/index/persistence/delete/backup |
 | cache | InMemoryEmbeddingCache；local Redis connectivity only | Redis-backed cache TTL/ACL/persistence/failure behavior |
 | rate limiting | RedisFixedWindowRateLimiter unit contract；local Compose Redis counter and response headers | target Redis ACL/failover, multi-replica fairness, ingress interaction |
-| crawling | static fixture site + MockTransport；scsia browser/public-API inspection；local SSRF rejection；real Coze tasks 4-7 transport/normalization/terminal-state evidence | Coze workflow currently returns `NO_ARTICLES`/`batch_result_empty` for a known dynamic SPA；real DNS/TLS/robots/anti-bot/10-article persistence |
+| crawling | static fixture site + MockTransport；scsia list/detail public-API HTTP/JSON inspection；local SSRF rejection；real Coze tasks 4-8 transport/normalization/terminal-state evidence | task 8 explicitly reports `SPA_API_NOT_DISCOVERED`/`batch_result_empty` for a known dynamic SPA but does not consume the verified JSON API；real DNS/TLS/robots/anti-bot/10-article persistence |
 | LLM | Direct/Coze MockTransport | real model JSON stability, Coze async lifecycle, token/cost |
 | evaluation/experiments/load | tiny deterministic demo | representative corpus, production latency/cost/quality |
 | frontend E2E | Playwright route fixtures；local SQLite/deterministic 无拦截 smoke；Nginx/frontend HTTP smoke | deployed HTTPS、真实内容/引用、remote provider |
@@ -288,7 +289,7 @@ content gap detection → candidate official-site discovery → official-status 
 | column discovery | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | selector heuristics对 JS 网站有限 |
 | trial crawl | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | 只抓 bounded HTML；真实反爬/附件未验证 |
 | explicit Local Provider crawl contract | crawler/providers.py；services/crawl.py；crawler/state.py；repositories/crawl.py | test_fixture_crawl.py；test_crawl_reliability.py；provider unit tests；review convergence test | FIXTURE-VERIFIED | 仅确定性 fixture；真实公网 DNS/反爬和附件质量未验证；审核完成后等待任务会收敛为 completed |
-| Coze batch invocation/raw response/acceptance summary | crawler/providers.py；services/crawl.py；schemas/coze.py；api/routes/crawl_tasks.py；frontend/src/views/CrawlTaskDetailView.vue | strict request/response ID、pre-network rejection、main/retry mismatch fixtures；CrawlTaskDetailView.spec.ts；coze-crawl.spec.ts；真实 tasks 4-7 | PARTIAL / LIVE-DIAGNOSTIC | Token、鉴权、字符串 `task_id`、`batch_result` envelope、HTTP/raw/normalized persistence 和 `completed/no_articles` 终态已真实验证；ID 错配防护只在 fixture 中验证；task 7 的 acceptance `batch_result_empty`（0 documents/chunks/points）表明动态页面仍被误报 `NO_ARTICLES`，不构成 PASS-LIVE |
+| Coze batch invocation/raw response/acceptance summary | crawler/providers.py；services/crawl.py；schemas/coze.py；api/routes/crawl_tasks.py；frontend/src/views/CrawlTaskDetailView.vue | strict request/response ID、pre-network rejection、main/retry mismatch fixtures；CrawlTaskDetailView.spec.ts；coze-crawl.spec.ts；49-test focused regression；真实 tasks 4-8 | PARTIAL / LIVE-DIAGNOSTIC | Token、鉴权、字符串 `task_id`、`batch_result` envelope、HTTP/raw/normalized persistence 和 `partial_failed` 终态已真实验证；task 8 为 one attempt/zero retries、4,141 ms、`batch_crawl-v1`、string ID `"8"`，并明确报告 `SPA_API_NOT_DISCOVERED`；acceptance 仍为 `batch_result_empty`（0 documents/chunks/points），不构成 PASS-LIVE |
 | quality scoring | services/source_discovery.py；config thresholds | source discovery integration tests | FIXTURE-VERIFIED | 权重是启发式，未用生产标注集校准 |
 | manual approve/reject | routes/source_discovery.py；repository atomic update | integration + Playwright tests | FIXTURE-VERIFIED | 只有 admin，没有双人审批 |
 | activation to Source/SourceColumn | services/source_discovery.py；models/source.py | integration + Playwright tests；activation compensation test | FIXTURE-VERIFIED | PostgreSQL uniqueness/并发未 live；激活后不自动启动 crawl；异常补偿路径尚未在真实 PostgreSQL 演练 |
@@ -361,24 +362,25 @@ to the existing manual API path.
 | current Docker/WSL control-plane check | PASS-LOCAL；交互式启动后 WSL、Docker Client/Server 29.6.2、Compose v5.3.1 均响应，8080 及项目端口可用，八服务 healthy | 仍未验证目标主机的自动启动、生产 secret/TLS、容灾和 registry provenance；未删除 VHD、容器、Volume 或数据库 |
 | last scanned hardened image build | PASS-LOCAL；backend/frontend `--pull --no-cache` 基线、runtime pip 移除、CSV/JSON/empty 配置与 npm 均通过；2026-08-07 当前 backend digest `7f090ada232d`（133 packages）和 frontend digest `2d41a3e3c971`（26 packages）的 Scout 结果均为 0C/0H/0M/0L | 当前扫描只证明本地 digests；最终 backend 代码层构建复用已验证依赖基线，目标 registry、CI、签名和 provenance 未验证 |
 | current real Compose Playwright | FAIL-EXPECTED；登录、sources、documents、chat 页面成功；查询返回 `A required provider is unavailable`，引用断言失败 | `embedding_provider=remote` 且无 key，数据库/Qdrant 无已索引文档；不是前端 live acceptance pass |
-| authenticated API / acceptance-summary | PASS-LOCAL / LIVE-DIAGNOSTIC；login、Coze status、sources、documents、crawl-tasks、acceptance-summary、invocations、failed-urls 均通过；task 7 产生真实 Coze invocation | tasks 1-3 本地 SSRF 失败，task 7 云端诊断为 0 documents/chunks/Qdrant points 且 `batch_result_empty`；不是成功抓取/索引证据 |
+| authenticated API / acceptance-summary | PASS-LOCAL / LIVE-DIAGNOSTIC；login、Coze status、sources、documents、crawl-tasks、acceptance-summary、invocations、failed-urls 均通过；task 8 产生一条真实 Coze invocation，worker 正常完成 | tasks 1-3 本地 SSRF 失败；task 8 业务终态 `partial_failed`，PostgreSQL 1 invocation/0 documents/0 chunks，0 persisted failures，acceptance `batch_result_empty`；不是成功抓取/索引证据 |
 | Qdrant live local state | PASS-LOCAL health；`/healthz` 200；collection count 0 | 服务正常但无已索引文档，collection/schema/point 持久化仍未验收 |
-| Coze batch live diagnostic | PARTIAL / LIVE-DIAGNOSTIC；Token 与 URL 由三个消费服务加载；task 4 证实 `task_id` 必须为 string；task 5 证实 transport 为 `run_id + batch_result`；task 7 HTTP 200、invocation completed、raw/normalized 与 `completed/no_articles` 均持久化 | task 7 返回 `NO_ARTICLES`、`batch_result_empty`、0 discovered/fetched/documents/chunks/points；动态 SPA 工作流仍失败，不是 PASS-LIVE |
+| Coze batch live diagnostic | PARTIAL / LIVE-DIAGNOSTIC；Token 与 URL 由三个消费服务加载；task 4/5 确立 string ID 与 `run_id + batch_result` transport；task 8 HTTP 200、invocation completed、attempts 1/retries 0/duration 4,141 ms，raw/normalized string ID `"8"`、`batch_crawl-v1` 和 `partial_failed` 均持久化 | task 8 返回 `SPA_API_NOT_DISCOVERED`、`batch_result_empty`，除 `pages_visited=1` 外 discovered/fetched/accepted/rejected/pending/failed 和 documents/chunks/points 均为 0；比 task 7 的 `NO_ARTICLES` 更可诊断，但动态 SPA 工作流仍失败，不是 PASS-LIVE |
 
 ### scsia.org 实验记录（非 PASS-LIVE）
 
 该实验明确区分了浏览器/公开 API 可见内容、本地 SSRF 边界、Coze transport 和真正的内容验收：
 
-- 浏览器与公开站点 API 检查通过：导航 ID 264 的列表共 69 条记录，`/portal/news/264` 返回真实列表，`/portal/new/{id}` 的部分详情包含 4,000 字以上正文。页面路由本身是只加载 JavaScript bundle 的 SPA 外壳。
+- 独立公开 API 检查通过：`https://scsia.org/portal/news/264?pageNum=1&pageSize=5` 返回 HTTP 200 JSON、`total=69`、五行；首条 ID 为 `7587`。`https://scsia.org/portal/new/7587` 返回 data，`newsContent` 长度为 995。这里只记录状态、结构和长度，不保存正文。页面路由本身是只加载 JavaScript bundle 的 SPA 外壳。
 - 本地 API 创建了显式协会实验来源（`source_id=1`、`column_id=1`、`official_status=association`），没有绕过 Phase 16 的官方来源校验，也没有把协会域名标记为政府官方站点。
 - `POST /api/sources/1/test` 返回 `reachable=false`、`error_type=UnsafeUrlError`；本机 DNS 将 `scsia.org` 解析为 `198.18.0.208`，属于代理/拦截地址，后端 SSRF 防护按设计拒绝。
 - 本地 tasks 1-3 持久化为 `failed`，抓取计数和文档数均为零；接口返回 `422 CRAWL_SOURCE_UNSAFE`。这个结果只证明安全边界。
-- 真实 Coze task 4 使用旧数字 `task_id`，endpoint HTTP 500 并明确要求 string；修复后 task 5 HTTP 200，暴露部署 transport wrapper 为 `run_id + batch_result`；加入 wrapper 解包后 task 6 HTTP 200、invocation `completed` 且规范化成功。最终镜像 rollout 后 task 7 再次 HTTP 200、invocation `completed`，并验证了 `completed/provider_status=no_articles` 的持久化语义。
-- task 7 的内层业务结果为 `success=false`、warning `NO_ARTICLES`、pages_visited=1、0 discovered/fetched/articles/failed_urls，最终 0 documents/chunks/Qdrant points；验收脚本状态为 `batch_result_empty`、exit 1。已知页面存在内容，因此这是内容验收失败；HTTP 200 不能升级为 PASS-LIVE。
+- 真实 Coze tasks 4-7 确立了 string `task_id`、`run_id + batch_result` wrapper、规范化和 `NO_ARTICLES` 误分类证据。新云端部署后的 task 8 HTTP 200、invocation `completed`，one attempt/zero retries，duration 4,141 ms；normalized task ID 是 string `"8"`，workflow version 为 `batch_crawl-v1`。
+- worker 正常完成 task 8，但业务任务持久化为 `partial_failed/provider_status=partial_failed` 且无 provider error。statistics 只有 `pages_visited=1`；discovered/fetched/accepted/rejected/pending/failed 均为 0。warnings 包含 `SPA_API_NOT_DISCOVERED`，并说明只取得基础 HTML、没有发现 API。PostgreSQL 为 1 invocation/0 documents/0 chunks、0 persisted failures；Qdrant collection 数为 0；验收脚本仍为 `batch_result_empty`、exit 1。
+- task 8 后监控产生 `high_failure_rate`、severity `high`、status `open` 告警（observed `0.4`，threshold `0.2`）。相关回归 `49 passed`。该告警与显式 warning 改善了可诊断性，但没有提升内容验收等级。
 
-Coze 工作流必须按施工规范识别 SPA 并至少返回 `DYNAMIC_CONTENT_UNSUPPORTED`，或在经过安全审查的站点规则中支持其官方 JSON list/detail API；当前把已知动态内容归为 `NO_ARTICLES` 是云端工作流缺陷。修复并重新发布后仍需完成至少 10 篇持久化、审核、embedding 和 Qdrant points 验收。
+Coze 工作流已从 task 7 的 `NO_ARTICLES` 改进为 task 8 的明确 `SPA_API_NOT_DISCOVERED`，但仍未使用已独立确认的 list/detail JSON API。下一次云端修复应在经过安全审查的站点规则中支持该 API，并在 bounded task 中返回真实 articles；重新发布后仍需完成至少 10 篇持久化、审核、embedding 和 Qdrant points 验收。
 
-本机 PostgreSQL、Redis、Qdrant health、worker/scheduler、Nginx、frontend、锁定的 Alembic 1.18.5、npm audit 和已扫描 checkpoint 的本地镜像 Scout 均有通过证据；2026-08-07 当前 Engine 已恢复，八服务 healthy，task 7 的真实 Coze transport/终态证据已归档，但内容结果为 `batch_result_empty`。外部 live 项目仍必须按 `PRODUCTION_ACCEPTANCE_CHECKLIST.md` 执行。在 Brave、Coze 内容抓取/Direct LLM、embedding、rerank、至少 10 篇代表性官方内容、真实索引/Qdrant points、生产 TLS/secret、CI/registry provenance 和 cited-answer live Playwright 证据完成前，发布结论保持 **NOT PRODUCTION ACCEPTED**。
+本机 PostgreSQL、Redis、Qdrant health、worker/scheduler、Nginx、frontend、锁定的 Alembic 1.18.5、npm audit 和当前本地镜像 Scout 均有通过证据；八服务 healthy，task 8 的真实 Coze transport、严格 ID、失败终态和监控告警证据已归档，但内容结果仍为 `batch_result_empty`。外部 live 项目仍必须按 `PRODUCTION_ACCEPTANCE_CHECKLIST.md` 执行。在 Brave、Coze 成功内容抓取/Direct LLM、embedding、rerank、至少 10 篇代表性官方内容、真实索引/Qdrant points、生产 TLS/secret、CI/registry provenance 和 cited-answer live Playwright 证据完成前，发布结论保持 **NOT PRODUCTION ACCEPTED**。
 
 ### 9.1 本轮调度回归补充
 

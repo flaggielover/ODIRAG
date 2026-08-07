@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-07。每一项都必须在目标环境执行并保存原始输出。本机 WSL/Docker 数据已无损迁移到 D 盘；交互式恢复后的 Docker Desktop/Engine、八个 development 服务、PostgreSQL 迁移 round-trip/备份恢复、Redis、Qdrant health、worker、scheduler、Nginx、frontend、8080 API 和 acceptance-summary 均有真实本地证据。backend/worker/scheduler 当前运行 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，其 Scout 为 133 packages、`0C/0H/0M/0L`。Coze task 7 transport 在前一版 `2bcc5e6530c6` live-diagnostic 镜像上真实诊断为 HTTP 200/completed，但业务结果为 `no_articles`、0 documents/chunks/points，验收状态 `batch_result_empty`（exit 1）；当前镜像新增严格 ID 和串单拒绝防护，未伪造第二次 live 成功。生产 secret、真实内容抓取/provider、索引、TLS、CI/registry provenance 仍未验收。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-07。每一项都必须在目标环境执行并保存原始输出。本机 WSL/Docker 数据已无损迁移到 D 盘；Docker Desktop/Engine、八个 development 服务、PostgreSQL 迁移 round-trip/备份恢复、Redis、Qdrant health、worker、scheduler、Nginx、frontend、8080 API 和 acceptance-summary 均有真实本地证据。backend/worker/scheduler 当前运行 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，其 Scout 为 133 packages、`0C/0H/0M/0L`。新 Coze 部署后的 task 8 真实取得 HTTP 200/invocation completed 和 `SPA_API_NOT_DISCOVERED` 诊断，但业务终态为 `partial_failed`、0 documents/chunks/points，验收 `batch_result_empty`（exit 1）。这比 task 7 的 `NO_ARTICLES` 更可诊断，仍不是内容 PASS-LIVE。生产 secret、真实内容抓取/provider、索引、TLS、CI/registry provenance 仍未验收。
 
 ## 证据规则
 
@@ -466,6 +466,20 @@ chunk/Qdrant point 计数均为 0；脚本结果为 `status=batch_result_empty`�
 鉴权、transport、raw/normalized 持久化和 no-articles 终态语义，但对已知存在内容的动态 SPA 属于
 内容验收 FAIL，不得标为 `live_batch_verified`。
 
+2026-08-07 新部署后的 task 8 真实执行记录（同样不记录部署 URL、Token、Authorization 或正文）：
+HTTP 200、invocation `completed`、attempts `1`、retries `0`、duration `4141 ms`；normalized
+`task_id` 为 string `"8"`，`workflow_version=batch_crawl-v1`。worker 正常结束异步执行，但业务任务
+持久化为 `status=partial_failed`、`provider_status=partial_failed`，没有 provider error。statistics
+只有 `pages_visited=1`；discovered/fetched/accepted/rejected/pending/failed、persisted failures、documents、
+chunks 和 Qdrant points 均为 0。warnings 包含 `SPA_API_NOT_DISCOVERED`，并明确说明只取得基础 HTML、
+未发现 API。验收脚本仍返回 `status=batch_result_empty`、exit code 1。
+
+独立来源证据：`https://scsia.org/portal/news/264?pageNum=1&pageSize=5` 返回 HTTP 200 JSON、
+`total=69`、五行，首行 ID `7587`；`https://scsia.org/portal/new/7587` 返回 data，`newsContent`
+长度为 995。这里只保存状态、结构、ID 和长度，不保存正文。PostgreSQL 对 task 8 为 1 invocation、
+0 documents、0 chunks；Qdrant collection 数为 0。监控打开 `high_failure_rate` high/open 告警，
+observed `0.4` 超过 threshold `0.2`；相关回归 `49 passed`。这些仍是失败诊断证据。
+
 先设置 `ODIRAG_SOURCE_COLUMN_ID` 为一个已人工批准并启用的真实栏目 ID；以下命令会在变量为空时立即失败：
 
 ~~~powershell
@@ -704,12 +718,13 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 | Compose 服务 | 2026-08-07 Docker Desktop/Engine 恢复后，最终 backend/worker/scheduler image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7` 下 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx；8080 与首页/API 均为 200 | development 配置未证明生产 secret/TLS、目标持久化和 registry provenance |
 | PostgreSQL | `pg_isready` accepting connections；current 为 `0006_coze_task_operations (head)`；existing DB `alembic check` 无漂移；专用 PostgreSQL 完成 fresh upgrade→downgrade 0003→upgrade；隔离备份恢复及 9 表 count 对比通过 | 未对生产业务库直接 downgrade；未验证生产规模、RPO/RTO、连接池耗尽和维护窗口 |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
-| Qdrant | `/healthz` HTTP 200；当前 collection 数为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
-| worker/scheduler | worker inspect ping 成功；任务注册包含 `odirag.source_discovery.scan_gaps`；scheduler healthy 并发送 recovery；显式非 root UID/GID 10001，无旧 superuser 警告 | 自动 gap scan 默认关闭；未执行真实 Brave/Coze queued crawl 和长期 beat/故障恢复演练 |
+| Qdrant | `/healthz` HTTP 200；task 8 后 collection 数仍为 0 | 没有成功抓取/索引文档，未证明 collection schema、points 删除补偿和备份 |
+| worker/scheduler | worker inspect ping 成功；真实 queued Coze task 8 被 worker 正常执行至业务终态 `partial_failed`；任务注册包含 `odirag.source_discovery.scan_gaps`；scheduler healthy 并发送 recovery；显式非 root UID/GID 10001 | task 8 没有文章产物；自动 gap scan 默认关闭；真实 Brave crawl、长期 beat 和故障恢复演练仍未验收 |
+| monitoring | task 8 后 `high_failure_rate` 告警为 severity `high`、status `open`，observed `0.4`、threshold `0.2` | 证明本地规则检测到失败率；生产通知投递、升级、确认、恢复和多实例聚合未验证 |
 | Nginx/frontend | fresh frontend 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；修复旧 upstream IP 缓存后 `nginx -t` 通过，重建 backend 且不重启 Nginx 时代理 health 15/15 次均为 200；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；真实栈 Playwright 到达 chat | live Playwright 在引用断言处失败：remote embedding 无 key 且无索引内容；HTTPS、目标多副本滚动发布和生产浏览器门禁未通过 |
 | Docker/WSL 恢复 | WSL 数据位于 D 盘且未删除 VHD/Volume/数据库；2026-08-07 Client/Server 29.6.2、Compose v5.3.1 与八服务通过 | 目标主机自动启动、生产 secret/TLS、容灾和 registry provenance 未验证 |
 | fresh 镜像与供应链 | backend/frontend `--pull --no-cache` 基线和最新 builder 构建成功；最终 backend 代码层已重建；runtime 排除 `.env`/tests、移除 pip、使用非 root 后端和 slim Nginx；npm 两种 audit 为 0；当前 backend digest `7f090ada232d`（133 packages）与 frontend digest `2d41a3e3c971`（26 packages）的 Scout 结果均为 0C/0H/0M/0L；当前 backend SBOM 敏感模式为 0 | 扫描只证明本地 digests；CI、目标 registry、签名和 provenance 未验证 |
 | Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing/fresh PostgreSQL 均到 `0006` 且 `check` 无漂移；专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
-| scsia.org | 浏览器/公开 API 确认 69 条记录；tasks 1-3 本地 SSRF 拒绝；task 7 真实 Coze 诊断 HTTP 200/completed，但 `provider_status=no_articles`、`batch_result_empty`、0 文档/chunk/point | 不是 live crawl 成功；Coze workflow 必须正确处理或明确拒绝动态 SPA，之后再完成 10 篇抓取/审核/索引 |
+| scsia.org | 独立 list API HTTP 200 JSON、total 69/rows 5；首条 ID 7587 的 detail API 返回 data、正文长度 995；tasks 1-3 本地 SSRF 拒绝；task 8 真实 Coze 诊断 HTTP 200/completed，但 `partial_failed`、`SPA_API_NOT_DISCOVERED`、`batch_result_empty`、0 文档/chunk/point；监控 high/open | 比 task 7 的 `NO_ARTICLES` 更可诊断，但不是 live crawl 成功；Coze workflow 必须支持已确认的 list/detail JSON API，并在 bounded task 返回真实 articles，之后再完成 10 篇抓取/审核/索引 |
 
 因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。Docker Desktop/WSL、配置兼容、Alembic、fresh build、本地八服务、隔离迁移/备份恢复、npm 和本地 Scout 已完成；剩余生产门禁是：真实 Brave/Coze/Direct LLM/embedding/rerank 凭据与错误/成本证据、至少 10 篇代表性官方站点抓取、真实索引/Qdrant points、代表性评测与负载、生产 TLS/secret、CI/registry provenance、release checkpoint 和 cited-answer live Playwright。

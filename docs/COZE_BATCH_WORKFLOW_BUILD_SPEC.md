@@ -227,6 +227,9 @@ UTF-8 是请求和响应的唯一编码。真实部署入口已验证会在 `N01
 `provider_status=no_articles`：业务结果明确包含 `NO_ARTICLES`，或 provider 明确返回 `success=true`
 的干净空批次。其他 `success=false` 空结果属于 `partial_failed`。无论哪种 no-articles 形式，Live
 Acceptance 对已知有内容的栏目仍要求至少一个真实持久化文档，因此该状态不会被误当成内容验收通过。
+`SPA_API_NOT_DISCOVERED` 属于明确的能力缺口：即使 `failed_count=0` 且没有 provider error，只要批次
+`success=false` 且未产出文章，本地任务必须为 `partial_failed/provider_status=partial_failed`，不能降级为
+`no_articles`。
 
 ## 7. 可复制 Prompt
 
@@ -452,7 +455,7 @@ python scripts/live_accept_coze_batch.py --source-column-id <column_id>
 transport；task 6 在两项本地修复后 HTTP 200 且 invocation completed，但对
 `https://scsia.org/Industry_information/Industry_information_1` 返回 `NO_ARTICLES` 和全零计数。
 公开站点 API 已证明该栏目有 69 条记录，因此 task 6 是内容验收 FAIL，不是成功样例。工作流应先修复
-动态页面识别（至少返回 `DYNAMIC_CONTENT_UNSUPPORTED`），再重新发布并执行同一限量验收。
+动态页面识别（至少返回 `DYNAMIC_CONTENT_UNSUPPORTED` 或更具体的诊断），再重新发布并执行同一限量验收。
 
 2026-08-07 task 7 live-diagnostic 镜像 `sha256:2bcc5e6530c673d4736c35f19a79c84a39bf3004c81fe48c27655d5457d4746b`
 已滚动到 backend/worker/scheduler，task 7 再次调用真实部署并得到
@@ -462,8 +465,30 @@ point 仍全部为 0，验收脚本返回 `status=batch_result_empty`、exit cod
 不支持的动态页面明确返回 `DYNAMIC_CONTENT_UNSUPPORTED`。
 
 同日后续生产审查将 canonical request/response schema 收紧为 strict string，并在主批次和失败 URL
-重试路径增加 fail-closed ID 匹配。当前运行镜像为 `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`；
-该镜像通过本地回归、Compose rollout 与 Scout，但未再次调用云端，因此 task 7 仍是最新真实诊断证据。
+重试路径增加 fail-closed ID 匹配。当前运行镜像为 `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，
+并已通过本地回归、Compose rollout 与 Scout。
+
+新 Coze 部署后的 task 8 是当前最新真实诊断证据：HTTP 200、invocation `completed`、attempts `1`、
+retries `0`、duration `4141 ms`，normalized `task_id` 是 string `"8"`，workflow version 是
+`batch_crawl-v1`。worker 正常完成执行，但业务任务为 `partial_failed/provider_status=partial_failed`，
+没有 provider error。statistics 只有 `pages_visited=1`，其余发现、抓取、审核和失败计数均为 0；
+warning `SPA_API_NOT_DISCOVERED` 明确说明只取得基础 HTML、没有发现 API。数据库为一条 invocation、
+0 persisted failures/documents/chunks，Qdrant 为 0 collection，验收 `batch_result_empty`、exit code 1。
+这比 task 7 的 `NO_ARTICLES` 更可诊断，但仍是内容验收 FAIL。
+
+独立 API 验证已把下一次云端修复范围收窄：
+
+- `https://scsia.org/portal/news/264?pageNum=1&pageSize=5` 返回 HTTP 200 JSON、`total=69`、五行；
+- 首行 ID 为 `7587`，`https://scsia.org/portal/new/7587` 返回 data，`newsContent` 长度为 995；
+- 仓库只记录结构、ID、计数和长度，不保存正文。
+
+针对该已验证站点规则，工作流应让列表节点按 `max_pages`/`max_articles` 有界调用 list JSON API，
+从 rows 提取文章 ID，再调用 detail JSON API 并映射到规范 `articles[]`；所有 URL 仍需通过既有域名、
+协议、重定向和响应大小限制。下一次 bounded acceptance 至少必须返回一个真实 article 并形成持久化文档；
+只返回 `SPA_API_NOT_DISCOVERED`、HTTP 200 或 completed invocation 仍不能通过。
+
+task 8 后本地监控打开 `high_failure_rate` high/open 告警（observed `0.4`，threshold `0.2`），相关
+回归 `49 passed`。该告警证明失败可见，不证明生产告警投递和恢复闭环。
 
 ## 10. 施工后的人工检查清单
 
