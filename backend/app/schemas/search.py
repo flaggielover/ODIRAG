@@ -33,6 +33,8 @@ class SearchResponse(BaseModel):
     hits: list[SearchHitResponse]
     total_ms: float
     warnings: list[str]
+    rerank_applied: bool
+    rerank_metadata: dict[str, Any]
 
 
 class SearchAnalysisResponse(BaseModel):

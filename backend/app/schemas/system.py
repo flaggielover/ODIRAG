@@ -105,6 +105,11 @@ class RagMetrics(BaseModel):
     citation_answer_count: int
     citation_rate: float
     refusal_citation_violation_count: int
+    rerank_assessed_count: int
+    rerank_applied_count: int
+    rerank_failure_count: int
+    rerank_failure_rate: float
+    average_rerank_latency_ms: float
 
 
 class MetricsResponse(BaseModel):

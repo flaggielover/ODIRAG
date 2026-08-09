@@ -63,6 +63,30 @@ SearchRequest
 - Metadata filter：先缩小地域、时间、文种等业务范围，提高相关性。
 - Debug API：检索质量问题需要看到分析、召回、融合和重排各阶段，而不是只看答案。
 
+## 6.1 Phase B: rerank execution contract and evaluation matrix
+
+`hybrid_rerank` is an optional final ordering stage, not a reason to make an otherwise
+working BM25 plus vector retrieval unavailable. Each retrieval trace records a structured
+`rerank_metadata` object with `applied`, provider/model, failure policy, candidate and
+reranked counts, latency, safe numeric usage, cost measurement, and a redacted error code.
+The public search response also exposes `rerank_applied` so a client cannot mistake a
+fallback fusion result for a remote rerank result.
+
+`ODIRAG_RERANK_FAILURE_POLICY=open` is the default. When a remote provider times out,
+rejects a request, or returns an invalid response, the engine retains the original fusion
+order, marks rerank as not applied, and adds a stable warning. `closed` instead propagates
+the provider error. Neither mode stores provider bodies, authorization values, or raw errors.
+
+Evaluation must execute rather than label retrieval variants. The evaluation run accepts an
+actual retrieval mode and top-k; the matrix endpoint resolves one verified question snapshot
+once and runs BM25, Vector, Hybrid, and Hybrid+Rerank against that same snapshot. A metric
+with zero assessed samples is not evidence of quality. In particular, use the explicit
+citation, grounding, and unsupported-answer denominators in the report before comparing modes.
+
+Remote rerank quality, latency, and billing are live claims only after a configured endpoint
+and credential have been used successfully. Deterministic rerank, MockTransport response
+tests, and in-memory evaluation runs remain fixture or contract evidence.
+
 ## 7. 常见故障模式
 
 - 空查询：Analyzer 抛 `query must not be empty`，API 返回 422。

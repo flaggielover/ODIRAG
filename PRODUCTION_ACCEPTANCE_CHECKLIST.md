@@ -632,6 +632,40 @@ $reindex.vector_point_ids.Count
 
 当前 OpenAI-compatible `remote` / `text-embedding-3-small` / 1536 已 PASS-LIVE。历史 document 3 为 8 chunks/8 points；task 23 official document 6 首次 reindex 为 6 chunks/6 embeddings，第二次为 6 cache hits/0 embeddings 且 ID 集合不变。PostgreSQL/Qdrant 当前均为 14 indexed chunks/points；payload 的 `chunk_id` 与 point ID 相等。历史 401 保留为 credential fail-closed 证据，没有 fake fallback 或半写入。
 
+## 11.1 Phase B rerank and retrieval-matrix checkpoint
+
+Run these checks after deploying a build containing migration `0008_rerank_observability`:
+
+~~~powershell
+docker compose exec -T backend alembic current
+docker compose exec -T backend alembic check
+docker compose exec -T backend python -c "from app.config import get_settings; s=get_settings(); print({'provider': s.rerank_provider, 'configured': bool(s.rerank_api_key), 'model': s.rerank_model, 'timeout_seconds': s.rerank_timeout_seconds, 'failure_policy': s.rerank_failure_policy})"
+~~~
+
+Expected: Alembic reports `0008_rerank_observability (head)` and `No new upgrade operations detected`; the configuration output contains only `configured=true|false`, never a key. With `provider=none`, a protected `/api/search/debug` request using `mode=hybrid_rerank` must return `rerank_applied=false`, `rerank_metadata.provider=none`, `rerank_metadata.cost=null`, `rerank_metadata.cost_measurement=not_applicable`, and `warnings` containing `rerank_provider_disabled`, while ordinary Hybrid hits remain available.
+
+For a remote provider, set `ODIRAG_RERANK_PROVIDER=remote`, `ODIRAG_RERANK_BASE_URL`, `ODIRAG_RERANK_MODEL`, `ODIRAG_RERANK_TIMEOUT_SECONDS`, `ODIRAG_RERANK_FAILURE_POLICY`, and inject `ODIRAG_RERANK_API_KEY` through the approved secret mechanism. Do not put it in this checklist output, a shell history artifact, or a response capture. Then verify a real `/api/search/debug` result has `rerank_applied=true`, a non-empty `rerank_results`, bounded `candidate_count`/`reranked_count`, a non-negative latency, and a cost measurement that is either provider-reported or explicitly `not_available`.
+
+Test both policies with a controlled unreachable endpoint only in a non-production environment:
+
+- `open`: response remains 200, final hit order equals fusion order, `rerank_applied=false`, and metadata contains a stable redacted error code.
+- `closed`: the request returns the normal structured provider-unavailable error; it must not silently degrade.
+
+Run the four-mode matrix against the same verified evaluation-question snapshot:
+
+~~~powershell
+# Authenticate normally, then post the same verified question IDs for all modes.
+Invoke-RestMethod "$api/evaluations/matrix" -Method Post -Headers $headers -ContentType 'application/json' -Body (@{
+  matrix_name = "retrieval-matrix-$(Get-Date -Format yyyyMMddHHmmss)"
+  question_ids = @('<verified-question-id>')
+  top_k = 10
+} | ConvertTo-Json)
+~~~
+
+Expected: exactly four runs named/marked `bm25`, `vector`, `hybrid`, and `hybrid_rerank`, all using the same returned `question_ids` snapshot and requested/effective `top_k`. Compare Recall@5/10, MRR, nDCG, citation precision/recall, answer-grounding rate, unsupported-answer rate, latency, and cost only when their report denominator is non-zero. A fixture or deterministic result is not remote rerank PASS-LIVE.
+
+Actual 2026-08-10 local checkpoint: fresh backend image installed Alembic `1.18.5`; real PostgreSQL reached `0008_rerank_observability (head)` with no drift; all eight Compose services healthy; 8080 and health endpoint returned 200. The current runtime was `provider=none/configured=false`, and a real debug search produced five hits with the required disabled metadata. Remote rerank remains **BLOCKED-LIVE**.
+
 ## 12. Rerank provider
 
 ~~~powershell

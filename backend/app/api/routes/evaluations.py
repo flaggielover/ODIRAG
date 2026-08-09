@@ -16,7 +16,12 @@ from app.dependencies import (
 from app.errors import AppError, NotFoundError
 from app.repositories.evaluation import EvaluationRepository
 from app.runtime import ApplicationRuntime, resolve_runtime_path
-from app.schemas.evaluation import EvaluationRunRequest, EvaluationRunResponse
+from app.schemas.evaluation import (
+    EvaluationMatrixRequest,
+    EvaluationMatrixResponse,
+    EvaluationRunRequest,
+    EvaluationRunResponse,
+)
 from app.services.evaluation import EvaluationApplicationService
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
@@ -54,6 +59,19 @@ async def run_evaluation(
     except ValueError as exc:
         raise AppError("INVALID_EVALUATION_REQUEST", str(exc), status_code=422) from exc
     return EvaluationRunResponse.model_validate(run)
+
+
+@router.post("/matrix", response_model=EvaluationMatrixResponse)
+async def run_evaluation_matrix(
+    payload: EvaluationMatrixRequest,
+    _admin: AdminUser,
+    service: EvaluationServiceDependency,
+) -> EvaluationMatrixResponse:
+    try:
+        result = await service.run_matrix(payload)
+    except ValueError as exc:
+        raise AppError("INVALID_EVALUATION_REQUEST", str(exc), status_code=422) from exc
+    return EvaluationMatrixResponse.model_validate(result)
 
 
 @router.get("", response_model=list[EvaluationRunResponse])

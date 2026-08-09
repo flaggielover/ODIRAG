@@ -417,6 +417,21 @@ def _rag_metrics(traces: list[QueryTrace], regression_count: int, window_hours: 
             if isinstance(trace.evidence_decision_json, dict)
         )
     )
+    rerank_metadata = [
+        trace.rerank_metadata_json
+        for trace in traces
+        if isinstance(trace.rerank_metadata_json, dict)
+        and isinstance(trace.rerank_metadata_json.get("provider"), str)
+    ]
+    rerank_applied = sum(metadata.get("applied") is True for metadata in rerank_metadata)
+    rerank_failures = sum(bool(metadata.get("error_code")) for metadata in rerank_metadata)
+    rerank_latencies = [
+        float(value)
+        for metadata in rerank_metadata
+        if isinstance((value := metadata.get("latency_ms")), (int, float))
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
     return RagMetrics(
         window_hours=window_hours,
         query_count=len(traces),
@@ -442,6 +457,11 @@ def _rag_metrics(traces: list[QueryTrace], regression_count: int, window_hours: 
         refusal_citation_violation_count=sum(
             trace.refusal and bool(trace.citations_json) for trace in traces
         ),
+        rerank_assessed_count=len(rerank_metadata),
+        rerank_applied_count=rerank_applied,
+        rerank_failure_count=rerank_failures,
+        rerank_failure_rate=_ratio(rerank_failures, len(rerank_metadata)),
+        average_rerank_latency_ms=(mean(rerank_latencies) if rerank_latencies else 0.0),
     )
 
 

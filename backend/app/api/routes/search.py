@@ -80,6 +80,8 @@ def _response(trace: RetrievalTrace) -> SearchResponse:
         hits=_hits(trace.final_results),
         total_ms=trace.timings_ms["total"],
         warnings=list(trace.warnings),
+        rerank_applied=bool(trace.rerank_metadata.get("applied", False)),
+        rerank_metadata=trace.rerank_metadata,
     )
 
 

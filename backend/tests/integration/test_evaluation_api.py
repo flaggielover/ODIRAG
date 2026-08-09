@@ -132,6 +132,69 @@ async def test_real_demo_evaluation_writes_reports_and_persists_metrics(
     for artifact in report_body["artifacts"].values():
         assert _is_file(artifact)
 
+    matrix = await client.post(
+        "/api/evaluations/matrix",
+        headers=auth_headers,
+        json={
+            "matrix_name": f"retrieval-mode-matrix-{uuid.uuid4().hex}",
+            "top_k": 1,
+            "questions": [
+                {
+                    "question_id": f"matrix-answer-{uuid.uuid4()}",
+                    "question": "What research support can software companies apply for?",
+                    "query_type": "rag",
+                    "expected_document_ids": [public_id],
+                    "expected_chunk_ids": [chunk_id],
+                    "expected_answer_points": ["Software companies can apply for research funding"],
+                    "difficulty": "easy",
+                    "category": "support",
+                    "created_by": "integration-test",
+                    "verified": True,
+                }
+            ],
+        },
+    )
+    assert matrix.status_code == 200, matrix.text
+    matrix_body = matrix.json()
+    assert matrix_body["top_k"] == 1
+    assert len(matrix_body["question_ids"]) == 1
+    assert {item["retrieval_mode"] for item in matrix_body["runs"]} == {
+        "bm25",
+        "vector",
+        "hybrid",
+        "hybrid_rerank",
+    }
+    assert len({item["run_id"] for item in matrix_body["runs"]}) == 4
+    for item in matrix_body["runs"]:
+        assert item["question_ids"] == matrix_body["question_ids"]
+        assert item["top_k"] == 1
+        assert item["aggregate"]["citation_assessed_questions"] == 1
+        assert item["aggregate"]["answer_grounding_assessed_questions"] in {0, 1}
+        assert item["aggregate"]["unsupported_answer_assessed_questions"] == 0
+
+        mode_report = await client.get(
+            f"/api/evaluations/{item['run_id']}/report",
+            headers=auth_headers,
+        )
+        assert mode_report.status_code == 200, mode_report.text
+        mode_report_body = mode_report.json()
+        mode_detail = await client.get(
+            f"/api/evaluations/{item['run_id']}",
+            headers=auth_headers,
+        )
+        assert mode_detail.status_code == 200, mode_detail.text
+        assert mode_detail.json()["retrieval_version"].endswith(item["retrieval_mode"])
+        assert mode_report_body["metadata"]["retrieval_version"].endswith(item["retrieval_mode"])
+        assert mode_report_body["metadata"]["retrieval_mode"] == item["retrieval_mode"]
+        assert mode_report_body["metadata"]["retrieval_top_k"] == 1
+        assert [question["question_id"] for question in mode_report_body["questions"]] == (
+            matrix_body["question_ids"]
+        )
+        trace = mode_report_body["questions"][0]["retrieval_trace"]
+        assert trace["executed_retrieval_mode"] == item["retrieval_mode"]
+        assert trace["executed_top_k"] == 1
+        assert len(mode_report_body["questions"][0]["retrieved_chunk_ids"]) <= 1
+
 
 def _is_file(path: str) -> bool:
     return Path(path).is_file()

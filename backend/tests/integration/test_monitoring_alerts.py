@@ -66,6 +66,20 @@ async def test_operational_metrics_create_and_manage_real_alerts(
             vector_results_json=[],
             fusion_results_json=[],
             rerank_results_json=[],
+            rerank_metadata_json={
+                "applied": False,
+                "provider": "remote",
+                "model": "fixture-rerank",
+                "failure_policy": "open",
+                "error": "request_timeout",
+                "error_code": "request_timeout",
+                "candidate_count": 5,
+                "reranked_count": 0,
+                "latency_ms": 12.5,
+                "usage": {},
+                "cost": None,
+                "cost_measurement": "not_available",
+            },
             final_context_json=[],
             prompt_version="v1",
             prompt_snapshot_json={"version": "v1", "content": "Grounded prompt"},
@@ -107,6 +121,11 @@ async def test_operational_metrics_create_and_manage_real_alerts(
     assert metric_body["rag"]["evidence_assessed_count"] == 1
     assert metric_body["rag"]["evidence_sufficiency_rate"] == 1.0
     assert metric_body["rag"]["citation_rate"] == 0.0
+    assert metric_body["rag"]["rerank_assessed_count"] == 1
+    assert metric_body["rag"]["rerank_applied_count"] == 0
+    assert metric_body["rag"]["rerank_failure_count"] == 1
+    assert metric_body["rag"]["rerank_failure_rate"] == 1.0
+    assert metric_body["rag"]["average_rerank_latency_ms"] == 12.5
 
     alerts = await client.get("/api/system/alerts", headers=auth_headers)
     assert alerts.status_code == 200, alerts.text

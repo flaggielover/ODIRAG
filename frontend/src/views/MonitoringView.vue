@@ -73,6 +73,7 @@ async function resolve(alert: Alert): Promise<void> {
         <MetricTile label="平均成本" :value="formatCost(metrics.rag.average_cost)" :detail="`总计 ${formatCost(metrics.rag.total_cost)}`" :icon="ServerCog" />
         <MetricTile label="证据门禁通过率" :value="formatPercent(metrics.rag.evidence_sufficiency_rate)" :detail="`${formatNumber(metrics.rag.evidence_assessed_count)} 次判定 · ${formatDuration(metrics.rag.average_evidence_gate_latency_ms)}`" :icon="SearchCheck" />
         <MetricTile label="回答引用率" :value="formatPercent(metrics.rag.citation_rate)" :detail="`${formatNumber(metrics.rag.grounding_failure_count)} 次 grounding 失败`" :icon="Quote" :tone="metrics.rag.refusal_citation_violation_count > 0 ? 'warning' : 'positive'" />
+        <MetricTile label="Rerank 降级率" :value="formatPercent(metrics.rag.rerank_failure_rate)" :detail="`${formatNumber(metrics.rag.rerank_applied_count)}/${formatNumber(metrics.rag.rerank_assessed_count)} 次执行 · ${formatDuration(metrics.rag.average_rerank_latency_ms)}`" :icon="SearchCheck" :tone="metrics.rag.rerank_failure_count > 0 ? 'warning' : 'default'" />
       </section>
 
       <section class="content-grid">

@@ -61,6 +61,9 @@ class QueryTrace(IdMixin, CreatedAtMixin, Base):
     rerank_results_json: Mapped[list[dict[str, object]]] = mapped_column(
         JSON_VALUE, nullable=False, default=list
     )
+    rerank_metadata_json: Mapped[JsonObject] = mapped_column(
+        JSON_VALUE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     final_context_json: Mapped[list[dict[str, object]]] = mapped_column(
         JSON_VALUE, nullable=False, default=list
     )

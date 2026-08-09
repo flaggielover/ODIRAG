@@ -58,6 +58,7 @@ class QueryTraceResponse(BaseModel):
     vector_results_json: list[dict[str, Any]]
     fusion_results_json: list[dict[str, Any]]
     rerank_results_json: list[dict[str, Any]]
+    rerank_metadata_json: dict[str, Any]
     final_context_json: list[dict[str, Any]]
     prompt_version: str | None
     prompt_snapshot_json: dict[str, Any]

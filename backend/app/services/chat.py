@@ -65,7 +65,12 @@ class ChatService:
         self.prompt_version = prompt_version
 
     async def answer(
-        self, query: str, *, explicit_filters: dict[str, Any] | None = None
+        self,
+        query: str,
+        *,
+        explicit_filters: dict[str, Any] | None = None,
+        retrieval_mode: RetrievalMode = RetrievalMode.HYBRID_RERANK,
+        retrieval_top_k: int | None = None,
     ) -> ChatAnswer:
         started = perf_counter()
         route = self.router.analyze(query, explicit_filters)
@@ -91,8 +96,9 @@ class ChatService:
         else:
             retrieval_trace = await self.retrieval_engine.search(
                 query,
-                mode=RetrievalMode.HYBRID_RERANK,
+                mode=retrieval_mode,
                 filters=route.filters,
+                top_k=retrieval_top_k,
             )
             trace_id = retrieval_trace.trace_id
             gate_started = perf_counter()
@@ -260,6 +266,7 @@ class ChatService:
                 vector_results_json=_hits_payload(retrieval.vector_results if retrieval else ()),
                 fusion_results_json=_hits_payload(retrieval.fusion_results if retrieval else ()),
                 rerank_results_json=_hits_payload(retrieval.rerank_results if retrieval else ()),
+                rerank_metadata_json=(retrieval.rerank_metadata if retrieval else {}),
                 final_context_json=_hits_payload(retrieval.final_results if retrieval else ()),
                 prompt_version=self.prompt_version,
                 prompt_snapshot_json={

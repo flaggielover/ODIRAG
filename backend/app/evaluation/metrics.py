@@ -76,6 +76,9 @@ class EvaluationAggregate:
     chunk_hit_rate: float = 0.0
     hallucination_assessed_claims: int = 0
     hallucination_assessed_questions: int = 0
+    citation_assessed_questions: int = 0
+    answer_grounding_assessed_questions: int = 0
+    unsupported_answer_assessed_questions: int = 0
 
 
 def evaluate_sample(sample: EvaluationSample) -> EvaluationSampleMetrics:
@@ -178,6 +181,9 @@ def evaluate_samples(samples: list[EvaluationSample]) -> EvaluationAggregate:
         chunk_hit_rate=mean(item.chunk_hit for item in measured),
         hallucination_assessed_claims=assessed_claims,
         hallucination_assessed_questions=sum(sample.claim_count > 0 for sample in samples),
+        citation_assessed_questions=len(citation_samples),
+        answer_grounding_assessed_questions=len(answered_metrics),
+        unsupported_answer_assessed_questions=len(refusal_cases),
     )
 
 

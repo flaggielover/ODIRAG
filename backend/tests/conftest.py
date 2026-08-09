@@ -33,6 +33,7 @@ def test_settings() -> Settings:
         embedding_version="test-v1",
         vector_store_provider="memory",
         rerank_provider="deterministic",
+        answer_provider="extractive",
         coze_enabled=False,
         coze_legacy_api_url=None,
         coze_batch_api_url=None,

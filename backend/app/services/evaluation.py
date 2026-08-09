@@ -21,7 +21,12 @@ from app.evaluation import (
 from app.models import DataLineage, EvaluationQuestion, EvaluationRun
 from app.repositories.evaluation import EvaluationRepository
 from app.repositories.observability import ObservabilityRepository
-from app.schemas.evaluation import EvaluationQuestionInput, EvaluationRunRequest
+from app.retrieval import RetrievalMode
+from app.schemas.evaluation import (
+    EvaluationMatrixRequest,
+    EvaluationQuestionInput,
+    EvaluationRunRequest,
+)
 from app.services.chat import ChatAnswer, ChatService
 
 
@@ -53,25 +58,90 @@ class EvaluationApplicationService:
         run_metadata: dict[str, object] | None = None,
         additional_filters: dict[str, Any] | None = None,
     ) -> EvaluationRun:
-        inline_ids = await self._save_inline_questions(request.questions)
-        selected_ids = tuple(dict.fromkeys([*request.question_ids, *inline_ids]))
-        questions = await self.repository.list_verified_questions(
-            question_ids=selected_ids,
+        questions = await self._resolve_questions(
+            question_ids=request.question_ids,
+            inline_questions=request.questions,
             category=request.category,
         )
-        if selected_ids:
-            found = {question.question_id for question in questions}
-            missing = [identifier for identifier in selected_ids if identifier not in found]
-            if missing:
-                raise ValueError(f"verified evaluation questions not found: {missing}")
-        if not questions:
-            raise ValueError("no verified evaluation questions matched the request")
+        return await self._run_resolved(
+            request,
+            questions,
+            experiment_id=experiment_id,
+            run_metadata=run_metadata,
+            additional_filters=additional_filters,
+        )
+
+    async def run_matrix(self, request: EvaluationMatrixRequest) -> dict[str, Any]:
+        questions = await self._resolve_questions(
+            question_ids=request.question_ids,
+            inline_questions=request.questions,
+            category=request.category,
+        )
+        question_ids = [question.question_id for question in questions]
+        matrix_runs: list[dict[str, Any]] = []
+        for mode in RetrievalMode:
+            run_request = EvaluationRunRequest(
+                run_name=f"{request.matrix_name}-{mode.value}",
+                question_ids=question_ids,
+                category=request.category,
+                retrieval_mode=mode,
+                retrieval_version=request.retrieval_version,
+                prompt_version=request.prompt_version,
+                top_k=request.top_k,
+            )
+            run = await self._run_resolved(
+                run_request,
+                questions,
+                run_metadata={
+                    "evaluation_matrix": request.matrix_name,
+                    "matrix_question_ids": question_ids,
+                },
+            )
+            report = await self.report(run)
+            aggregate = report.get("aggregate")
+            if not isinstance(aggregate, dict):
+                raise ValueError("evaluation matrix run does not have aggregate metrics")
+            matrix_runs.append(
+                {
+                    "retrieval_mode": mode.value,
+                    "run_id": run.id,
+                    "run_name": run.run_name,
+                    "top_k": run.top_k,
+                    "question_ids": question_ids,
+                    "aggregate": aggregate,
+                    "result_path": run.result_path or "",
+                }
+            )
+        return {
+            "matrix_name": request.matrix_name,
+            "top_k": request.top_k,
+            "question_ids": question_ids,
+            "runs": matrix_runs,
+            "measurement_notes": [
+                "All modes executed the same resolved, verified question snapshot "
+                "in the same order.",
+                "citation_precision and citation_recall exclude only correct refusal cases; "
+                "use citation_assessed_questions as the denominator.",
+                "answer_grounding_rate and unsupported_answer_rate include their "
+                "explicit assessed-question denominators.",
+            ],
+        }
+
+    async def _run_resolved(
+        self,
+        request: EvaluationRunRequest,
+        questions: list[EvaluationQuestion],
+        *,
+        experiment_id: int | None = None,
+        run_metadata: dict[str, object] | None = None,
+        additional_filters: dict[str, Any] | None = None,
+    ) -> EvaluationRun:
 
         run = await self.repository.create_run(
             EvaluationRun(
                 run_name=request.run_name,
                 experiment_id=experiment_id,
-                retrieval_version=(request.retrieval_version or self.default_retrieval_version),
+                retrieval_version=self._canonical_retrieval_version(request),
                 prompt_version=request.prompt_version or self.default_prompt_version,
                 embedding_model=self.embedding_model,
                 rerank_model=self.rerank_model,
@@ -81,7 +151,11 @@ class EvaluationApplicationService:
         )
         await self.repository.commit()
 
-        adapter = _ChatEvaluationAdapter(self.chat_service)
+        adapter = _ChatEvaluationAdapter(
+            self.chat_service,
+            retrieval_mode=request.retrieval_mode,
+            top_k=request.top_k,
+        )
         result = await EvaluationRunner(adapter.retrieve, adapter.chat).run(
             [_case(question, additional_filters) for question in questions],
             run_name=request.run_name,
@@ -92,6 +166,8 @@ class EvaluationApplicationService:
                 "embedding_model": run.embedding_model or "",
                 "rerank_model": run.rerank_model or "",
                 **(run_metadata or {}),
+                "retrieval_mode": request.retrieval_mode.value,
+                "retrieval_top_k": request.top_k,
             },
         )
         output_dir = self.artifact_root / str(run.id)
@@ -107,6 +183,32 @@ class EvaluationApplicationService:
         )
         await self.repository.commit()
         return run
+
+    async def _resolve_questions(
+        self,
+        *,
+        question_ids: list[str],
+        inline_questions: list[EvaluationQuestionInput],
+        category: str | None,
+    ) -> list[EvaluationQuestion]:
+        inline_ids = await self._save_inline_questions(inline_questions)
+        selected_ids = tuple(dict.fromkeys([*question_ids, *inline_ids]))
+        questions = await self.repository.list_verified_questions(
+            question_ids=selected_ids,
+            category=category,
+        )
+        if selected_ids:
+            found = {question.question_id for question in questions}
+            missing = [identifier for identifier in selected_ids if identifier not in found]
+            if missing:
+                raise ValueError(f"verified evaluation questions not found: {missing}")
+        if not questions:
+            raise ValueError("no verified evaluation questions matched the request")
+        return questions
+
+    def _canonical_retrieval_version(self, request: EvaluationRunRequest) -> str:
+        implementation_version = request.retrieval_version or self.default_retrieval_version
+        return f"{implementation_version}:{request.retrieval_mode.value}"
 
     async def list_runs(self, *, limit: int = 100) -> list[EvaluationRun]:
         return await self.repository.list_runs(limit=limit)
@@ -177,14 +279,24 @@ class EvaluationApplicationService:
 
 
 class _ChatEvaluationAdapter:
-    def __init__(self, service: ChatService) -> None:
+    def __init__(
+        self,
+        service: ChatService,
+        *,
+        retrieval_mode: RetrievalMode,
+        top_k: int,
+    ) -> None:
         self.service = service
+        self.retrieval_mode = retrieval_mode
+        self.top_k = top_k
         self._answers: dict[str, tuple[ChatAnswer, int, float]] = {}
 
     async def retrieve(self, case: EvaluationCase) -> RetrievalResult:
         answer = await self.service.answer(
             case.question,
             explicit_filters=dict(case.expected_filters),
+            retrieval_mode=self.retrieval_mode,
+            retrieval_top_k=self.top_k,
         )
         stored_trace = await self.service.get_trace(answer.trace_id)
         token_count = _token_count(stored_trace.token_usage_json if stored_trace else {})
@@ -214,6 +326,14 @@ class _ChatEvaluationAdapter:
             trace={
                 "trace_id": answer.trace_id,
                 "query_type": answer.query_type.value,
+                "retrieval_mode": self.retrieval_mode.value,
+                "requested_top_k": self.top_k,
+                "executed_retrieval_mode": (
+                    retrieval_trace.mode.value if retrieval_trace is not None else None
+                ),
+                "executed_top_k": (
+                    retrieval_trace.config.final_top_k if retrieval_trace is not None else None
+                ),
                 "filters": answer.filters,
                 "warnings": (list(retrieval_trace.warnings) if retrieval_trace is not None else []),
                 "timings_ms": (retrieval_trace.timings_ms if retrieval_trace is not None else {}),

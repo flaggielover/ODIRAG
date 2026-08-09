@@ -28,6 +28,7 @@ from app.rerank import (
     RerankProvider,
 )
 from app.retrieval import RetrievalConfig, RetrievalEngine
+from app.retrieval.engine import RerankFailurePolicy
 from app.vector_store import InMemoryVectorStore, QdrantVectorStore, VectorStore
 
 logger = structlog.get_logger(__name__)
@@ -98,6 +99,7 @@ def build_application_runtime(settings: Settings) -> ApplicationRuntime:
             rerank_top_k=settings.retrieval_rerank_top_k,
             final_top_k=settings.retrieval_final_top_k,
             score_threshold=settings.retrieval_score_threshold,
+            rerank_failure_policy=RerankFailurePolicy(settings.rerank_failure_policy),
         ),
     )
 
@@ -149,7 +151,7 @@ def _rerank_provider(settings: Settings) -> RerankProvider:
                 settings.rerank_api_key.get_secret_value() if settings.rerank_api_key else None
             ),
             model_name=settings.rerank_model,
-            timeout_seconds=settings.dependency_timeout_seconds,
+            timeout_seconds=settings.rerank_timeout_seconds,
         )
     return NoRerankProvider()
 

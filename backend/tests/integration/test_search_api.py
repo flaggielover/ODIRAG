@@ -100,6 +100,10 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     assert body["vector_results"]
     assert body["fusion_results"]
     assert body["rerank_results"]
+    assert body["rerank_applied"] is True
+    assert body["rerank_metadata"]["applied"] is True
+    assert body["rerank_metadata"]["candidate_count"] >= 1
+    assert body["rerank_metadata"]["reranked_count"] >= 1
     assert body["timings_ms"]["total"] >= 0
 
     regular = await client.post(
@@ -109,6 +113,7 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     )
     assert regular.status_code == 200
     assert regular.json()["hits"][0]["document_id"] == public_id
+    assert regular.json()["rerank_applied"] is False
 
     invalid = await client.post(
         "/api/search/debug",
@@ -141,6 +146,7 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     assert trace.json()["final_context_json"]
     assert trace.json()["prompt_snapshot_json"]["content"]
     assert trace.json()["evidence_decision_json"]["status"] == "passed"
+    assert trace.json()["rerank_metadata_json"]["applied"] is True
     assert trace.json()["citations_json"][0]["chunk_id"] == chat_body["citations"][0]["chunk_id"]
 
     lineage = await client.get(

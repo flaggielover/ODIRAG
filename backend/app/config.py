@@ -179,6 +179,8 @@ class Settings(BaseSettings):
     rerank_base_url: str = "https://api.cohere.com/v2"
     rerank_api_key: SecretStr | None = None
     rerank_model: str = "rerank-v3.5"
+    rerank_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    rerank_failure_policy: Literal["open", "closed"] = "open"
     retrieval_bm25_top_k: int = Field(default=20, ge=1, le=200)
     retrieval_vector_top_k: int = Field(default=20, ge=1, le=200)
     retrieval_rrf_k: int = Field(default=60, ge=1, le=1000)
@@ -376,6 +378,10 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "automatic source discovery requires an enabled discovery provider"
                 )
+            if self.rerank_provider == "remote":
+                rerank_endpoint = urlsplit(self.rerank_base_url)
+                if rerank_endpoint.scheme != "https" or not rerank_endpoint.hostname:
+                    raise ValueError("production remote rerank requires an HTTPS endpoint")
             demo_only_providers = {
                 "embedding_provider": self.embedding_provider == "deterministic",
                 "embedding_cache_provider": self.embedding_cache_provider == "memory",

@@ -78,6 +78,8 @@ x-backend-environment: &backend-environment
   ODIRAG_RERANK_BASE_URL: "${ODIRAG_RERANK_BASE_URL:-https://api.cohere.com/v2}"
   ODIRAG_RERANK_API_KEY: "${ODIRAG_RERANK_API_KEY:-}"
   ODIRAG_RERANK_MODEL: "${ODIRAG_RERANK_MODEL:-rerank-v3.5}"
+  ODIRAG_RERANK_TIMEOUT_SECONDS: "${ODIRAG_RERANK_TIMEOUT_SECONDS:-30}"
+  ODIRAG_RERANK_FAILURE_POLICY: "${ODIRAG_RERANK_FAILURE_POLICY:-open}"
 
 x-backend-env-files: &backend-env-files
   - path: .env

@@ -552,6 +552,7 @@ export interface QueryTrace {
   vector_results_json: Array<Record<string, unknown>>
   fusion_results_json: Array<Record<string, unknown>>
   rerank_results_json: Array<Record<string, unknown>>
+  rerank_metadata_json: Record<string, unknown>
   final_context_json: Array<Record<string, unknown>>
   prompt_version: string | null
   prompt_snapshot_json: Record<string, unknown>
@@ -753,6 +754,11 @@ export interface MetricsResponse {
     citation_answer_count: number
     citation_rate: number
     refusal_citation_violation_count: number
+    rerank_assessed_count: number
+    rerank_applied_count: number
+    rerank_failure_count: number
+    rerank_failure_rate: number
+    average_rerank_latency_ms: number
   }
   dependencies: Record<string, DependencyHealth>
 }

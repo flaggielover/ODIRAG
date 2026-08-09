@@ -6,6 +6,18 @@
 
 代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。Task 23 的真实工信部 government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Production-strengthening Phase A 也已 PASS-LIVE：即使 Hybrid Retrieval 返回五个同主题但不支持结论的候选，Evidence Sufficiency Gate 仍按同一 chunk 的实体/关系和适用范围绑定在 Direct LLM 前拒答并返回零 citation/token/cost；受支持问题继续返回严格 citation。由于语料规模、真实 Rerank/Brave、生产 TLS/secret、容灾、完整评估与发布 provenance 等 Phase B-F 门禁尚未完成，整体仍 **NOT PRODUCTION ACCEPTED**。
 
+## Phase B checkpoint: 2026-08-10
+
+| Area | Implementation | Verification status | Remaining risk |
+| --- | --- | --- | --- |
+| Rerank failure policy | Dedicated timeout; `open` preserves fusion and reports `rerank_applied=false`; `closed` raises | VERIFIED-LOCAL, 348 backend tests including provider and retrieval failure cases | A real remote provider is not configured |
+| Remote response contract | Strict JSON/index/score validation; redacted stable error codes; numeric usage only; unknown cost is `null/not_available` | CONTRACT-VERIFIED with MockTransport | Provider-specific billing and rate-limit behavior are unverified live |
+| Trace and monitoring | `query_traces.rerank_metadata_json`; admin debug API; RAG metrics for assessed/applied/failures/latency | VERIFIED-LOCAL plus real PostgreSQL migration and local container smoke | No sustained production telemetry window |
+| Four-mode evaluation | Actual `bm25`, `vector`, `hybrid`, `hybrid_rerank` mode/top-k propagation and `/api/evaluations/matrix` common-snapshot runs | FIXTURE-VERIFIED; report records denominator scope | No real remote-rerank quality comparison |
+| Container rollout | Backend image rebuilt, migration `0008_rerank_observability` applied, backend/worker/scheduler/frontend recreated | VERIFIED-LOCAL: eight services healthy; 8080 and health API 200; `alembic check` clean | Staging/production rollout remains separate |
+
+The running local configuration is `rerank_provider=none`, `configured=false`, model `rerank-v3.5`, timeout `30.0`, failure policy `open`. A real debug search returned five Hybrid hits and `rerank_applied=false` with the explicit disabled warning. This is correct degradation evidence, not remote rerank acceptance. Real rerank acceptance is **BLOCKED-LIVE** until a reachable endpoint and `ODIRAG_RERANK_API_KEY` are configured; no credentials are recorded in this report.
+
 ## 0. 2026-08-09 official-source 最终门禁
 
 ### Task 23 最终 PASS-LIVE

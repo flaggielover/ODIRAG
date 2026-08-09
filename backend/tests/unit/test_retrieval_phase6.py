@@ -12,6 +12,7 @@ from app.retrieval import (
     RetrievalMode,
     RetrievalQueryAnalyzer,
 )
+from app.retrieval.engine import RerankFailurePolicy
 from app.vector_store import InMemoryVectorStore, VectorPoint
 
 
@@ -125,6 +126,7 @@ async def test_invalid_rerank_response_is_rejected() -> None:
         embedding_provider=embedding,
         vector_store=store,
         rerank_provider=InvalidRerankProvider(),
+        config=RetrievalConfig(rerank_failure_policy=RerankFailurePolicy.CLOSED),
     )
-    with pytest.raises(ProviderResponseError, match="indices"):
+    with pytest.raises(ProviderResponseError, match="invalid_result_index"):
         await engine.search("软件研发", mode=RetrievalMode.HYBRID_RERANK)

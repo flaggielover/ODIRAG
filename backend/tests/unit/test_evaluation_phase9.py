@@ -103,6 +103,9 @@ def test_safety_metrics_record_unsupported_answers_and_grounding() -> None:
 
     assert aggregate.unsupported_answer_rate == 1.0
     assert aggregate.answer_grounding_rate == 0.5
+    assert aggregate.citation_assessed_questions == 2
+    assert aggregate.answer_grounding_assessed_questions == 2
+    assert aggregate.unsupported_answer_assessed_questions == 1
 
 
 def test_citation_metrics_exclude_correct_refusals_from_denominator() -> None:

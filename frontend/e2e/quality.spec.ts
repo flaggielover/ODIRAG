@@ -21,11 +21,19 @@ test.describe('评估与监控关键旅程（fixture-backed）', () => {
     await expect(page.getByRole('heading', { name: '监控与告警' })).toBeVisible()
     await expect(page.getByText('DB P95')).toBeVisible()
     await expect(page.getByText('8 ms', { exact: true })).toBeVisible()
+    await expect(page.getByText('Rerank 降级率', { exact: true })).toBeVisible()
     await expect(page.getByText('示例延迟告警')).toBeVisible()
 
     await page.getByRole('button', { name: '确认', exact: true }).click()
     await expect(page.locator('tbody .status-badge').filter({ hasText: '已确认' })).toBeVisible()
     await page.getByRole('button', { name: '解决', exact: true }).click()
     await expect(page.locator('tbody .status-badge').filter({ hasText: '已解决' })).toBeVisible()
+  })
+
+  test('查询 Trace 显示 rerank 执行元数据', async ({ page }) => {
+    await loginAsAdmin(page, '/activity')
+    await page.getByRole('button', { name: '查看 Trace', exact: true }).click()
+    await expect(page.getByText('Rerank 执行', { exact: true })).toBeVisible()
+    await expect(page.locator('.json-panel').filter({ hasText: 'fixture-reranker' })).toBeVisible()
   })
 })

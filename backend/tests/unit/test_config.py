@@ -34,6 +34,37 @@ def test_evidence_sufficiency_thresholds_are_fail_closed() -> None:
         Settings(evidence_sufficiency_minimum_answer_overlap=0.19)
 
 
+def test_rerank_runtime_settings_have_safe_defaults_and_environment_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    defaults = Settings(_env_file=None)
+    assert defaults.rerank_timeout_seconds == 30.0
+    assert defaults.rerank_failure_policy == "open"
+
+    monkeypatch.setenv("ODIRAG_RERANK_TIMEOUT_SECONDS", "12.5")
+    monkeypatch.setenv("ODIRAG_RERANK_FAILURE_POLICY", "closed")
+    configured = Settings(_env_file=None)
+    assert configured.rerank_timeout_seconds == 12.5
+    assert configured.rerank_failure_policy == "closed"
+
+    with pytest.raises(ValidationError, match="rerank_failure_policy"):
+        Settings(rerank_failure_policy="ignore")
+
+
+def test_production_remote_rerank_requires_https() -> None:
+    with pytest.raises(ValidationError, match="remote rerank requires an HTTPS endpoint"):
+        Settings(
+            _env_file=None,
+            environment="production",
+            jwt_secret_key="a-production-secret-that-is-long-enough",
+            bootstrap_admin=False,
+            admin_password=None,
+            cors_origins=["https://admin.example"],
+            rerank_provider="remote",
+            rerank_base_url="http://rerank.example/v2",
+        )
+
+
 def test_production_rejects_default_jwt_secret() -> None:
     with pytest.raises(ValidationError, match="jwt_secret_key"):
         Settings(environment="production", bootstrap_admin=False)

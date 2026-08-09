@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.retrieval import RetrievalMode
+
 
 class EvaluationQuestionInput(BaseModel):
     question_id: str = Field(min_length=1, max_length=64)
@@ -27,7 +29,8 @@ class EvaluationRunRequest(BaseModel):
     question_ids: list[str] = Field(default_factory=list)
     questions: list[EvaluationQuestionInput] = Field(default_factory=list)
     category: str | None = Field(default=None, max_length=128)
-    retrieval_version: str | None = Field(default=None, max_length=64)
+    retrieval_mode: RetrievalMode = RetrievalMode.HYBRID_RERANK
+    retrieval_version: str | None = Field(default=None, max_length=48)
     prompt_version: str | None = Field(default=None, max_length=64)
     top_k: int = Field(default=10, ge=1, le=100)
 
@@ -35,6 +38,22 @@ class EvaluationRunRequest(BaseModel):
     def require_verified_inline_questions(self) -> EvaluationRunRequest:
         if any(not question.verified for question in self.questions):
             raise ValueError("evaluation runs only accept verified questions")
+        return self
+
+
+class EvaluationMatrixRequest(BaseModel):
+    matrix_name: str = Field(min_length=1, max_length=220)
+    question_ids: list[str] = Field(default_factory=list)
+    questions: list[EvaluationQuestionInput] = Field(default_factory=list)
+    category: str | None = Field(default=None, max_length=128)
+    retrieval_version: str | None = Field(default=None, max_length=48)
+    prompt_version: str | None = Field(default=None, max_length=64)
+    top_k: int = Field(default=10, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def require_verified_inline_questions(self) -> EvaluationMatrixRequest:
+        if any(not question.verified for question in self.questions):
+            raise ValueError("evaluation matrices only accept verified questions")
         return self
 
 
@@ -65,6 +84,24 @@ class EvaluationRunResponse(BaseModel):
     average_cost: Decimal | None
     result_path: str | None
     created_at: datetime
+
+
+class EvaluationMatrixRunResponse(BaseModel):
+    retrieval_mode: RetrievalMode
+    run_id: int
+    run_name: str
+    top_k: int
+    question_ids: list[str]
+    aggregate: dict[str, float | int]
+    result_path: str
+
+
+class EvaluationMatrixResponse(BaseModel):
+    matrix_name: str
+    top_k: int
+    question_ids: list[str]
+    runs: list[EvaluationMatrixRunResponse]
+    measurement_notes: list[str]
 
 
 class EvaluationReportResponse(BaseModel):
