@@ -239,7 +239,7 @@ docker compose exec -T backend alembic heads
 docker compose exec -T backend alembic check
 ~~~
 
-预期：current 和 heads 都指向 `0007_evidence_sufficiency`，并标记 (head)；alembic check 无待生成迁移且退出码为 0。
+预期：current 和 heads 都指向 `0008_rerank_observability`，并标记 (head)；alembic check 无待生成迁移且退出码为 0。
 
 使用专用验收数据库验证全链路迁移（不要在生产业务库直接 downgrade）：
 
@@ -253,7 +253,7 @@ docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATA
 docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; /opt/venv/bin/alembic current'
 ~~~
 
-预期：upgrade、downgrade、再 upgrade 都退出 0，最终 `0007_evidence_sufficiency (head)`。完成后清理专用数据库或按组织保留审计证据。
+预期：upgrade、downgrade、再 upgrade 都退出 0，最终 `0008_rerank_observability (head)`。完成后清理专用数据库或按组织保留审计证据。
 
 ## 4. Redis
 
@@ -679,6 +679,70 @@ Run each canary through the authenticated API with `max_pages=1` and `max_articl
 
 The current baseline after these live checks is 2 approved documents, 14 chunks and 14 Qdrant points. The three list-page canaries and one detail canary are **BLOCKED-LIVE** evidence that the deployed Coze workflow does not expand these official list pages and does not accept the KJT detail contract. Do not create 100 speculative documents, use the local provider, bypass manual review, or edit PostgreSQL directly. Resume Phase C only after a republished compatible workflow or user-approved compatible real detail URLs is available; continue independent Phase D-F checks now.
 
+## 11.3 Phase D-E local gates
+
+Run the source-discovery contract checks without a Brave key; the expected result is an explicit provider blocker, never a fixture claim:
+
+~~~powershell
+Push-Location backend
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_source_discovery.py tests\integration\test_source_discovery_api.py tests\integration\test_source_discovery_scheduler.py -q
+Pop-Location
+npm --prefix frontend audit --json
+npm --prefix frontend audit --omit=dev --json
+docker scout cves --only-severity critical,high,medium,low odirag/backend:local
+docker scout cves --only-severity critical,high,medium,low odirag/frontend:local
+~~~
+
+Expected: 19 source-discovery focused tests pass; a real Brave run is **BLOCKED-LIVE** when `ODIRAG_SOURCE_DISCOVERY_API_KEY` is absent; npm audit reports zero vulnerabilities; current Scout results are backend digest `b41a63d5b943` at `0C/0H/0M/0L` and frontend digest `7dcc62cebccd` at `0C/0H/0M/3L` for Alpine `libxml2 2.13.9-r2` with no fixed version. Do not mark the three low findings resolved and do not run a force/base-image major upgrade solely to clear them. Verify the actual builder dependency set with `docker build --target builder -t odirag/backend:builder-check -f Dockerfile.backend .` followed by `docker run --rm odirag/backend:builder-check python -m pip check`; remove only that exact temporary tag after confirming no container uses it.
+
+## 11.4 Phase F live evaluation matrix
+
+This command uses the existing authenticated API session (`$api` and `$headers` from the authentication section) and writes real evaluation questions, query traces, lineage and four report sets. It is not a fixture command. Do not place a password, token or provider key in this file or shell history.
+
+~~~powershell
+$matrixPayload = @{
+  matrix_name = 'phase-f-live-miit-app-filing-20260810'
+  category = 'phase-f-live'
+  retrieval_version = 'phase-f-live-20260810'
+  top_k = 5
+  questions = @(
+    @{
+      question_id = 'phase-f-live-miit-app-filing-support-v2'
+      question = '未履行备案手续的 APP 主办者能否从事 APP 互联网信息服务？'
+      query_type = 'rag'
+      expected_document_ids = @('868a6c55-5806-4237-875c-40163fa5b8e5')
+      expected_chunk_ids = @('d7353b15-4d57-5a81-a034-708b616e93e6')
+      expected_answer_points = @('不得从事APP互联网信息服务')
+      difficulty = 'acceptance'
+      category = 'phase-f-live'
+      created_by = 'phase-f-live'
+      verified = $true
+    },
+    @{
+      question_id = 'phase-f-live-miit-app-filing-refusal-v2'
+      question = '火星地表是否已经发现活体恐龙？'
+      query_type = 'rag'
+      should_refuse = $true
+      difficulty = 'acceptance'
+      category = 'phase-f-live'
+      created_by = 'phase-f-live'
+      verified = $true
+    }
+  )
+}
+$matrix = Invoke-RestMethod "$api/evaluations/matrix" -Method Post -Headers $headers -ContentType 'application/json' -Body ($matrixPayload | ConvertTo-Json -Depth 8)
+if ($matrix.runs.Count -ne 4) { throw 'Expected all four retrieval modes' }
+$hybridRerank = @($matrix.runs | Where-Object { $_.retrieval_mode -eq 'hybrid_rerank' })[0]
+if ($null -eq $hybridRerank) { throw 'Missing hybrid_rerank result' }
+$report = Invoke-RestMethod "$api/evaluations/$($hybridRerank.run_id)/report" -Headers $headers
+$support = @($report.cases | Where-Object { $_.question_id -eq 'phase-f-live-miit-app-filing-support-v2' })[0]
+$refusal = @($report.cases | Where-Object { $_.question_id -eq 'phase-f-live-miit-app-filing-refusal-v2' })[0]
+if ($null -eq $support -or $support.refused -or $support.cited_chunk_ids -notcontains 'd7353b15-4d57-5a81-a034-708b616e93e6') { throw 'Expected real grounded MIIT citation' }
+if ($null -eq $refusal -or -not $refusal.refused -or $refusal.cited_chunk_ids.Count -ne 0) { throw 'Expected no-evidence safe refusal' }
+~~~
+
+Expected: every mode must record its actual retrieval mode and top-k. The selected `hybrid_rerank` report must retrieve the real official MIIT chunk, use Direct LLM only when evidence is sufficient, return a non-empty cited answer, and safely refuse the no-evidence question. When `ODIRAG_RERANK_PROVIDER=none`, a `rerank_provider_disabled` warning is correct degradation and must not be reported as remote-rerank acceptance. A two-question matrix is a live plumbing gate only; retain a larger human-reviewed corpus for release-quality and SLA conclusions.
+
 ## 12. Rerank provider
 
 ~~~powershell
@@ -743,6 +807,7 @@ $candidates = @(Invoke-RestMethod "$api/source-discovery/runs/$($run.id)/candida
 $candidate = @($candidates | Where-Object { $_.status -eq 'pending_approval' } | Sort-Object quality_score -Descending | Select-Object -First 1)[0]
 if ($null -eq $candidate) { throw 'No pending_approval candidate was returned' }
 if ($candidate.official_status -ne 'official' -or $candidate.quality_score -lt 0.65) { throw 'Candidate failed official/quality threshold' }
+if (-not $candidate.official_evidence_json.same_host -or -not $candidate.official_evidence_json.status_ok) { throw 'Candidate failed exact-host or HTTP success validation' }
 if (@($candidate.columns | Where-Object { $_.status -eq 'trial_crawled' }).Count -lt 1) { throw 'No trial-crawled column' }
 
 # Approval is an explicit gate: activation before approval must fail with 409.
@@ -868,9 +933,9 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 | monitoring | task 8 后 `high_failure_rate` 告警为 severity `high`、status `open`，observed `0.4`、threshold `0.2` | 证明本地规则检测到失败率；生产通知投递、升级、确认、恢复和多实例聚合未验证 |
 | Nginx/frontend | `/`、`/api/system/health` 均 200；dependencies healthy；fixture Playwright 9 passed/1 skipped；真实 8080 live-stack 1 passed并展示正式 official citation；查询检查器可见 Evidence decision | HTTPS/目标生产浏览器门禁未通过 |
 | Docker/WSL 恢复 | WSL 数据位于 D 盘且未删除 VHD/Volume/数据库；2026-08-07 Client/Server 29.6.2、Compose v5.3.1 与八服务通过 | 目标主机自动启动、生产 secret/TLS、容灾和 registry provenance 未验证 |
-| fresh 镜像与供应链 | Phase A 当前 backend/frontend digest 为 `691f585bba21` / `80b211d8ba35`，构建和八服务回归通过；npm 两种 audit 为 0；Phase A 前 digest `f6bf96c9385c` / `2d41a3e3c971` 的 Scout 基线为 0C/0H/0M/0L | 当前 Phase A digest 尚未重跑 Scout；Phase E 必须生成新 SBOM/CVE、签名和 provenance，不能沿用旧 digest 结论 |
-| Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing PostgreSQL 到 `0007_evidence_sufficiency` 且 `check` 无漂移；既有专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
+| fresh 镜像与供应链 | Current backend/frontend digest 为 `b41a63d5b943` / `7dcc62cebccd`；构建、`pip check`、Alembic、八服务和 npm 两种 audit 通过；Scout backend `0C/0H/0M/0L`, frontend `0C/0H/0M/3L` | 三项 libxml2 low 均无修复版本；目标 registry 仍必须生成新 SBOM/CVE、签名和 provenance |
+| Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing PostgreSQL 到 `0008_rerank_observability` 且 `check` 无漂移；既有专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
 | scsia.org | task 14 HTTP 200/completed、strict schema、5 docs；doc 3 OCR v2 length 5358 accepted/approved/indexed；8 chunks/8 points；hybrid retrieval 5 hits | association source is correctly refused by official-only grounding；region metadata `??` breaks province auto-filter；two docs remain OCR_FAILED/rejected |
 | MIIT official | task 23 HTTP 200/completed、strict schema、1 doc accepted/approved/indexed；6 chunks/6 points；Hybrid 5 official hits；Direct answer 1 exact citation；zero-hit 与 non-empty irrelevant retrieval 均安全拒答 | Phase A PASS-LIVE；仍需 Phase B-F 的广泛评估与生产门禁 |
 
-因此知识库真实闭环结论为 **PASS-LIVE / 5/5**，Phase A Evidence Sufficiency 也为 **PASS-LIVE**。整体生产发布仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**：Phase B 真实 Rerank、Phase C 最多 100 篇阶段语料、Phase D Brave、region `??` 历史数据、生产 TLS/secret、CI/registry 和 Phase F 完整评估仍未全部验收。
+因此知识库真实闭环结论为 **PASS-LIVE / 5/5**，Phase A Evidence Sufficiency 也为 **PASS-LIVE**。Phase B/D/E 已完成本地门禁，Phase F 已完成两题真实矩阵但不代表代表性质量评估。整体生产发布仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**：真实 remote rerank、Phase C 最多 100 篇阶段语料、Phase D Brave、region `??` 历史数据、生产 TLS/secret、CI/registry 和代表性 Phase F 评估仍未全部验收。
