@@ -17,6 +17,9 @@ test.describe('问答、引用与反馈关键旅程（fixture-backed）', () => 
     await expect(page.getByText('企业研发投入支持措施')).toBeVisible()
     await expect(page.getByText('支持企业研发投入，鼓励创新主体持续增加研发投入。')).toBeVisible()
     await expect(page.getByText('trace-e2e-001', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '检索' }).click()
+    await expect(page.getByText('证据充分性')).toBeVisible()
+    await expect(page.getByText('evidence_covers_all_query_aspects')).toBeVisible()
     await page.getByRole('button', { name: '有帮助', exact: true }).click()
     await expect(page.getByText('已记录')).toBeVisible()
 

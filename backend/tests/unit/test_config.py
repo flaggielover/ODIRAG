@@ -15,6 +15,25 @@ def test_sync_database_url_maps_supported_async_drivers() -> None:
     assert sqlite.sync_database_url == "sqlite+pysqlite:///test.db"
 
 
+def test_evidence_sufficiency_thresholds_are_fail_closed() -> None:
+    settings = Settings(
+        evidence_sufficiency_minimum_confidence=0.45,
+        evidence_sufficiency_minimum_hit_contribution=0.08,
+    )
+    assert settings.evidence_sufficiency_minimum_confidence == 0.45
+    assert settings.evidence_sufficiency_minimum_hit_contribution == 0.08
+    assert settings.evidence_sufficiency_minimum_answer_overlap == 0.2
+
+    with pytest.raises(ValidationError, match="evidence_sufficiency_minimum_confidence"):
+        Settings(evidence_sufficiency_minimum_confidence=0.44)
+
+    with pytest.raises(ValidationError, match="evidence_sufficiency_minimum_hit_contribution"):
+        Settings(evidence_sufficiency_minimum_hit_contribution=0.04)
+
+    with pytest.raises(ValidationError, match="evidence_sufficiency_minimum_answer_overlap"):
+        Settings(evidence_sufficiency_minimum_answer_overlap=0.19)
+
+
 def test_production_rejects_default_jwt_secret() -> None:
     with pytest.raises(ValidationError, match="jwt_secret_key"):
         Settings(environment="production", bootstrap_admin=False)
@@ -325,7 +344,9 @@ def test_explicit_celery_urls_take_precedence() -> None:
     assert settings.effective_celery_result_backend == "redis://results:6379/5"
 
 
-def test_legacy_coze_environment_names_are_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_legacy_coze_environment_names_are_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("COZE_ACCESS_TOKEN", "legacy-secret")
     monkeypatch.setenv("COZE_API_URL", "https://legacy.example/run")
 

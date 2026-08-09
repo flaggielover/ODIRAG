@@ -69,6 +69,11 @@ async def test_operational_metrics_create_and_manage_real_alerts(
             final_context_json=[],
             prompt_version="v1",
             prompt_snapshot_json={"version": "v1", "content": "Grounded prompt"},
+            evidence_decision_json={
+                "sufficient": True,
+                "confidence": 0.9,
+                "latency_ms": 3.5,
+            },
             model_name="fixture-model",
             answer="Fixture answer",
             citations_json=[],
@@ -99,6 +104,9 @@ async def test_operational_metrics_create_and_manage_real_alerts(
     assert metric_body["rag"]["total_tokens"] == 200
     assert float(metric_body["rag"]["average_cost"]) == 2.0
     assert metric_body["rag"]["evaluation_regression_count"] == 1
+    assert metric_body["rag"]["evidence_assessed_count"] == 1
+    assert metric_body["rag"]["evidence_sufficiency_rate"] == 1.0
+    assert metric_body["rag"]["citation_rate"] == 0.0
 
     alerts = await client.get("/api/system/alerts", headers=auth_headers)
     assert alerts.status_code == 200, alerts.text

@@ -206,7 +206,10 @@ def alert_candidates(
                 "Crawler task failure rate exceeded the configured threshold.",
                 crawler.task_failure_rate,
                 settings.alert_crawl_failure_rate,
-                {"task_count": crawler.task_count, "status_counts": crawler.status_counts},
+                {
+                    "task_count": crawler.task_count,
+                    "status_counts": crawler.status_counts,
+                },
             )
         )
     if metrics.knowledge.index_failure_count >= settings.alert_index_failure_count:
@@ -299,7 +302,13 @@ def _citation_lineage(
             source=None,
             lineage_ids=[],
             complete=False,
-            missing_steps=["chunk", "document", "document_version", "crawl_task", "source"],
+            missing_steps=[
+                "chunk",
+                "document",
+                "document_version",
+                "crawl_task",
+                "source",
+            ],
         )
     chunk = context.chunk
     document = context.document
@@ -384,6 +393,30 @@ def _rag_metrics(traces: list[QueryTrace], regression_count: int, window_hours: 
         for trace in traces
     )
     total_cost = sum(costs, start=Decimal("0"))
+    evidence_decisions = [
+        trace.evidence_decision_json
+        for trace in traces
+        if isinstance(trace.evidence_decision_json, dict)
+        and isinstance(trace.evidence_decision_json.get("sufficient"), bool)
+    ]
+    evidence_sufficient = sum(decision.get("sufficient") is True for decision in evidence_decisions)
+    evidence_latencies = [
+        float(value)
+        for decision in evidence_decisions
+        if isinstance((value := decision.get("latency_ms")), (int, float))
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
+    answered_rag = [trace for trace in traces if trace.query_type != "sql" and not trace.refusal]
+    citation_answers = sum(bool(trace.citations_json) for trace in answered_rag)
+    grounding_failures = sum(
+        trace.refusal and decision.get("sufficient") is True
+        for trace, decision in (
+            (trace, trace.evidence_decision_json)
+            for trace in traces
+            if isinstance(trace.evidence_decision_json, dict)
+        )
+    )
     return RagMetrics(
         window_hours=window_hours,
         query_count=len(traces),
@@ -398,6 +431,17 @@ def _rag_metrics(traces: list[QueryTrace], regression_count: int, window_hours: 
         average_cost=total_cost / len(traces) if traces else Decimal("0"),
         trace_completeness_rate=_ratio(complete, len(traces)),
         evaluation_regression_count=regression_count,
+        evidence_assessed_count=len(evidence_decisions),
+        evidence_sufficient_count=evidence_sufficient,
+        evidence_insufficient_count=len(evidence_decisions) - evidence_sufficient,
+        evidence_sufficiency_rate=_ratio(evidence_sufficient, len(evidence_decisions)),
+        average_evidence_gate_latency_ms=(mean(evidence_latencies) if evidence_latencies else 0.0),
+        grounding_failure_count=grounding_failures,
+        citation_answer_count=citation_answers,
+        citation_rate=_ratio(citation_answers, len(answered_rag)),
+        refusal_citation_violation_count=sum(
+            trace.refusal and bool(trace.citations_json) for trace in traces
+        ),
     )
 
 

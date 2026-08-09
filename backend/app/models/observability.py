@@ -68,6 +68,9 @@ class QueryTrace(IdMixin, CreatedAtMixin, Base):
     prompt_snapshot_json: Mapped[JsonObject] = mapped_column(
         JSON_VALUE, nullable=False, default=dict, server_default=text("'{}'")
     )
+    evidence_decision_json: Mapped[JsonObject] = mapped_column(
+        JSON_VALUE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     model_name: Mapped[str | None] = mapped_column(String(255), index=True)
     answer: Mapped[str | None] = mapped_column(Text)
     citations_json: Mapped[list[dict[str, object]]] = mapped_column(
@@ -96,7 +99,9 @@ class UserFeedback(IdMixin, CreatedAtMixin, Base):
     )
 
     trace_id: Mapped[str] = mapped_column(
-        ForeignKey("query_traces.trace_id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("query_traces.trace_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     rating: Mapped[int | None] = mapped_column(Integer)
     feedback_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -179,7 +184,11 @@ class Alert(IdMixin, TimestampMixin, Base):
     alert_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     alert_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     severity: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="warning", server_default="warning", index=True
+        String(32),
+        nullable=False,
+        default="warning",
+        server_default="warning",
+        index=True,
     )
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="open", server_default="open", index=True

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, AlertTriangle, CheckCircle2, Clock3, Database, RefreshCw, ServerCog } from '@lucide/vue'
+import { Activity, AlertTriangle, CheckCircle2, Clock3, Database, Quote, RefreshCw, SearchCheck, ServerCog } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { api } from '@/api/resources'
@@ -71,6 +71,8 @@ async function resolve(alert: Alert): Promise<void> {
         <MetricTile label="DB P95" :value="formatDuration(metrics.database_latency.p95_latency_ms)" :detail="`${formatNumber(metrics.database_latency.sample_count)} 次查询`" :icon="Database" :tone="metrics.database_latency.p95_latency_ms > 300 ? 'warning' : 'default'" />
         <MetricTile label="Trace 完整率" :value="formatPercent(metrics.rag.trace_completeness_rate)" :detail="`拒答率 ${formatPercent(metrics.rag.refusal_rate)}`" :icon="CheckCircle2" tone="positive" />
         <MetricTile label="平均成本" :value="formatCost(metrics.rag.average_cost)" :detail="`总计 ${formatCost(metrics.rag.total_cost)}`" :icon="ServerCog" />
+        <MetricTile label="证据门禁通过率" :value="formatPercent(metrics.rag.evidence_sufficiency_rate)" :detail="`${formatNumber(metrics.rag.evidence_assessed_count)} 次判定 · ${formatDuration(metrics.rag.average_evidence_gate_latency_ms)}`" :icon="SearchCheck" />
+        <MetricTile label="回答引用率" :value="formatPercent(metrics.rag.citation_rate)" :detail="`${formatNumber(metrics.rag.grounding_failure_count)} 次 grounding 失败`" :icon="Quote" :tone="metrics.rag.refusal_citation_violation_count > 0 ? 'warning' : 'positive'" />
       </section>
 
       <section class="content-grid">

@@ -1,6 +1,62 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-09。八个服务当前 healthy，backend、worker、scheduler 使用同一应用镜像并加载一致的 remote Embedding 配置。Task 14 真实完成 bounded Coze crawl/OCR/review：5 documents，1 accepted/approved/indexed、4 rejected。真实 OpenAI reindex 生成 8 chunks/8 embeddings；Qdrant 为 1 collection/8 points，全部 payload 含 `document_id/chunk_id/title/source_url/content`。重复 reindex 8 cache hits/0 embeddings，point ID 集合不变。acceptance-summary 为 HTTP 200、collection exists、8 points；hybrid retrieval 为 BM25/vector/fusion 8/8/8、最终 5 hits。Direct LLM key 仍为空；scsia.org 是 association，Chat 按 official-only policy 正确拒答。整体仍 NOT ACCEPTED。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-09。八个服务当前 healthy。Task 23 的真实 MIIT government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`；Phase A Evidence Sufficiency 已对“检索到无关 chunk”的场景取得 PASS-LIVE。更广泛的 Phase B-F 生产发布门禁仍未全部接受。
+
+## 当前 official-source 最后一关（PASS-LIVE）
+
+当前合法判定是索引 hit metadata 中 `official_status` 忽略大小写后等于 `official`。`organization_type` 和域名只用于来源治理/人工核验，不参与 chat-time 判定；不要把 association 改成 government，不要关闭 `grounding_require_official_source`。
+
+已执行结果：
+
+| Task | Official URL type | HTTP / provider | discovered / fetched / documents | accepted / rejected / pending / failed | task chunks / Qdrant points |
+| --- | --- | --- | --- | --- | --- |
+| 19 | 四川省科技厅静态政策栏目 | 200 / `no_articles` | 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 / 0 |
+| 20 | 工信部通知栏目 | 200 / `no_articles` | 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 / 0 |
+| 21 | 中国政府网最新政策栏目 | 200 / `no_articles` | 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 / 0 |
+| 22 | 工信部真实正文 URL | 200 / `no_articles` | 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 / 0 |
+| 23 | 同一工信部真实正文 URL，Coze 重新发布后 | 200 / `completed` | 1 / 1 / 1 | 1 / 0 / 0 / 0 | 6 / 6 |
+
+Tasks 19-22 是重新发布前的历史失败证据。Task 23 raw/normalized 已持久化并由当前 Pydantic Schema 重新解析通过；文章 1、content length 2,614、HTML、`needs_ocr=false`、quality 0.95、government/official。Document 6 已人工 approved，生成 6 stable chunks/points，并完成正式 cited answer。
+
+Coze 重新发布后的精确重跑入口（不输出 token/password）：
+
+~~~powershell
+$ErrorActionPreference = 'Stop'
+$pairs = @{}
+Get-Content .env | ForEach-Object {
+  $line = $_.Trim()
+  if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
+    $key, $value = $line.Split('=', 2)
+    $pairs[$key.Trim()] = $value.Trim().Trim('"').Trim("'")
+  }
+}
+$loginBody = @{ username = $pairs.ODIRAG_ADMIN_USERNAME; password = $pairs.ODIRAG_ADMIN_PASSWORD } | ConvertTo-Json
+$login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/auth/login -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($loginBody))
+$headers = @{ Authorization = "Bearer $($login.access_token)" }
+$taskBody = @{ source_column_id = 9; task_type = 'full'; trigger_type = 'manual'; provider = 'coze'; provider_contract = 'batch_crawl'; contract_mode = 'batch_crawl'; max_pages = 1; max_articles = 5 } | ConvertTo-Json
+$task = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/crawl-tasks -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($taskBody))
+do {
+  Start-Sleep -Seconds 5
+  $task = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8080/api/crawl-tasks/$($task.id)" -Headers $headers
+} while ($task.status -notin @('completed', 'partial_failed', 'failed', 'cancelled'))
+if ($task.discovered_count -lt 1 -or $task.fetched_count -lt 1) { throw 'Coze official-source discovery still produced no articles' }
+$results = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8080/api/crawl-tasks/$($task.id)/results" -Headers $headers
+if (@($results).Count -lt 1) { throw 'No official document was persisted' }
+~~~
+
+Task 23 实际结果满足上述预期：discovered/fetched/documents 1/1/1；raw/normalized 存在；正文和真实元数据正确；人工 approved；6 chunks/6 task points；重复 reindex 6 cache hits/0 new embeddings 且 IDs 不变；Hybrid final hits 5；正式 `/api/chat` 非拒答、Direct token usage 3,339、citation 可追溯；独立零命中问题 `refusal=true`、0 citations。因此本检查点已写入 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。
+
+## Phase A Evidence Sufficiency（PASS-LIVE）
+
+~~~powershell
+docker compose run --rm --no-deps -e ODIRAG_RUN_MIGRATIONS=false -v D:\RAG\backend:/app/backend backend alembic check
+docker compose run --rm --no-deps -e ODIRAG_RUN_MIGRATIONS=false -v D:\RAG\scripts:/app/scripts backend python /app/scripts/live_accept_evidence_sufficiency.py --base-url http://backend:8000/api
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\RAG\scripts\run_live_playwright.ps1
+~~~
+
+预期：Alembic 输出 `No new upgrade operations detected`；Live 脚本输出 `PASS-LIVE`，受支持问题的 Direct token/citation 大于零，非空无关检索与 cancellation/penalty/scope adversarial 问题的 candidates 大于零但 `refusal=true`、citations/token/cost 均为零；8080 Playwright 登录、官方问答、引用和监控页通过。2026-08-09 实际结果：supported trace `47c5b283-5e38-40f4-a7a3-1e684737671f`（5 hits、3,336 tokens、1 个真实 MIIT citation）；Mars/dinosaur trace `b38598b2-89a3-4cd2-92b3-ee733b013f71`；cancellation/original-numeric-penalty/scope traces `e07f742b-fa91-4e52-bd5f-cd7de42d96fc`、`7b1434b2-a01f-4005-872c-bf98ce314667`、`99cba6de-53db-42f1-8fbf-e127f9858fd9`。四个拒答均为 5 candidates、0 citations/tokens/cost。后端 324 passed；fixture Playwright 9 passed/1 skipped，live-stack 1 passed。
+
+评测期望：citation precision/recall 的分母排除 `should_refuse=true` 的正确拒答样本；9 个正确拒答加 1 个错误 citation 的回归结果必须为 precision/recall `0/0`，不能是 `0.9/0.9`。`answer_grounding_rate` 必须来自 citation-bound claim 检查，不得直接使用被测 ChatService 的 `answer_support_validated` 自证。
 
 ## 证据规则
 
@@ -183,7 +239,7 @@ docker compose exec -T backend alembic heads
 docker compose exec -T backend alembic check
 ~~~
 
-预期：current 和 heads 都指向 `0006_coze_task_operations`，并标记 (head)；alembic check 无待生成迁移且退出码为 0。
+预期：current 和 heads 都指向 `0007_evidence_sufficiency`，并标记 (head)；alembic check 无待生成迁移且退出码为 0。
 
 使用专用验收数据库验证全链路迁移（不要在生产业务库直接 downgrade）：
 
@@ -197,7 +253,7 @@ docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATA
 docker compose exec -T backend sh -lc 'export ODIRAG_DATABASE_URL="${ODIRAG_DATABASE_URL%/*}/odirag_acceptance_migration"; /opt/venv/bin/alembic current'
 ~~~
 
-预期：upgrade、downgrade、再 upgrade 都退出 0，最终 `0006_coze_task_operations (head)`。完成后清理专用数据库或按组织保留审计证据。
+预期：upgrade、downgrade、再 upgrade 都退出 0，最终 `0007_evidence_sufficiency (head)`。完成后清理专用数据库或按组织保留审计证据。
 
 ## 4. Redis
 
@@ -522,8 +578,8 @@ acceptance-summary 的空状态曾真实返回 HTTP 200、`collection_exists=fal
 真实 remote `text-embedding-3-small`/1536 reindex 返回 HTTP 200、8 chunks、8 embeddings。Qdrant
 直接查询为 1 collection/8 points。初次直查发现 payload 没有显式 `chunk_id`；适配器已补齐并测试，
 第二次 reindex 原地回填，8 cache hits/0 embeddings，前后 point ID 集合哈希相同，全部 8 payload 合格。
-真实 hybrid 检索返回 BM25/vector/fusion 8/8/8 和 5 final hits。当前 answer provider 是 extractive，
-LLM provider direct、model `gpt-4.1-mini`，`ODIRAG_DIRECT_LLM_API_KEY` 为空；Direct LLM 未执行。
+真实 hybrid 检索返回 BM25/vector/fusion 8/8/8 和 5 final hits。当前 answer provider 是 `llm`，
+LLM provider direct、model `gpt-4.1-mini`，密钥配置布尔值为 true；Direct 严格 AnswerResult provider 调用已执行。正式 `/api/chat` 因现有检索 hit 全部属于 association 而在模型前被 `official_source_required` 拒绝。
 
 先设置 `ODIRAG_SOURCE_COLUMN_ID` 为一个已人工批准并启用的真实栏目 ID；以下命令会在变量为空时立即失败：
 
@@ -574,7 +630,7 @@ $reindex.chunk_count
 $reindex.vector_point_ids.Count
 ~~~
 
-当前 OpenAI-compatible `remote` / `text-embedding-3-small` / 1536 已 PASS-LIVE。首次成功 reindex 为 HTTP 200、8 chunks、8 embeddings；第二次为 8 cache hits、0 embeddings。PostgreSQL 是 8 distinct indexed chunks，Qdrant 是 1 collection/8 points；point ID 集合不变，全部 payload 的 `chunk_id` 与 point ID 相等。历史 401 保留为 credential fail-closed 证据，没有 fake fallback 或半写入。
+当前 OpenAI-compatible `remote` / `text-embedding-3-small` / 1536 已 PASS-LIVE。历史 document 3 为 8 chunks/8 points；task 23 official document 6 首次 reindex 为 6 chunks/6 embeddings，第二次为 6 cache hits/0 embeddings 且 ID 集合不变。PostgreSQL/Qdrant 当前均为 14 indexed chunks/points；payload 的 `chunk_id` 与 point ID 相等。历史 401 保留为 credential fail-closed 证据，没有 fake fallback 或半写入。
 
 ## 12. Rerank provider
 
@@ -606,7 +662,7 @@ $trace.token_usage_json
 $trace.cost
 ~~~
 
-Embedding/index/hybrid retrieval 已成功。当前 `llm_provider=direct`、model `gpt-4.1-mini`，但 answer provider 为 extractive 且 `ODIRAG_DIRECT_LLM_API_KEY` 为空，故没有执行 Direct LLM。Extractive Chat 对 association 来源返回 `official_source_required`，无证据问题返回 `insufficient_retrieved_evidence`；两者都是正确拒答，不是 cited-answer PASS。配置 key 并切换 `answer_provider=llm` 后，仍必须使用满足 official-only policy 的来源；provider answer 只能引用 retrieval 返回的 chunk，trace model 必须等于配置模型。若 provider 不返回价格，必须保留 `cost_measurement=not_available`，不能把 cost=0 解释为免费。
+Embedding/index/hybrid retrieval 已成功。当前 `llm_provider=direct`、model `gpt-4.1-mini`、answer provider `llm`，Direct 严格 schema/citation provider call 已真实通过。正式 Chat 对 association 来源返回 `official_source_required`，这不是 cited-answer PASS。下一次验收必须先由正常抓取路径产生满足 official-only policy 的文档；provider answer 只能引用 retrieval 返回的 chunk，trace model 必须等于配置模型，且 token usage 必须证明真实调用。若 provider 不返回价格，必须保留 `cost_measurement=not_available`，不能把 cost=0 解释为免费。
 
 ## 14. Brave source discovery / Phase 16
 
@@ -758,15 +814,16 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 | 项目 | 结果 | 边界 |
 | --- | --- | --- |
 | Compose 服务 | 2026-08-09 当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx | development 配置未证明生产 secret/TLS、目标持久化和 registry provenance |
-| PostgreSQL | healthy；task 14 current 5 docs, 1 accepted/approved/indexed and 4 rejected；doc 3 v1→v2 OCR history；8 distinct indexed chunks | production scale/RPO/RTO unverified |
+| PostgreSQL | healthy；6 documents、2 approved、14 indexed chunks；task 23 completed 1/1 discovered/fetched, 1 accepted/approved official doc, pending/rejected/failed 0 | production scale/RPO/RTO unverified |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
-| Qdrant | health 正常；direct REST 1 collection/8 points；required payload 8/8；point ID=chunk_id；重复 reindex ID 集合不变；summary true/8 | live delete/compensation、备份和生产拓扑未验 |
-| worker/scheduler | healthy；task 13 historical `TASK_STATE_CHANGED` retained；task 14 completed after locking/state fixes | crawl/OCR/review PASS-LIVE；Brave/long-running failure recovery remains |
+| Qdrant | health 正常；direct REST 1 collection/14 points；task 23 official payload 6/6；重复 reindex ID 集合不变；summary 1 doc/6 chunks/true/6 | live delete/compensation、备份和生产拓扑未验 |
+| worker/scheduler | healthy；task 13 historical `TASK_STATE_CHANGED` retained；task 14 OCR and task 23 official closed loop completed | crawl/OCR/review/official answer PASS-LIVE；Brave/long-running failure recovery remains |
 | monitoring | task 8 后 `high_failure_rate` 告警为 severity `high`、status `open`，observed `0.4`、threshold `0.2` | 证明本地规则检测到失败率；生产通知投递、升级、确认、恢复和多实例聚合未验证 |
-| Nginx/frontend | `/healthz`、`/`、`/api/system/health` 均 200；dependencies healthy；管理员页面与真实栈历史 Playwright 可达 chat | provider/index 已补齐，但 Playwright 尚未按 association official-source refusal 更新重跑；HTTPS/生产浏览器门禁未通过 |
+| Nginx/frontend | `/`、`/api/system/health` 均 200；dependencies healthy；fixture Playwright 9 passed/1 skipped；真实 8080 live-stack 1 passed并展示正式 official citation；查询检查器可见 Evidence decision | HTTPS/目标生产浏览器门禁未通过 |
 | Docker/WSL 恢复 | WSL 数据位于 D 盘且未删除 VHD/Volume/数据库；2026-08-07 Client/Server 29.6.2、Compose v5.3.1 与八服务通过 | 目标主机自动启动、生产 secret/TLS、容灾和 registry provenance 未验证 |
-| fresh 镜像与供应链 | backend/frontend `--pull --no-cache` 基线和最新 builder 构建成功；最终 backend 代码层已重建；runtime 排除 `.env`/tests、移除 pip、使用非 root 后端和 slim Nginx；npm 两种 audit 为 0；当前 backend digest `f6bf96c9385c`（133 packages）与 frontend digest `2d41a3e3c971`（26 packages）的 Scout 结果均为 0C/0H/0M/0L；backend SBOM 上传前的凭据、`.env`、业务正文、抓取结果和 Prompt 模式均为 0 | 扫描只证明本地 digests；CI、目标 registry、签名和 provenance 未验证 |
-| Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing/fresh PostgreSQL 均到 `0006` 且 `check` 无漂移；专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
+| fresh 镜像与供应链 | Phase A 当前 backend/frontend digest 为 `691f585bba21` / `80b211d8ba35`，构建和八服务回归通过；npm 两种 audit 为 0；Phase A 前 digest `f6bf96c9385c` / `2d41a3e3c971` 的 Scout 基线为 0C/0H/0M/0L | 当前 Phase A digest 尚未重跑 Scout；Phase E 必须生成新 SBOM/CVE、签名和 provenance，不能沿用旧 digest 结论 |
+| Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing PostgreSQL 到 `0007_evidence_sufficiency` 且 `check` 无漂移；既有专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
 | scsia.org | task 14 HTTP 200/completed、strict schema、5 docs；doc 3 OCR v2 length 5358 accepted/approved/indexed；8 chunks/8 points；hybrid retrieval 5 hits | association source is correctly refused by official-only grounding；region metadata `??` breaks province auto-filter；two docs remain OCR_FAILED/rejected |
+| MIIT official | task 23 HTTP 200/completed、strict schema、1 doc accepted/approved/indexed；6 chunks/6 points；Hybrid 5 official hits；Direct answer 1 exact citation；zero-hit 与 non-empty irrelevant retrieval 均安全拒答 | Phase A PASS-LIVE；仍需 Phase B-F 的广泛评估与生产门禁 |
 
-因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。task 14 已使 bounded Coze crawl、OCR 后质量重判、人工批准、真实 OpenAI embedding、Qdrant payload/幂等性、acceptance-summary 和 hybrid retrieval PASS-LIVE。当前最小 provider 动作仅为本机配置 `ODIRAG_DIRECT_LLM_API_KEY` 与 `ODIRAG_ANSWER_PROVIDER=llm`；真实 cited answer 还必须使用符合 official-only policy 的来源。region `??` 数据质量、其余 provider、至少 10 篇可用内容、生产 TLS/secret、CI/registry 和 release gates 仍未验收。
+因此知识库真实闭环结论为 **PASS-LIVE / 5/5**，Phase A Evidence Sufficiency 也为 **PASS-LIVE**。整体生产发布仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**：Phase B 真实 Rerank、Phase C 最多 100 篇阶段语料、Phase D Brave、region `??` 历史数据、生产 TLS/secret、CI/registry 和 Phase F 完整评估仍未全部验收。

@@ -24,7 +24,21 @@ class QueryAnalysis:
 class QueryRouter:
     """Deterministic baseline router; no generated SQL is accepted or executed."""
 
-    _aggregate_terms = re.compile(r"(多少|几份|数量|统计|count|how many|total)", re.I)
+    _corpus_count_intent = re.compile(
+        r"(?:有|共有|共|发布了?|收录|检索到)?\s*(?:多少|几)\s*(?:份|篇|条|个|项)?\s*"
+        r"(?:政策|文件|文档|通知|文章|资料|材料|记录|来源|站点)"
+        r"|(?:政策|文件|文档|通知|文章|资料|材料|记录|来源|站点)\s*"
+        r"(?:共有|有)?\s*(?:多少|几)\s*(?:份|篇|个)?(?=\s*[?？。!！]*$)"
+        r"|(?:政策|文件|文档|通知|文章|资料|材料|记录|来源|站点)\s*"
+        r"(?:总数|数量|统计)"
+        r"|(?:count|how many|total)\s+(?:polic(?:y|ies)|documents?|articles?|records?|sources?)",
+        re.I,
+    )
+    _fact_value_terms = re.compile(
+        r"(金额|罚款|比例|百分比|占比|日期|时间|期限|额度|标准|价格|费用|利率|"
+        r"补助|资助|奖励|amount|percent(?:age)?|date|time|deadline|price|fee|rate)",
+        re.I,
+    )
     _semantic_terms = re.compile(
         r"(总结|概括|共同|措施|要求|原因|影响|summari[sz]e|common|explain)", re.I
     )
@@ -36,7 +50,9 @@ class QueryRouter:
         text = query.strip()
         if not text:
             raise ValueError("query must not be empty")
-        aggregate = bool(self._aggregate_terms.search(text))
+        aggregate = bool(
+            self._corpus_count_intent.search(text) and not self._fact_value_terms.search(text)
+        )
         semantic = bool(self._semantic_terms.search(text))
         filters = self.analyzer.analyze(text, explicit_filters).applied_filters
         if aggregate and not semantic:

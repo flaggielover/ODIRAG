@@ -196,7 +196,7 @@ async function sendFeedback(traceId: string, feedbackType: FeedbackType): Promis
             <div class="definition-item"><dt>拒答</dt><dd><StatusBadge :status="trace.refusal ? 'rejected' : 'completed'" /></dd></div>
             <div class="definition-item"><dt>Token</dt><dd><JsonPanel :value="trace.token_usage_json" /></dd></div>
           </dl>
-          <div v-else-if="inspectorTab === 'retrieval'" class="stack-list"><JsonPanel label="解析过滤条件" :value="trace.parsed_filters_json" /><JsonPanel label="BM25" :value="trace.bm25_results_json" /><JsonPanel label="向量" :value="trace.vector_results_json" /><JsonPanel label="融合" :value="trace.fusion_results_json" /><JsonPanel label="重排" :value="trace.rerank_results_json" /><JsonPanel label="最终上下文" :value="trace.final_context_json" /></div>
+          <div v-else-if="inspectorTab === 'retrieval'" class="stack-list"><JsonPanel label="解析过滤条件" :value="trace.parsed_filters_json" /><JsonPanel label="BM25" :value="trace.bm25_results_json" /><JsonPanel label="向量" :value="trace.vector_results_json" /><JsonPanel label="融合" :value="trace.fusion_results_json" /><JsonPanel label="重排" :value="trace.rerank_results_json" /><JsonPanel label="证据充分性" :value="trace.evidence_decision_json" /><JsonPanel label="最终上下文" :value="trace.final_context_json" /></div>
           <JsonPanel v-else-if="inspectorTab === 'prompt'" label="Prompt 快照" :value="trace.prompt_snapshot_json" />
           <div v-else class="stack-list">
             <article v-for="(citation, index) in lineage?.citations ?? []" :key="index" class="lineage-card">

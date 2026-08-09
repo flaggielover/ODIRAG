@@ -10,7 +10,13 @@ from typing import Any
 from app.llm import LLMOrchestrator
 from app.models import QueryTrace
 from app.providers import ProviderResponseError
-from app.rag import Citation, EvidenceDecision, GroundingService
+from app.rag import (
+    Citation,
+    EvidenceDecision,
+    EvidenceSufficiencyDecision,
+    EvidenceSufficiencyGate,
+    GroundingService,
+)
 from app.repositories.chat import ChatRepository
 from app.retrieval import RetrievalEngine, RetrievalHit, RetrievalMode, RetrievalTrace
 from app.router import QueryRouter, QueryType
@@ -31,6 +37,9 @@ class ChatAnswer:
     retrieval_trace: RetrievalTrace | None
     token_usage_json: dict[str, Any]
     cost: Decimal
+    evidence_sufficiency: EvidenceSufficiencyDecision | None
+    evidence_gate_latency_ms: float
+    answer_support_validated: bool | None
 
 
 class ChatService:
@@ -39,6 +48,7 @@ class ChatService:
         repository: ChatRepository,
         router: QueryRouter,
         retrieval_engine: RetrievalEngine,
+        evidence_gate: EvidenceSufficiencyGate,
         grounding: GroundingService,
         *,
         orchestrator: LLMOrchestrator | None = None,
@@ -48,6 +58,7 @@ class ChatService:
         self.repository = repository
         self.router = router
         self.retrieval_engine = retrieval_engine
+        self.evidence_gate = evidence_gate
         self.grounding = grounding
         self.orchestrator = orchestrator
         self.prompt = prompt
@@ -61,6 +72,9 @@ class ChatService:
         structured_count: int | None = None
         retrieval_trace: RetrievalTrace | None = None
         decision = EvidenceDecision(True, (), (), (), ())
+        evidence_sufficiency: EvidenceSufficiencyDecision | None = None
+        evidence_gate_latency_ms = 0.0
+        answer_support_validated: bool | None = None
         token_usage_json: dict[str, Any] = {
             "measurement": "not_available",
             "cost_measurement": "not_available",
@@ -81,27 +95,48 @@ class ChatService:
                 filters=route.filters,
             )
             trace_id = retrieval_trace.trace_id
-            decision = self.grounding.assess(query, list(retrieval_trace.final_results))
-            if not decision.sufficient:
-                answer = self._refusal_text(decision)
+            gate_started = perf_counter()
+            evidence_sufficiency = self.evidence_gate.assess(
+                query,
+                retrieval_trace.final_results,
+            )
+            evidence_gate_latency_ms = (perf_counter() - gate_started) * 1000
+            self._validate_evidence_decision(
+                evidence_sufficiency,
+                retrieval_trace.final_results,
+            )
+            if not evidence_sufficiency.sufficient:
+                answer = self._refusal_text((evidence_sufficiency.reason,))
                 refusal = True
-                refusal_reasons = decision.reasons
-                citations = decision.citations
+                refusal_reasons = (evidence_sufficiency.reason,)
+                citations = ()
             else:
-                (
-                    answer,
-                    citations,
-                    refusal,
-                    refusal_reasons,
-                    token_usage_json,
-                    cost,
-                ) = await self._grounded_answer(
-                    query,
-                    retrieval_trace,
-                    decision,
-                )
-                if route.query_type is QueryType.COMPOSITE and not refusal:
-                    answer = f"在符合筛选条件的 {structured_count} 份文档中，{answer}"
+                supported_ids = set(evidence_sufficiency.supported_chunk_ids)
+                supported_hits = [
+                    hit for hit in retrieval_trace.final_results if hit.chunk_id in supported_ids
+                ]
+                decision = self.grounding.assess(query, supported_hits)
+                if not decision.sufficient:
+                    answer = self._refusal_text(decision.reasons)
+                    refusal = True
+                    refusal_reasons = decision.reasons
+                    citations = ()
+                else:
+                    (
+                        answer,
+                        citations,
+                        refusal,
+                        refusal_reasons,
+                        token_usage_json,
+                        cost,
+                        answer_support_validated,
+                    ) = await self._grounded_answer(
+                        query,
+                        retrieval_trace,
+                        decision,
+                    )
+                    if route.query_type is QueryType.COMPOSITE and not refusal:
+                        answer = f"在符合筛选条件的 {structured_count} 份文档中，{answer}"
         result = ChatAnswer(
             trace_id=trace_id,
             query_type=route.query_type,
@@ -116,6 +151,9 @@ class ChatService:
             retrieval_trace=retrieval_trace,
             token_usage_json=token_usage_json,
             cost=cost,
+            evidence_sufficiency=evidence_sufficiency,
+            evidence_gate_latency_ms=evidence_gate_latency_ms,
+            answer_support_validated=answer_support_validated,
         )
         await self._persist(result, query, started)
         return result
@@ -141,7 +179,15 @@ class ChatService:
         query: str,
         trace: RetrievalTrace,
         decision: EvidenceDecision,
-    ) -> tuple[str, tuple[Citation, ...], bool, tuple[str, ...], dict[str, Any], Decimal]:
+    ) -> tuple[
+        str,
+        tuple[Citation, ...],
+        bool,
+        tuple[str, ...],
+        dict[str, Any],
+        Decimal,
+        bool | None,
+    ]:
         if self.orchestrator is None:
             selected = decision.citations[:3]
             lines = [
@@ -155,6 +201,7 @@ class ChatService:
                 (),
                 {"measurement": "not_available", "cost_measurement": "not_applicable"},
                 Decimal("0"),
+                True,
             )
         citation_by_chunk = {citation.chunk_id: citation for citation in decision.citations}
         eligible_hits = [hit for hit in trace.final_results if hit.chunk_id in citation_by_chunk]
@@ -165,7 +212,14 @@ class ChatService:
         )
         if generated.refusal:
             reason = generated.refusal_reason or "model_refusal"
-            return generated.answer, (), True, (reason,), *_result_usage(generated)
+            return (
+                generated.answer,
+                (),
+                True,
+                (reason,),
+                *_result_usage(generated),
+                None,
+            )
         cited_ids = tuple(dict.fromkeys(generated.cited_chunk_ids))
         if not cited_ids or any(chunk_id not in citation_by_chunk for chunk_id in cited_ids):
             raise ProviderResponseError("grounded_answer", "citations are missing or invalid")
@@ -175,7 +229,24 @@ class ChatService:
         if not generated_urls.issubset(allowed_urls):
             raise ProviderResponseError("grounded_answer", "answer contains an unknown URL")
         usage, cost = _result_usage(generated)
-        return generated.answer, citations, False, (), usage, cost
+        cited_id_set = set(cited_ids)
+        cited_hits = [hit for hit in trace.final_results if hit.chunk_id in cited_id_set]
+        answer_support = self.evidence_gate.validate_answer(
+            query=query,
+            answer=generated.answer,
+            cited_hits=cited_hits,
+        )
+        if not answer_support.sufficient:
+            return (
+                self._refusal_text((answer_support.reason,)),
+                (),
+                True,
+                (answer_support.reason,),
+                usage,
+                cost,
+                False,
+            )
+        return generated.answer, citations, False, (), usage, cost, True
 
     async def _persist(self, result: ChatAnswer, query: str, started: float) -> None:
         retrieval = result.retrieval_trace
@@ -196,6 +267,7 @@ class ChatService:
                     "content": self.prompt,
                     "mode": "llm" if self.orchestrator is not None else "extractive",
                 },
+                evidence_decision_json=self._evidence_payload(result),
                 model_name=(
                     self.orchestrator.model_name
                     if self.orchestrator is not None
@@ -212,9 +284,47 @@ class ChatService:
         await self.repository.commit()
 
     @staticmethod
-    def _refusal_text(decision: EvidenceDecision) -> str:
-        reasons = ", ".join(decision.reasons) or "evidence_not_sufficient"
-        return f"无法基于当前已验证证据可靠回答。原因：{reasons}。"
+    def _refusal_text(reasons: tuple[str, ...]) -> str:
+        reason_text = ", ".join(reasons) or "evidence_not_sufficient"
+        return f"无法基于当前已验证证据可靠回答。原因：{reason_text}。"
+
+    @staticmethod
+    def _validate_evidence_decision(
+        decision: EvidenceSufficiencyDecision,
+        final_hits: tuple[RetrievalHit, ...],
+    ) -> None:
+        if not 0 <= decision.confidence <= 1:
+            raise ProviderResponseError("evidence_gate", "confidence is outside [0, 1]")
+        supported_ids = decision.supported_chunk_ids
+        if len(supported_ids) != len(set(supported_ids)):
+            raise ProviderResponseError("evidence_gate", "supported chunk IDs are duplicated")
+        final_ids = {hit.chunk_id for hit in final_hits}
+        if any(chunk_id not in final_ids for chunk_id in supported_ids):
+            raise ProviderResponseError("evidence_gate", "supported chunk ID is not a final hit")
+        if decision.sufficient and (not supported_ids or decision.unsupported_aspects):
+            raise ProviderResponseError("evidence_gate", "sufficient decision is inconsistent")
+        if not decision.sufficient and supported_ids:
+            raise ProviderResponseError("evidence_gate", "insufficient decision contains support")
+
+    def _evidence_payload(self, result: ChatAnswer) -> dict[str, Any]:
+        decision = result.evidence_sufficiency
+        if decision is None:
+            return {}
+        retrieval = result.retrieval_trace
+        payload = decision.as_dict()
+        payload.update(
+            {
+                "status": "passed" if decision.sufficient else "insufficient",
+                "candidate_count": (len(retrieval.final_results) if retrieval is not None else 0),
+                "supported_count": len(decision.supported_chunk_ids),
+                "latency_ms": round(result.evidence_gate_latency_ms, 3),
+                "provider": self.evidence_gate.provider_name,
+                "model": self.evidence_gate.model_name,
+                "answer_support_validated": result.answer_support_validated,
+                "refusal_reasons": list(result.refusal_reasons),
+            }
+        )
+        return payload
 
 
 def _hit_payload(hit: RetrievalHit) -> dict[str, Any]:

@@ -60,6 +60,7 @@ class ChatResult:
     token_count: int = 0
     cost: float = 0.0
     metadata: Mapping[str, object] = field(default_factory=dict)
+    grounding_validated: bool | None = None
 
 
 class RetrievalCallback(Protocol):
@@ -207,4 +208,5 @@ class EvaluationRunner:
             retrieved_document_ids=retrieved_documents,
             relevant_document_ids=case.expected_document_ids,
             cited_document_ids=(chat.cited_document_ids if chat is not None else frozenset()),
+            grounding_validated=(chat.grounding_validated if chat is not None else None),
         )

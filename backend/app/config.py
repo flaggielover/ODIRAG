@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     grounding_minimum_score: float = Field(default=0.0, ge=0)
     grounding_require_official_source: bool = True
     grounding_refuse_on_conflict: bool = True
+    evidence_sufficiency_minimum_confidence: float = Field(default=0.45, ge=0.45, le=1)
+    evidence_sufficiency_minimum_hit_contribution: float = Field(default=0.08, ge=0.05, le=1)
+    evidence_sufficiency_minimum_answer_overlap: float = Field(default=0.2, ge=0.2, le=1)
 
     chunking_config_path: Path = Path("../config/chunking.yaml")
     embedding_provider: Literal["remote", "deterministic"] = "remote"

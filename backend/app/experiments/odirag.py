@@ -73,6 +73,7 @@ class ODIRAGVariantEvaluationRunner:
             ChatRepository(self.session),
             QueryRouter(),
             engine,
+            self.runtime.evidence_sufficiency_gate,
             GroundingService(
                 minimum_hits=self.settings.grounding_minimum_hits,
                 minimum_score=self.settings.grounding_minimum_score,
@@ -389,7 +390,7 @@ def _document_metadata(
         "document_type": document.document_type,
         "issuing_authority": document.issuing_authority,
         "document_number": document.document_number,
-        "publish_date": document.publish_date.isoformat() if document.publish_date else None,
+        "publish_date": (document.publish_date.isoformat() if document.publish_date else None),
         "document_version": document.version,
         "section_path": " > ".join(section_path) or None,
         "section_title": section_title,

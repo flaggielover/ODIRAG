@@ -49,15 +49,15 @@ class GroundingService:
         reasons: list[str] = []
         if len(eligible) < self.minimum_hits:
             reasons.append("insufficient_retrieved_evidence")
-        if (
-            self.require_official_source
-            and eligible
-            and not any(
-                str(hit.metadata.get("official_status", "")).lower() == "official"
+        if self.require_official_source:
+            official_eligible = [
+                hit
                 for hit in eligible
-            )
-        ):
-            reasons.append("official_source_required")
+                if str(hit.metadata.get("official_status", "")).lower() == "official"
+            ]
+            if len(official_eligible) < self.minimum_hits:
+                reasons.append("official_source_required")
+            eligible = official_eligible
         if eligible and not any(self._overlap(query, hit.content) for hit in eligible):
             reasons.append("question_not_covered")
         conflicts = tuple(self._detect_conflicts(eligible))

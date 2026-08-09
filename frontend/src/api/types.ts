@@ -521,6 +521,14 @@ export interface Citation {
   quote: string
 }
 
+export interface EvidenceSufficiency {
+  sufficient: boolean
+  confidence: number
+  reason: string
+  supported_chunk_ids: string[]
+  unsupported_aspects: string[]
+}
+
 export interface ChatResponse {
   trace_id: string
   query_type: 'sql' | 'rag' | 'sql+rag'
@@ -532,6 +540,7 @@ export interface ChatResponse {
   citations: Citation[]
   filters: Record<string, unknown>
   structured_count: number | null
+  evidence_sufficiency: EvidenceSufficiency | null
 }
 
 export interface QueryTrace {
@@ -546,6 +555,7 @@ export interface QueryTrace {
   final_context_json: Array<Record<string, unknown>>
   prompt_version: string | null
   prompt_snapshot_json: Record<string, unknown>
+  evidence_decision_json: Record<string, unknown>
   model_name: string | null
   answer: string | null
   citations_json: Array<Record<string, unknown>>
@@ -734,6 +744,15 @@ export interface MetricsResponse {
     average_cost: string | number
     trace_completeness_rate: number
     evaluation_regression_count: number
+    evidence_assessed_count: number
+    evidence_sufficient_count: number
+    evidence_insufficient_count: number
+    evidence_sufficiency_rate: number
+    average_evidence_gate_latency_ms: number
+    grounding_failure_count: number
+    citation_answer_count: number
+    citation_rate: number
+    refusal_citation_violation_count: number
   }
   dependencies: Record<string, DependencyHealth>
 }

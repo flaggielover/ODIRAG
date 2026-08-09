@@ -25,6 +25,14 @@ class CitationResponse(BaseModel):
     quote: str
 
 
+class EvidenceSufficiencyResponse(BaseModel):
+    sufficient: bool
+    confidence: float = Field(ge=0, le=1)
+    reason: str
+    supported_chunk_ids: list[str]
+    unsupported_aspects: list[str]
+
+
 class ChatResponse(BaseModel):
     trace_id: str
     query_type: QueryType
@@ -36,6 +44,7 @@ class ChatResponse(BaseModel):
     citations: list[CitationResponse]
     filters: dict[str, Any]
     structured_count: int | None
+    evidence_sufficiency: EvidenceSufficiencyResponse | None
 
 
 class QueryTraceResponse(BaseModel):
@@ -52,6 +61,7 @@ class QueryTraceResponse(BaseModel):
     final_context_json: list[dict[str, Any]]
     prompt_version: str | None
     prompt_snapshot_json: dict[str, Any]
+    evidence_decision_json: dict[str, Any]
     model_name: str | None
     answer: str | None
     citations_json: list[dict[str, Any]]

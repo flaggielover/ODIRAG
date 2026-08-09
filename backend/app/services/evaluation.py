@@ -230,16 +230,8 @@ class _ChatEvaluationAdapter:
         claim_count, hallucinated_claims = _citation_claims(answer, retrieval)
         return ChatResult(
             answer=answer.answer,
-            cited_chunk_ids=(
-                frozenset()
-                if answer.refusal
-                else frozenset(citation.chunk_id for citation in answer.citations)
-            ),
-            cited_document_ids=(
-                frozenset()
-                if answer.refusal
-                else frozenset(citation.document_id for citation in answer.citations)
-            ),
+            cited_chunk_ids=frozenset(citation.chunk_id for citation in answer.citations),
+            cited_document_ids=frozenset(citation.document_id for citation in answer.citations),
             covered_answer_points=covered,
             refused=answer.refusal,
             claim_count=claim_count,
@@ -254,6 +246,9 @@ class _ChatEvaluationAdapter:
                 "outdated": list(answer.outdated),
                 "hallucination_method": "citation_quote_binding_v1",
             },
+            # The evaluation metric deliberately does not consume the ChatService
+            # gate result; it independently checks citation-bound claims below.
+            grounding_validated=None,
         )
 
 
@@ -303,11 +298,43 @@ def _citation_claims(answer: ChatAnswer, retrieval: RetrievalResult) -> tuple[in
         content_by_chunk.update(
             {hit.chunk_id: hit.content for hit in answer.retrieval_trace.final_results}
         )
-    hallucinated = sum(
+    citation_unbound = any(
         not _contains_normalized(content_by_chunk.get(citation.chunk_id, ""), citation.quote)
         for citation in answer.citations
     )
-    return len(answer.citations), hallucinated
+    cited_text = "\n".join(
+        content_by_chunk.get(citation.chunk_id, "") for citation in answer.citations
+    )
+    claims = _evaluation_claims(answer.answer)
+    if not claims:
+        return 1, int(citation_unbound)
+    hallucinated = sum(not _independent_claim_supported(claim, cited_text) for claim in claims)
+    if citation_unbound:
+        hallucinated = max(1, hallucinated)
+    return len(claims), min(len(claims), hallucinated)
+
+
+def _evaluation_claims(answer: str) -> tuple[str, ...]:
+    return tuple(
+        cleaned
+        for part in re.split(r"[。！？!?；;\n]+", answer)
+        if (cleaned := re.sub(r"https?://\S+|[（(]来源[:：].*?[)）]", " ", part).strip())
+    )
+
+
+def _independent_claim_supported(claim: str, evidence: str) -> bool:
+    normalized_evidence = _normalize(evidence)
+    exact_values = tuple(re.findall(r"(?:19|20)\d{2}|\d+(?:\.\d+)?(?:%|％|万元|亿元|元)", claim))
+    if any(_normalize(value) not in normalized_evidence for value in exact_values):
+        return False
+    terms: set[str] = {token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9._+-]{2,}", claim)}
+    for segment in re.findall(r"[\u4e00-\u9fff]+", claim):
+        terms.update(segment[index : index + 2] for index in range(max(0, len(segment) - 1)))
+    terms -= {"根据", "来源", "文件", "通知", "政策", "回答", "证据"}
+    if not terms:
+        return True
+    matched = sum(term in normalized_evidence for term in terms)
+    return matched >= 2 and matched / len(terms) >= 0.2
 
 
 def _contains_normalized(text: str, expected: str) -> bool:

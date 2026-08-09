@@ -65,8 +65,14 @@ class DirectLLMAdapter:
                     "model": self.model_name,
                     "response_format": {"type": "json_object"},
                     "messages": [
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                        {
+                            "role": "system",
+                            "content": _structured_output_prompt(prompt, result_type),
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(payload, ensure_ascii=False),
+                        },
                     ],
                 },
             )
@@ -79,12 +85,18 @@ class DirectLLMAdapter:
                 await client.aclose()
         try:
             content = response_payload["choices"][0]["message"]["content"]
-            result = result_type.model_validate_json(content)
+            decoded = json.loads(content)
+            if not isinstance(decoded, dict):
+                raise TypeError("structured response must be a JSON object")
+            _require_direct_answer_fields(decoded, result_type)
+            result = result_type.model_validate(decoded)
+            if isinstance(result, AnswerResult):
+                _validate_direct_answer(result, payload)
             result = _with_usage(result, response_payload)
             if isinstance(result, ReviewResult):
                 result.raw_response = content
             return result
-        except (KeyError, IndexError, TypeError, ValidationError) as exc:
+        except (KeyError, IndexError, TypeError, ValidationError, ValueError) as exc:
             raise ProviderResponseError("direct_llm", str(exc)) from exc
 
 
@@ -108,7 +120,9 @@ class CozeAdapter:
 
     async def review_document(self, *, title: str, content: str, prompt: str) -> ReviewResult:
         return await self._invoke(
-            "review_document", {"title": title, "content": content, "prompt": prompt}, ReviewResult
+            "review_document",
+            {"title": title, "content": content, "prompt": prompt},
+            ReviewResult,
         )
 
     async def analyze_query(self, *, query: str, prompt: str) -> QueryPlan:
@@ -118,14 +132,18 @@ class CozeAdapter:
         self, *, query: str, context: list[dict[str, Any]], prompt: str
     ) -> AnswerResult:
         return await self._invoke(
-            "generate_answer", {"query": query, "context": context, "prompt": prompt}, AnswerResult
+            "generate_answer",
+            {"query": query, "context": context, "prompt": prompt},
+            AnswerResult,
         )
 
     async def check_evidence(
         self, *, query: str, context: list[dict[str, Any]], prompt: str
     ) -> EvidenceCheck:
         return await self._invoke(
-            "check_evidence", {"query": query, "context": context, "prompt": prompt}, EvidenceCheck
+            "check_evidence",
+            {"query": query, "context": context, "prompt": prompt},
+            EvidenceCheck,
         )
 
     async def _invoke(
@@ -180,6 +198,78 @@ def _coze_content(payload: dict[str, Any]) -> str:
     raise ValueError("answer message is missing")
 
 
+def _structured_output_prompt(prompt: str, result_type: type[BaseModel]) -> str:
+    schema = json.dumps(
+        result_type.model_json_schema(mode="serialization"),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    instructions = [
+        prompt.rstrip(),
+        "",
+        "Structured output contract (mandatory):",
+        f"Return exactly one JSON object that validates against the {result_type.__name__} "
+        "JSON Schema below.",
+        "Do not use Markdown fences and do not return any text outside the JSON object.",
+        "Do not return undefined top-level fields.",
+    ]
+    if result_type is AnswerResult:
+        instructions.extend(
+            [
+                "The answer field and cited_chunk_ids field must both be present.",
+                "The answer field must be a non-empty string.",
+                "Citations are represented only by cited_chunk_ids; do not return top-level "
+                "citations, attachments, or source fields.",
+                "Every cited_chunk_ids value must exactly match a chunk_id in the supplied "
+                "retrieval context. Do not invent citations.",
+                "For a supported answer, cited_chunk_ids must contain at least one retrieved "
+                "chunk_id.",
+                "When the retrieval context is insufficient, follow the existing refusal "
+                "contract: set refusal to true, explain the refusal in answer and "
+                "refusal_reason, and return an empty cited_chunk_ids list.",
+            ]
+        )
+    instructions.extend(["JSON Schema:", schema])
+    return "\n".join(instructions)
+
+
+def _require_direct_answer_fields(decoded: Mapping[str, Any], result_type: type[BaseModel]) -> None:
+    if result_type is not AnswerResult:
+        return
+    missing = [field for field in ("answer", "cited_chunk_ids") if field not in decoded]
+    if missing:
+        raise ValueError(f"AnswerResult is missing required field(s): {', '.join(missing)}")
+
+
+def _validate_direct_answer(result: AnswerResult, payload: Mapping[str, Any]) -> None:
+    if not result.answer.strip():
+        raise ValueError("AnswerResult answer must be non-empty")
+    if result.refusal:
+        if result.cited_chunk_ids:
+            raise ValueError("AnswerResult cited_chunk_ids must be empty for a refusal")
+        if not result.refusal_reason or not result.refusal_reason.strip():
+            raise ValueError("AnswerResult refusal_reason must be non-empty for a refusal")
+    else:
+        if not result.cited_chunk_ids:
+            raise ValueError("AnswerResult cited_chunk_ids must not be empty for an answer")
+        if result.refusal_reason is not None:
+            raise ValueError("AnswerResult refusal_reason must be null for an answer")
+
+    context = payload.get("context")
+    context_items = context if isinstance(context, list) else []
+    retrieved_chunk_ids = {
+        item.get("chunk_id")
+        for item in context_items
+        if isinstance(item, Mapping) and isinstance(item.get("chunk_id"), str)
+    }
+    unknown = [
+        chunk_id for chunk_id in result.cited_chunk_ids if chunk_id not in retrieved_chunk_ids
+    ]
+    if unknown:
+        raise ValueError("AnswerResult cited_chunk_ids must come from the retrieval context")
+
+
 def _with_usage(result: ResultT, payload: Mapping[str, Any]) -> ResultT:
     usage = _extract_usage(payload)
     cost = _extract_cost(payload, usage)
@@ -216,7 +306,11 @@ def _extract_usage(payload: Mapping[str, Any]) -> dict[str, int]:
 
 
 def _extract_cost(payload: Mapping[str, Any], usage: Mapping[str, Any]) -> Decimal | None:
-    candidates: list[Any] = [payload.get("cost"), payload.get("total_cost"), usage.get("cost")]
+    candidates: list[Any] = [
+        payload.get("cost"),
+        payload.get("total_cost"),
+        usage.get("cost"),
+    ]
     for key in ("usage", "token_usage"):
         nested = payload.get(key)
         if isinstance(nested, Mapping):

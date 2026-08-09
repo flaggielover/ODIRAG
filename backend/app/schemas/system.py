@@ -96,6 +96,15 @@ class RagMetrics(BaseModel):
     average_cost: Decimal
     trace_completeness_rate: float
     evaluation_regression_count: int
+    evidence_assessed_count: int
+    evidence_sufficient_count: int
+    evidence_insufficient_count: int
+    evidence_sufficiency_rate: float
+    average_evidence_gate_latency_ms: float
+    grounding_failure_count: int
+    citation_answer_count: int
+    citation_rate: float
+    refusal_citation_violation_count: int
 
 
 class MetricsResponse(BaseModel):

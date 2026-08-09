@@ -1,7 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
+import { existsSync } from 'node:fs'
 
 const externalBaseUrl = process.env.E2E_BASE_URL
 const baseURL = externalBaseUrl ?? 'http://127.0.0.1:5173'
+const systemChromeAvailable =
+  process.platform === 'win32' &&
+  existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
 
 /**
  * The default suite uses deterministic API fixtures, so it can run without
@@ -25,7 +29,10 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: systemChromeAvailable ? 'chrome' : undefined,
+      },
     },
   ],
   webServer: externalBaseUrl

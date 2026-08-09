@@ -17,7 +17,13 @@ from app.repositories.chat import ChatRepository
 from app.repositories.observability import ObservabilityRepository
 from app.router import QueryRouter, QueryType
 from app.runtime import ApplicationRuntime
-from app.schemas.chat import ChatRequest, ChatResponse, CitationResponse, QueryTraceResponse
+from app.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    CitationResponse,
+    EvidenceSufficiencyResponse,
+    QueryTraceResponse,
+)
 from app.schemas.observability import AnswerLineageResponse
 from app.services.chat import ChatAnswer, ChatService
 from app.services.observability import LineageService
@@ -34,6 +40,7 @@ def get_chat_service(
         ChatRepository(session),
         QueryRouter(),
         runtime.retrieval_engine(),
+        runtime.evidence_sufficiency_gate,
         GroundingService(
             minimum_hits=settings.grounding_minimum_hits,
             minimum_score=settings.grounding_minimum_score,
@@ -130,4 +137,9 @@ def _response(result: ChatAnswer) -> ChatResponse:
         ],
         filters=result.filters,
         structured_count=result.structured_count,
+        evidence_sufficiency=(
+            EvidenceSufficiencyResponse(**result.evidence_sufficiency.as_dict())
+            if result.evidence_sufficiency is not None
+            else None
+        ),
     )

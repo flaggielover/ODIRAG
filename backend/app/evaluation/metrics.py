@@ -30,6 +30,7 @@ class EvaluationSample:
     retrieved_document_ids: tuple[str, ...] = ()
     relevant_document_ids: frozenset[str] = frozenset()
     cited_document_ids: frozenset[str] = frozenset()
+    grounding_validated: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,8 @@ class EvaluationSampleMetrics:
     citation_completeness: float
     refusal_correct: float
     hallucination_rate: float
+    answer_grounded: float
+    unsupported_answer: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,10 @@ class EvaluationAggregate:
     citation_completeness: float
     refusal_accuracy: float
     hallucination_rate: float
+    citation_precision: float
+    citation_recall: float
+    answer_grounding_rate: float
+    unsupported_answer_rate: float
     p50_latency_ms: float
     p95_latency_ms: float
     average_tokens: float
@@ -87,11 +94,13 @@ def evaluate_sample(sample: EvaluationSample) -> EvaluationSampleMetrics:
             sample.covered_answer_points, sample.expected_answer_points
         ),
         citation_accuracy=_set_precision(cited, expected_citations),
-        citation_completeness=_set_recall(cited, expected_citations),
+        citation_completeness=_citation_recall(cited, expected_citations),
         refusal_correct=float(sample.refused == sample.should_refuse),
         hallucination_rate=(
             sample.hallucinated_claims / sample.claim_count if sample.claim_count > 0 else 0.0
         ),
+        answer_grounded=_answer_grounded(sample, cited),
+        unsupported_answer=float(sample.should_refuse and not sample.refused),
     )
 
 
@@ -109,6 +118,10 @@ def evaluate_samples(samples: list[EvaluationSample]) -> EvaluationAggregate:
             citation_completeness=0.0,
             refusal_accuracy=0.0,
             hallucination_rate=0.0,
+            citation_precision=0.0,
+            citation_recall=0.0,
+            answer_grounding_rate=0.0,
+            unsupported_answer_rate=0.0,
             p50_latency_ms=0.0,
             p95_latency_ms=0.0,
             average_tokens=0.0,
@@ -120,6 +133,23 @@ def evaluate_samples(samples: list[EvaluationSample]) -> EvaluationAggregate:
     hallucinated_claims = sum(
         sample.hallucinated_claims for sample in samples if sample.claim_count > 0
     )
+    answered_metrics = [
+        item for sample, item in zip(samples, measured, strict=True) if not sample.refused
+    ]
+    refusal_cases = [
+        item for sample, item in zip(samples, measured, strict=True) if sample.should_refuse
+    ]
+    citation_samples = [
+        item
+        for sample, item in zip(samples, measured, strict=True)
+        if not (sample.should_refuse and sample.refused)
+    ]
+    citation_precision = (
+        mean(item.citation_accuracy for item in citation_samples) if citation_samples else 0.0
+    )
+    citation_recall = (
+        mean(item.citation_completeness for item in citation_samples) if citation_samples else 0.0
+    )
     return EvaluationAggregate(
         question_count=len(samples),
         recall_at_1=mean(item.recall_at_1 for item in measured),
@@ -128,10 +158,18 @@ def evaluate_samples(samples: list[EvaluationSample]) -> EvaluationAggregate:
         mrr=mean(item.reciprocal_rank for item in measured),
         ndcg_at_10=mean(item.ndcg_at_10 for item in measured),
         answer_point_coverage=mean(item.answer_point_coverage for item in measured),
-        citation_accuracy=mean(item.citation_accuracy for item in measured),
-        citation_completeness=mean(item.citation_completeness for item in measured),
+        citation_accuracy=citation_precision,
+        citation_completeness=citation_recall,
         refusal_accuracy=mean(item.refusal_correct for item in measured),
         hallucination_rate=(hallucinated_claims / assessed_claims if assessed_claims else 0.0),
+        citation_precision=citation_precision,
+        citation_recall=citation_recall,
+        answer_grounding_rate=(
+            mean(item.answer_grounded for item in answered_metrics) if answered_metrics else 0.0
+        ),
+        unsupported_answer_rate=(
+            mean(item.unsupported_answer for item in refusal_cases) if refusal_cases else 0.0
+        ),
         p50_latency_ms=_percentile(latencies, 0.50),
         p95_latency_ms=_percentile(latencies, 0.95),
         average_tokens=mean(sample.token_count for sample in samples),
@@ -176,13 +214,19 @@ def _ndcg(sample: EvaluationSample, k: int) -> float:
 
 def _set_precision(actual: frozenset[str], expected: frozenset[str]) -> float:
     if not actual:
-        return 1.0 if not expected else 0.0
+        return 0.0
     return len(actual & expected) / len(actual)
 
 
 def _set_recall(actual: frozenset[str], expected: frozenset[str]) -> float:
     if not expected:
         return 1.0
+    return len(actual & expected) / len(expected)
+
+
+def _citation_recall(actual: frozenset[str], expected: frozenset[str]) -> float:
+    if not expected:
+        return 0.0
     return len(actual & expected) / len(expected)
 
 
@@ -209,3 +253,15 @@ def _citation_sets(sample: EvaluationSample) -> tuple[frozenset[str], frozenset[
     if sample.relevant_document_ids:
         return sample.cited_document_ids, sample.relevant_document_ids
     return sample.cited_ids, sample.expected_citation_ids
+
+
+def _answer_grounded(sample: EvaluationSample, cited: frozenset[str]) -> float:
+    if sample.refused:
+        return 0.0
+    if sample.grounding_validated is not None:
+        return float(sample.grounding_validated)
+    if not cited:
+        return 0.0
+    if sample.claim_count > 0:
+        return float(sample.hallucinated_claims == 0)
+    return 1.0

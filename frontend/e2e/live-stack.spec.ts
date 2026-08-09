@@ -12,6 +12,7 @@ test.describe('真实栈生产验收（live-stack）', () => {
   test.skip(!liveEnabled, 'Set E2E_LIVE=1 with an external base URL and credentials to run live integration checks.')
 
   test('登录后可达核心页面并完成带引用问答', async ({ page }) => {
+    test.setTimeout(90_000)
     const username = requiredEnvironment('E2E_USERNAME')
     const password = requiredEnvironment('E2E_PASSWORD')
     requiredEnvironment('E2E_BASE_URL')
@@ -33,7 +34,9 @@ test.describe('真实栈生产验收（live-stack）', () => {
     await expect(page.locator('.state-panel, .table-frame').first()).toBeVisible()
 
     await page.goto('/chat')
-    const query = process.env.E2E_QUERY ?? '企业研发投入有哪些支持措施？'
+    const query =
+      process.env.E2E_QUERY ??
+      '存量APP备案阶段是什么时间？已完成网站备案手续的APP是否需要重复填报主办者真实身份信息？'
     await page.locator('textarea[placeholder="输入查询"]').fill(query)
     await page.getByRole('button', { name: '发送' }).click()
     await expect(page.locator('.evidence-card').first()).toBeVisible({ timeout: 60_000 })

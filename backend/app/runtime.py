@@ -20,6 +20,7 @@ from app.embedding import (
     RemoteEmbeddingProvider,
 )
 from app.llm import CozeAdapter, DirectLLMAdapter, LLMOrchestrator
+from app.rag import EvidenceSufficiencyGate
 from app.rerank import (
     DeterministicRerankProvider,
     NoRerankProvider,
@@ -41,6 +42,7 @@ class ApplicationRuntime:
     embedding_batcher: EmbeddingBatcher
     vector_store: VectorStore
     rerank_provider: RerankProvider
+    evidence_sufficiency_gate: EvidenceSufficiencyGate
     llm_orchestrator: LLMOrchestrator | None
     grounded_answer_prompt: str
     grounded_answer_prompt_version: str
@@ -79,6 +81,11 @@ def build_application_runtime(settings: Settings) -> ApplicationRuntime:
         embedding_batcher=batcher,
         vector_store=_vector_store(settings),
         rerank_provider=_rerank_provider(settings),
+        evidence_sufficiency_gate=EvidenceSufficiencyGate(
+            minimum_confidence=settings.evidence_sufficiency_minimum_confidence,
+            minimum_hit_contribution=(settings.evidence_sufficiency_minimum_hit_contribution),
+            minimum_answer_overlap=(settings.evidence_sufficiency_minimum_answer_overlap),
+        ),
         llm_orchestrator=_llm_orchestrator(settings),
         grounded_answer_prompt=grounded_prompt_path.read_text(encoding="utf-8"),
         grounded_answer_prompt_version=settings.grounded_answer_prompt_version,
@@ -128,7 +135,7 @@ def _vector_store(settings: Settings) -> VectorStore:
     return QdrantVectorStore(
         url=settings.qdrant_url,
         collection_name=settings.qdrant_collection,
-        api_key=settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None,
+        api_key=(settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None),
     )
 
 

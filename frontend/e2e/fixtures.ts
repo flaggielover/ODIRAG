@@ -124,6 +124,14 @@ const trace = {
   final_context_json: [{ chunk_id: 'chunk-demo-001', content: '支持企业研发投入。' }],
   prompt_version: 'rag-v1',
   prompt_snapshot_json: { system: '仅根据引用回答。' },
+  evidence_decision_json: {
+    sufficient: true,
+    confidence: 0.92,
+    reason: 'evidence_covers_all_query_aspects',
+    supported_chunk_ids: ['chunk-demo-001'],
+    unsupported_aspects: [],
+    status: 'passed',
+  },
   model_name: 'deterministic-test-model',
   answer: '企业可按规定申请研发投入支持措施，具体条件以官方文件为准。',
   citations_json: [{ chunk_id: 'chunk-demo-001' }],
@@ -156,6 +164,13 @@ const chatResponse = {
   ],
   filters: {},
   structured_count: null,
+  evidence_sufficiency: {
+    sufficient: true,
+    confidence: 0.92,
+    reason: 'evidence_covers_all_query_aspects',
+    supported_chunk_ids: ['chunk-demo-001'],
+    unsupported_aspects: [],
+  },
 }
 
 const lineage = {
@@ -264,6 +279,15 @@ const metrics = {
     average_cost: 0,
     trace_completeness_rate: 1,
     evaluation_regression_count: 0,
+    evidence_assessed_count: 1,
+    evidence_sufficient_count: 1,
+    evidence_insufficient_count: 0,
+    evidence_sufficiency_rate: 1,
+    average_evidence_gate_latency_ms: 1.2,
+    grounding_failure_count: 0,
+    citation_answer_count: 1,
+    citation_rate: 1,
+    refusal_citation_violation_count: 0,
   },
   dependencies: health.dependencies,
 }

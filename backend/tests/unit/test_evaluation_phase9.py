@@ -18,6 +18,7 @@ from app.evaluation import (
     evaluate_samples,
     write_evaluation_reports,
 )
+from app.services.evaluation import _independent_claim_supported
 
 
 def test_extended_metrics_keep_the_original_sample_api() -> None:
@@ -59,10 +60,14 @@ def test_extended_metrics_keep_the_original_sample_api() -> None:
     assert aggregate.mrr == 0.25
     assert aggregate.ndcg_at_10 == pytest.approx(0.5 / math.log2(3))
     assert aggregate.answer_point_coverage == 0.75
-    assert aggregate.citation_accuracy == 0.75
-    assert aggregate.citation_completeness == 0.75
+    assert aggregate.citation_accuracy == 0.5
+    assert aggregate.citation_completeness == 0.5
+    assert aggregate.citation_precision == 0.5
+    assert aggregate.citation_recall == 0.5
     assert aggregate.refusal_accuracy == 1.0
     assert aggregate.hallucination_rate == 0.25
+    assert aggregate.answer_grounding_rate == 0.0
+    assert aggregate.unsupported_answer_rate == 0.0
     assert aggregate.hallucination_assessed_claims == 4
     assert aggregate.hallucination_assessed_questions == 1
     assert aggregate.p50_latency_ms == 100
@@ -73,6 +78,92 @@ def test_extended_metrics_keep_the_original_sample_api() -> None:
     empty = evaluate_samples([])
     assert empty.question_count == 0
     assert empty.average_cost == 0.0
+
+
+def test_safety_metrics_record_unsupported_answers_and_grounding() -> None:
+    aggregate = evaluate_samples(
+        [
+            EvaluationSample(
+                retrieved_ids=("c1",),
+                relevant_ids=frozenset(),
+                cited_ids=frozenset({"c1"}),
+                should_refuse=True,
+                refused=False,
+                grounding_validated=False,
+            ),
+            EvaluationSample(
+                retrieved_ids=("c2",),
+                relevant_ids=frozenset({"c2"}),
+                cited_ids=frozenset({"c2"}),
+                refused=False,
+                grounding_validated=True,
+            ),
+        ]
+    )
+
+    assert aggregate.unsupported_answer_rate == 1.0
+    assert aggregate.answer_grounding_rate == 0.5
+
+
+def test_citation_metrics_exclude_correct_refusals_from_denominator() -> None:
+    samples = [
+        EvaluationSample(
+            retrieved_ids=(f"refusal-{index}",),
+            relevant_ids=frozenset(),
+            should_refuse=True,
+            refused=True,
+        )
+        for index in range(9)
+    ]
+    samples.append(
+        EvaluationSample(
+            retrieved_ids=("wrong",),
+            relevant_ids=frozenset({"expected"}),
+            expected_citation_ids=frozenset({"expected"}),
+            cited_ids=frozenset({"wrong"}),
+            refused=False,
+        )
+    )
+
+    aggregate = evaluate_samples(samples)
+
+    assert aggregate.citation_precision == 0.0
+    assert aggregate.citation_recall == 0.0
+
+
+def test_citation_metrics_include_unsupported_answers_in_denominator() -> None:
+    aggregate = evaluate_samples(
+        [
+            EvaluationSample(
+                retrieved_ids=("correct",),
+                relevant_ids=frozenset({"correct"}),
+                expected_citation_ids=frozenset({"correct"}),
+                cited_ids=frozenset({"correct"}),
+            ),
+            EvaluationSample(
+                retrieved_ids=("wrong",),
+                relevant_ids=frozenset(),
+                cited_ids=frozenset({"wrong"}),
+                should_refuse=True,
+                refused=False,
+            ),
+        ]
+    )
+
+    assert aggregate.citation_precision == 0.5
+    assert aggregate.citation_recall == 0.5
+    assert aggregate.unsupported_answer_rate == 1.0
+
+
+def test_independent_grounding_check_reads_answer_claims() -> None:
+    evidence = "存量APP备案阶段为2023年9月至2024年3月。"
+
+    assert _independent_claim_supported(
+        "存量APP备案阶段为2023年9月至2024年3月",
+        evidence,
+    )
+    assert not _independent_claim_supported("月球上发现了恐龙", evidence)
+    assert not _independent_claim_supported("备案阶段为2025年1月", evidence)
 
 
 @pytest.mark.asyncio

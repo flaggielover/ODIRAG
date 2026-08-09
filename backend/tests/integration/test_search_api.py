@@ -128,6 +128,8 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     assert chat_body["query_type"] == "sql+rag"
     assert chat_body["structured_count"] == 1
     assert chat_body["refusal"] is False
+    assert chat_body["evidence_sufficiency"]["sufficient"] is True
+    assert chat_body["evidence_sufficiency"]["supported_chunk_ids"]
     assert chat_body["citations"][0]["document_id"] == public_id
     assert chat_body["citations"][0]["url"] == "https://search.gov/policies/1"
 
@@ -138,6 +140,7 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     assert trace.status_code == 200
     assert trace.json()["final_context_json"]
     assert trace.json()["prompt_snapshot_json"]["content"]
+    assert trace.json()["evidence_decision_json"]["status"] == "passed"
     assert trace.json()["citations_json"][0]["chunk_id"] == chat_body["citations"][0]["chunk_id"]
 
     lineage = await client.get(
@@ -171,3 +174,5 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     assert refusal.status_code == 200
     assert refusal.json()["refusal"] is True
     assert refusal.json()["refusal_reasons"]
+    assert refusal.json()["citations"] == []
+    assert refusal.json()["evidence_sufficiency"]["sufficient"] is False

@@ -55,6 +55,12 @@ def test_rrf_fuses_and_deduplicates_rankings() -> None:
     ("query", "expected"),
     [
         ("四川 2025 之后发布了多少政策？", QueryType.SQL),
+        ("APP备案罚款金额是多少？", QueryType.RAG),
+        ("APP备案通知中的罚款金额是多少？", QueryType.RAG),
+        ("工信部通知罚款金额是多少？", QueryType.RAG),
+        ("该政策的补助比例是多少？", QueryType.RAG),
+        ("这份通知有多少项申报条件？", QueryType.RAG),
+        ("软件补助比例是多少？", QueryType.RAG),
         ("这些政策有哪些共同支持措施？", QueryType.RAG),
         ("总结四川 2025 之后政策的申报要求", QueryType.COMPOSITE),
     ],
@@ -105,6 +111,20 @@ def test_grounding_requires_an_official_source() -> None:
     decision = GroundingService().assess("四川软件政策", [hit])
     assert not decision.sufficient
     assert "official_source_required" in decision.reasons
+
+
+def test_grounding_citations_are_limited_to_official_hits() -> None:
+    official = _hit("official", 0.9, "hybrid", "四川软件政策支持资金")
+    association = _hit("association", 0.8, "hybrid", "四川软件政策支持资金")
+    association.metadata["official_status"] = "unverified"
+
+    decision = GroundingService().assess(
+        "四川软件政策资金",
+        [official, association],
+    )
+
+    assert decision.sufficient
+    assert [citation.chunk_id for citation in decision.citations] == ["official"]
 
 
 def test_evaluation_metrics_are_calculated_from_samples() -> None:
