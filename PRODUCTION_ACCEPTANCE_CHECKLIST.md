@@ -743,6 +743,8 @@ if ($null -eq $refusal -or -not $refusal.refused -or $refusal.cited_chunk_ids.Co
 
 Expected: every mode must record its actual retrieval mode and top-k. The selected `hybrid_rerank` report must retrieve the real official MIIT chunk, use Direct LLM only when evidence is sufficient, return a non-empty cited answer, and safely refuse the no-evidence question. When `ODIRAG_RERANK_PROVIDER=none`, a `rerank_provider_disabled` warning is correct degradation and must not be reported as remote-rerank acceptance. A two-question matrix is a live plumbing gate only; retain a larger human-reviewed corpus for release-quality and SLA conclusions.
 
+Actual local regression checkpoint (2026-08-10): backend `350 passed`; Ruff, Black (203 files), and mypy (155 source files) passed. Frontend lint, type-check, Vitest `18/18`, and production build passed; Playwright reported `10 passed, 1 skipped`. The skip is an explicit live-stack gate and is not reported as Live Acceptance. All eight Compose services were healthy, and 8080 root plus `/api/system/health` returned 200.
+
 ## 12. Rerank provider
 
 ~~~powershell

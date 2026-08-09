@@ -1,6 +1,6 @@
 # ODIRAG Production Readiness Report
 
-审计日期：2026-08-09
+审计日期：2026-08-10
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
@@ -58,6 +58,8 @@ The authenticated `POST /api/evaluations/matrix` endpoint created two verified `
 | 4, hybrid_rerank | Expected official chunk retrieved; Direct `gpt-4.1-mini` returned a non-empty answer with exact chunk citation; no-evidence question safely refused | PASS-LIVE grounded-answer plumbing. Trace warning is `rerank_provider_disabled`, so this is not remote-rerank quality acceptance |
 
 The support answer in run 4 was `未履行备案手续的APP主办者不得从事APP互联网信息服务。` and cited real chunk `d7353b15-4d57-5a81-a034-708b616e93e6` from the MIIT title/URL already stored in Qdrant. The answer-point metric is `0.5` because the verified historical expected string requires contiguous wording without the generated subject `APP主办者`; that run record remains immutable rather than being edited to improve a metric. The matrix has only two questions and cannot establish corpus-level quality, cost, or SLA. The deterministic evidence gate remains fail-closed; no threshold or grounding rule was weakened to turn the three conservative refusals into successes.
+
+Final local regression after Phases D-F: backend `350 passed`; Ruff, Black (203 files), and mypy (155 source files) passed. Frontend lint, type-check, Vitest `18/18`, and the production build passed; Playwright reported `10 passed, 1 skipped` (the intentionally skipped live-stack case is not a Live Acceptance claim). The current eight-service Compose stack remained healthy, and both the 8080 root page and `/api/system/health` returned HTTP 200.
 
 ## 0. 2026-08-09 official-source 最终门禁
 
