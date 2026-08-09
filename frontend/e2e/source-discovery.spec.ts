@@ -38,6 +38,9 @@ test.describe('来源发现审批关键旅程（fixture-backed）', () => {
     const rejectedRow = page.getByRole('row').filter({ hasText: '示例待复核来源' })
 
     await expect(page.getByText('待审批', { exact: true }).first()).toBeVisible()
+    await approvedRow.getByRole('button', { name: '示例创新政策来源' }).click()
+    await expect(page.getByText('官方验证证据', { exact: true })).toBeVisible()
+    await expect(page.locator('.json-panel').filter({ hasText: 'gov.cn' })).toBeVisible()
     await approvedRow.getByRole('button', { name: '批准候选' }).click()
     await expect(approvedRow.getByText('已批准', { exact: true })).toBeVisible()
     await approvedRow.getByRole('button', { name: '激活来源' }).click()

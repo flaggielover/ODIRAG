@@ -39,8 +39,16 @@ class SourceDiscoveryRepository:
                 Document.final_status.in_(["approved", "indexed"]),
             )
         )
-        document_statement = select(func.count(Document.id)).where(
-            Document.final_status.in_(["approved", "indexed"])
+        # A disabled source must not satisfy the document side of the gap.  A
+        # document left behind by an intentionally retired source is historical
+        # data, not active source-pool coverage.
+        document_statement = (
+            select(func.count(Document.id))
+            .join(Source, Document.source_id == Source.id)
+            .where(
+                Source.enabled.is_(True),
+                Document.final_status.in_(["approved", "indexed"]),
+            )
         )
         if region:
             source_statement = source_statement.where(Source.region == region)
@@ -68,7 +76,9 @@ class SourceDiscoveryRepository:
             "existing_document_count": document_count,
             "gap_detected": gap_detected,
             "matching_source_query": "enabled source with an approved/indexed matching document",
-            "matching_document_query": "title/content contains the literal topic",
+            "matching_document_query": (
+                "enabled source document title/content contains the literal topic"
+            ),
         }
         return source_count, document_count, evidence
 

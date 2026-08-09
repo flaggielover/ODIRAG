@@ -315,6 +315,7 @@ async function retryRun(run: SourceDiscoveryRun): Promise<void> {
             <div v-if="selectedCandidate.source_id" class="definition-item"><dt>已激活 Source ID</dt><dd>{{ selectedCandidate.source_id }}</dd></div>
             <div v-if="selectedCandidate.rejection_reason" class="definition-item"><dt>拒绝原因</dt><dd>{{ selectedCandidate.rejection_reason }}</dd></div>
           </dl>
+          <JsonPanel label="官方验证证据" :value="selectedCandidate.official_evidence_json" />
           <JsonPanel label="质量拆分" :value="selectedCandidate.quality_breakdown_json" />
           <section class="discovery-inspector-section">
             <div class="section-heading"><div><h2>试抓栏目</h2><span>{{ selectedCandidate.columns.length }} 个</span></div></div>

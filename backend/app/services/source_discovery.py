@@ -334,7 +334,13 @@ class SourceDiscoveryService:
         final = urlsplit(response.url)
         host = (initial.hostname or "").lower().rstrip(".")
         final_host = (final.hostname or "").lower().rstrip(".")
+        # Official validation must not turn a redirect to a sibling or parent
+        # host into an implicit trust grant.  The crawler may follow same-site
+        # subdomains later, but the candidate homepage itself must stay on the
+        # exact host that the search provider returned.
         same_site = bool(host and final_host and _same_site(host, final_host))
+        same_host = bool(host and final_host and host == final_host)
+        status_ok = 200 <= response.status_code < 300
         suffix = _trusted_suffix(final_host, self.settings.source_discovery_official_suffixes)
         body = response.text[:100_000].lower()
         markers = [marker for marker in _MARKERS if marker.lower() in body]
@@ -345,6 +351,8 @@ class SourceDiscoveryService:
             "final_host": final_host,
             "status_code": response.status_code,
             "same_site": same_site,
+            "same_host": same_host,
+            "status_ok": status_ok,
             "trusted_suffix": suffix,
             "https": final.scheme == "https",
             "marker_matches": markers,
@@ -353,7 +361,7 @@ class SourceDiscoveryService:
         candidate.validation_final_url = response.url
         candidate.official_score = Decimal(str(round(score, 4)))
         candidate.official_evidence_json = evidence
-        if not same_site or not suffix or final.scheme != "https":
+        if not same_host or not status_ok or not suffix or final.scheme != "https":
             candidate.official_status = "unverified"
             candidate.status = "validation_failed"
             candidate.rejection_reason = "OFFICIAL_STATUS_NOT_VERIFIED"

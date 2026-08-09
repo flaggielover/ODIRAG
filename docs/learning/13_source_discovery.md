@@ -93,7 +93,7 @@ POST /api/source-discovery/runs
 ## 7. 常见故障模式
 
 - `PROVIDER_UNAVAILABLE`：Brave key 未配置、网络失败或服务端 5xx；运行会持久化为 failed。
-- `validation_failed`：候选不在官方后缀策略内、跳转跨站或页面抓取失败。
+- `validation_failed`：候选不在官方后缀策略内、跳转到不同主机、响应不是 2xx 或页面抓取失败。
 - `NO_POLICY_COLUMNS_DISCOVERED`：主页可达但没有匹配政策/通知/公开关键词的同站链接。
 - `NO_QUALITY_DOCUMENTS`：栏目详情文本过短或试抓全部失败。
 - `QUALITY_SCORE_BELOW_THRESHOLD`：证据存在但综合质量未达配置门槛。
@@ -108,7 +108,7 @@ POST /api/source-discovery/runs
 2. 读取 `/api/source-discovery/runs/{id}/events`，确认最后成功阶段。
 3. 检查 worker 注册任务是否包含 `odirag.source_discovery.run`。
 4. 校验 `ODIRAG_SOURCE_DISCOVERY_PROVIDER=brave` 和密钥是否由后端 secret 注入。
-5. 对 `validation_failed` 查看 `official_evidence_json` 的 host、suffix、HTTPS 和 same_site。
+5. 对 `validation_failed` 查看 `official_evidence_json` 的 host、`same_host`、`status_ok`、suffix 和 HTTPS；`same_site` 仅作为兼容性证据，不是官方放行条件。
 6. 对低分候选查看 `quality_breakdown_json` 和各栏目试抓计数。
 7. 模拟 broker 失败，确认 run 为 failed、存在 queue_failure 事件且 retry 可用。
 8. 运行 `pytest tests/unit/test_source_discovery.py tests/integration/test_source_discovery_api.py`。

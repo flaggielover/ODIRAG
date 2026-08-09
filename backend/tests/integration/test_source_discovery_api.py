@@ -255,6 +255,57 @@ async def test_source_discovery_rejects_blank_topic(
     assert created.status_code == 422
 
 
+async def test_source_discovery_ignores_matching_documents_from_disabled_sources(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    provider = FixtureCandidateProvider()
+    app.state.source_discovery_provider = provider
+    async with app.state.database.session_factory() as session:
+        source = Source(
+            source_key="retired-coverage-source",
+            name="Retired coverage source",
+            domain="retired.gov.cn",
+            region="Sichuan",
+            homepage_url="https://retired.gov.cn/",
+            official_status="official",
+            enabled=False,
+        )
+        session.add(source)
+        await session.flush()
+        session.add(
+            Document(
+                document_id="retired-coverage-document",
+                source_id=source.id,
+                title="Existing support policy",
+                source_url="https://retired.gov.cn/support",
+                canonical_url="https://retired.gov.cn/support",
+                content="Existing support policy content",
+                region="Sichuan",
+                final_status="approved",
+                index_status="pending",
+            )
+        )
+        await session.commit()
+
+    created = await client.post(
+        "/api/source-discovery/runs",
+        headers=auth_headers,
+        json={
+            "topic": "support",
+            "region": "Sichuan",
+            "required_source_count": 1,
+            "required_document_count": 1,
+            "execution_mode": "inline",
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["gap_detected"] is True
+    assert created.json()["existing_source_count"] == 0
+    assert created.json()["existing_document_count"] == 0
+    assert provider.called == 1
+
+
 async def test_source_discovery_treats_topic_wildcards_as_literals(
     app, client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
@@ -371,6 +422,59 @@ async def test_source_discovery_requires_https_for_official_status(
     assert candidate["status"] == "validation_failed"
     assert candidate["official_status"] == "unverified"
     assert candidate["official_evidence_json"]["https"] is False
+
+
+async def test_source_discovery_rejects_redirect_to_sibling_host(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """A trusted suffix is not enough when the homepage changes host."""
+
+    def redirect_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "agency.gov.cn":
+            return httpx.Response(
+                302,
+                request=request,
+                headers={"location": "https://sub.agency.gov.cn/"},
+            )
+        if request.url.host == "sub.agency.gov.cn":
+            return httpx.Response(
+                200,
+                request=request,
+                headers={"content-type": "text/html; charset=utf-8"},
+                text="<html><body><h1>Official government agency</h1></body></html>",
+            )
+        return httpx.Response(404, request=request)
+
+    provider = FixtureCandidateProvider()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(redirect_handler)) as site_client:
+        app.state.source_discovery_provider = provider
+        app.state.source_discovery_fetcher = HttpFetcher(
+            client=site_client,
+            resolver=_public_addresses,
+            timeout_seconds=1,
+            max_bytes=1024 * 1024,
+        )
+        created = await client.post(
+            "/api/source-discovery/runs",
+            headers=auth_headers,
+            json={
+                "topic": "support",
+                "required_source_count": 10,
+                "required_document_count": 10,
+                "execution_mode": "inline",
+            },
+        )
+
+    assert created.status_code == 201, created.text
+    candidates = await client.get(
+        f"/api/source-discovery/runs/{created.json()['id']}/candidates",
+        headers=auth_headers,
+    )
+    candidate = candidates.json()[0]
+    assert candidate["status"] == "validation_failed"
+    assert candidate["official_status"] == "unverified"
+    assert candidate["official_evidence_json"]["same_site"] is True
+    assert candidate["official_evidence_json"]["same_host"] is False
 
 
 async def test_trial_crawl_rejects_column_without_detail_links(
