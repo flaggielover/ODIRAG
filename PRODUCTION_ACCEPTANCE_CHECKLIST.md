@@ -666,6 +666,19 @@ Expected: exactly four runs named/marked `bm25`, `vector`, `hybrid`, and `hybrid
 
 Actual 2026-08-10 local checkpoint: fresh backend image installed Alembic `1.18.5`; real PostgreSQL reached `0008_rerank_observability (head)` with no drift; all eight Compose services healthy; 8080 and health endpoint returned 200. The current runtime was `provider=none/configured=false`, and a real debug search produced five hits with the required disabled metadata. Remote rerank remains **BLOCKED-LIVE**.
 
+## 11.2 Phase C bounded corpus expansion checkpoint
+
+Run each canary through the authenticated API with `max_pages=1` and `max_articles=5`; do not mark a task successful merely because the provider returned HTTP 200.
+
+| Task | Column | Expected interpretation | Actual result |
+| --- | ---: | --- | --- |
+| 24 | 4 (gov.cn JSON) | `discovered >= 1` and a result-bearing `articles[]` | `0/0/0`, `no_articles`, HTTP 200 |
+| 25 | 5 (JXT list) | article detail extraction followed by quality review | `1/1/1`, directory page rejected, quality `0.0` |
+| 26 | 3 (KJT list) | article detail extraction followed by quality review | `1/1/1`, directory page rejected, quality `0.0` |
+| 27 | 2 (KJT detail) | strict detail contract | task failed, `COZE_CONTRACT_MISMATCH` |
+
+The current baseline after these live checks is 2 approved documents, 14 chunks and 14 Qdrant points. The three list-page canaries and one detail canary are **BLOCKED-LIVE** evidence that the deployed Coze workflow does not expand these official list pages and does not accept the KJT detail contract. Do not create 100 speculative documents, use the local provider, bypass manual review, or edit PostgreSQL directly. Resume Phase C only after a republished compatible workflow or user-approved compatible real detail URLs is available; continue independent Phase D-F checks now.
+
 ## 12. Rerank provider
 
 ~~~powershell

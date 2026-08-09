@@ -18,6 +18,19 @@
 
 The running local configuration is `rerank_provider=none`, `configured=false`, model `rerank-v3.5`, timeout `30.0`, failure policy `open`. A real debug search returned five Hybrid hits and `rerank_applied=false` with the explicit disabled warning. This is correct degradation evidence, not remote rerank acceptance. Real rerank acceptance is **BLOCKED-LIVE** until a reachable endpoint and `ODIRAG_RERANK_API_KEY` are configured; no credentials are recorded in this report.
 
+## Phase C checkpoint: bounded official corpus expansion (2026-08-09)
+
+The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 14 chunks and 14 Qdrant points. The run was bounded to the requested `max_pages=1` and `max_articles=5` and used only the authenticated `coze`/`batch_crawl` business path.
+
+| Task | Source column | Live result | Review result | Evidence / risk |
+| --- | ---: | --- | --- | --- |
+| 24 | 4, gov.cn JSON | HTTP 200, completed, discovered/fetched/documents `0/0/0` | none | `no_articles`; no corpus change |
+| 25 | 5, JXT official list | HTTP 200, completed, `1/1/1` | rejected `1`, quality `0.0` | Coze treated the directory page as the article; no approved document |
+| 26 | 3, KJT official list | HTTP 200, completed, `1/1/1` | rejected `1`, quality `0.0` | Same directory-page decision; no approved document |
+| 27 | 2, KJT existing detail | HTTP 200, failed | failed `1` | `COZE_CONTRACT_MISMATCH`; no document |
+
+All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Three independent list-page canaries and the detail-page contract failure establish a **BLOCKED-LIVE external Coze workflow**: the deployed batch workflow currently does not expand the available official list pages and does not accept the KJT detail contract. Phase C is stopped before speculative source creation and before the 100-approved-document cap. Reaching that cap requires a republished workflow that returns detail articles, or a user-approved set of compatible real detail URLs. No local/deterministic provider, direct database insertion, source trust downgrade, or historical-data rewrite was used. Phase D-F work that does not depend on this cloud behavior proceeds.
+
 ## 0. 2026-08-09 official-source 最终门禁
 
 ### Task 23 最终 PASS-LIVE
