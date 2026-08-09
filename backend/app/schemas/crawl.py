@@ -91,6 +91,7 @@ class CrawlTaskAcceptanceSummaryResponse(BaseModel):
     crawl_task_id: int
     database_document_count: int = Field(ge=0)
     chunk_count: int = Field(ge=0)
+    qdrant_collection_exists: bool
     qdrant_point_count: int = Field(ge=0)
 
 

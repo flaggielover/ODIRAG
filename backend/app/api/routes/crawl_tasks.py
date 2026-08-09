@@ -121,13 +121,16 @@ async def get_crawl_task_acceptance_summary(
     database_ids, document_ids, chunk_count = await service.repository.acceptance_document_ids(
         task_id
     )
+    qdrant_collection_exists = await runtime.vector_store.collection_exists()
     qdrant_point_count = 0
-    for document_id in document_ids:
-        qdrant_point_count += await runtime.vector_store.count({"document_id": document_id})
+    if qdrant_collection_exists:
+        for document_id in document_ids:
+            qdrant_point_count += await runtime.vector_store.count({"document_id": document_id})
     return CrawlTaskAcceptanceSummaryResponse(
         crawl_task_id=task_id,
         database_document_count=len(database_ids),
         chunk_count=chunk_count,
+        qdrant_collection_exists=qdrant_collection_exists,
         qdrant_point_count=qdrant_point_count,
     )
 

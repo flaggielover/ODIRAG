@@ -83,6 +83,7 @@ def test_success_queues_bounded_batch_and_reports_persisted_counts() -> None:
                 "crawl_task_id": 41,
                 "database_document_count": 2,
                 "chunk_count": 6,
+                "qdrant_collection_exists": True,
                 "qdrant_point_count": 6,
             },
         ]
@@ -162,6 +163,7 @@ def test_output_summary_contains_no_credentials_or_raw_response() -> None:
                 "crawl_task_id": 63,
                 "database_document_count": 1,
                 "chunk_count": 2,
+                "qdrant_collection_exists": True,
                 "qdrant_point_count": 2,
             },
         ]
@@ -208,6 +210,7 @@ def test_completed_invocation_with_empty_result_fails_acceptance() -> None:
                 "crawl_task_id": 71,
                 "database_document_count": 0,
                 "chunk_count": 0,
+                "qdrant_collection_exists": False,
                 "qdrant_point_count": 0,
             },
         ]

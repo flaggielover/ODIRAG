@@ -1,10 +1,10 @@
 # ODIRAG Production Readiness Report
 
-审计日期：2026-08-07
+审计日期：2026-08-08
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现，未发现 runtime TODO、FIXME、空函数、硬编码检索结果、硬编码仪表盘指标或伪造评估指标。Docker WSL 数据已无损迁移到 D 盘；Docker Desktop/Engine、Docker Client/Server 29.6.2 与 Compose v5.3.1 均可用，八个 Compose 服务全部 healthy。backend/worker/scheduler 当前运行 image `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7`，该 digest Scout 为 `0C/0H/0M/0L`。用户重新发布 Coze 后，bounded task 9 (`max_pages=1`, `max_articles=5`) 达到 task/current-stage/provider `completed/completed/completed`，invocation HTTP 200/completed、1 attempt/0 retries、22,757 ms，`raw_response_json=true`、`normalized=true`。容器内从 PostgreSQL 读取 raw response 并重新 Pydantic 校验通过：5 articles/discovered/fetched，5 documents/5 lineage/1 invocation 持久化，任务与 normalized/result 决策一致且 failed=0。因此 bounded Coze discovery/fetch/raw/schema/DB persistence 为 PASS-LIVE。全部 5 篇被质量规则拒绝，其中 3 篇为 image-only/needs-OCR；0 chunks，Qdrant 0 collections/points，故 OCR、可用正文、索引和 cited-answer 仍非 PASS-LIVE，生产结论保持不接受。
+代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。2026-08-08 task 14 (`max_pages=1`, `max_articles=5`) 达到 task/current-stage/provider `completed/completed/completed`、`provider_error=null`；Coze HTTP 200/completed、1 attempt/0 retries，raw/normalized 持久化且 strict `BatchCrawlResult` 通过。结果为 5 discovered/fetched/documents、1 accepted、4 rejected、0 pending/failed。Document 3 从 v1 empty image/rejected 变为 v2 length 5,358 image_ocr/accepted，随后人工 approved，证明 OCR 后质量重判链路。acceptance-summary 已修复并返回 HTTP 200、`collection_exists=false`、points 0。两次 reindex 均因 remote embedding key 为空返回 503；0 chunks/Qdrant collections/points，无 fake fallback。Direct LLM key 也为空且 answer mode 为 extractive，故整体仍 **NOT PRODUCTION ACCEPTED**。
 
 ## 1. 状态定义
 
@@ -21,23 +21,24 @@
 
 ## 2. 关键审计结论
 
-1. **代码、migration 和本地供应链门禁通过，当前 development 运行态健康。** backend/frontend fresh runtime、Alembic 1.18.5、PostgreSQL round-trip 与 npm audit 已通过；当前 backend digest `7f090ada232d` 的 Scout 扫描为 133 packages、`0C/0H/0M/0L`。八服务均 healthy。task 9 已将 bounded Coze 抓取与数据库持久化提升为 PASS-LIVE；生产 registry provenance、签名和 CI green 仍未完成。
+1. **当前 development 运行态健康。** 八服务 healthy；task 14 已验证 bounded Coze crawl、OCR re-extraction、quality re-evaluation、approval 和 acceptance-summary。生产 registry provenance、签名和 CI green 仍未完成。
 2. **测试真实性边界清晰但很窄。** backend/tests/conftest.py 统一使用 SQLite memory、InMemoryEmbeddingCache、InMemoryVectorStore、DeterministicEmbeddingProvider 和 DeterministicRerankProvider。
-3. **Coze bounded crawl 已取得 PASS-LIVE。** 本机未提交的 Token 用于真实 tasks 4-9；task 9 真实返回并持久化 5 篇文章，raw/normalized schema、string ID `"9"`、任务统计、结果决策和 lineage 均核对一致。这个结论只覆盖 discovery/fetch/raw/schema/DB persistence。Direct LLM、Coze answer/review、remote embedding、remote rerank 和 Brave Search 仍只有 MockTransport/fixture，且没有真实配额、延迟、限流或计费证据。
+3. **Coze crawl/OCR/review 已取得分层 PASS-LIVE。** task 9 保留为首个 bounded persistence checkpoint；task 13 保留为 HTTP 200 后 `TASK_STATE_CHANGED` 的竞态失败证据；修复 locking/state handling 后 task 14 成功。`image_ocr` schema、重复 URL 版本刷新和审核幂等路径均被真实链路覆盖。Remote embedding、Direct LLM/RAG、rerank 和 Brave 仍未 live 通过。
 4. **LLM token/cost 已支持真实响应透传，但仍需 live 验收。** Direct/Coze 适配器现在读取响应中的 usage/cost（若 provider 返回），Chat trace 持久化规范化 token 字段；缺失 usage 或价格时明确标记 `not_available`，cost 保持 0 作为 schema 兼容的“未知”值。真实 provider 方言、价格字段、计费和异步语义仍未验收。
 5. **Coze 存在高风险契约假设。** CozeAdapter 假设 POST /v3/chat 的同步响应直接包含 answer messages；真实 Chat v3 可能需要轮询会话和单独读取消息，必须 live 验证后才能接受。
 6. **共享限流代码已完成，目标环境仍未验收。** 非 test 环境默认使用 RedisFixedWindowRateLimiter；Redis 故障 fail-closed 返回结构化 503，不能静默退回进程内计数；Redis 连接/读写有依赖超时。限流身份只使用 IP，伪造 Bearer 不能分裂桶；只有显式可信代理 CIDR 才读取单跳 `X-Forwarded-For`。本地 Compose 已观察到真实 `odirag:ratelimit:*` key 和限流响应头，但 Redis ACL、故障转移、ingress 策略和多副本公平性仍需目标环境验证。
 7. **分布式锁为部分满足。** crawl/source-discovery 通过数据库条件 UPDATE、唯一约束和恢复任务避免重复 claim，但没有通用 Redis distributed lock；worker 文档保存阶段另有条件状态推进，避免并发取消覆盖终态。
 8. **前端功能成立，但偏离指定依赖栈。** Vue 3/TypeScript/Vite/Vue Router、安全 Markdown 已实现；package.json 未使用指南列出的 Pinia、Axios、Element Plus/Naive UI、ECharts。现有 typed fetch/custom components 能工作，但属于架构偏差。backend 明确以 UID 10001 运行；frontend/reverse-proxy Nginx 当前仍由基础镜像 root master 启动、worker 降权，非 root 容器边界不能扩大表述。
 9. **配置文件结构不完全一致。** sites.yaml、filters.yaml、chunking.yaml、prompts 已使用；指南目标中的 knowledge_schema.yaml、retrieval.yaml、rerank.yaml、monitoring.yaml 不存在，相应参数主要通过环境变量/代码 schema 管理。Compose 显式透传 provider 配置，真实 Coze batch Token 仅在 ignored `.env` 中存在且不得写入仓库。
-10. **真实站点抓取通过，但内容可用性未通过。** task 9 发现、抓取并持久化 5 篇 scsia.org 文档；provider failed URLs 为 0。首篇是 image-only、9 images、needs OCR、zero extracted content；五篇中三篇为 image-only/zero content，另两篇 content length 349/203。全部被质量规则拒绝，因此 0 chunks/points。至少 10 篇可用内容、OCR、审核、索引与引用门禁仍未完成。
+10. **OCR 后内容可用性重判已通过代表样例。** task 14 第三篇从 v1 length 0/image/rejected/score 0 刷新为 v2 length 5,358/image_ocr/accepted/score 0.70，并人工 approved。另两篇 image 文档仍 `OCR_FAILED`/rejected，两篇 HTML 文档 lengths 349/203、scores 0/10、rejected。OCR 不再是当前管线阻塞；当前阻塞是 embedding/indexing。
 11. **扫描 PDF 只有 OCR 标志。** requires_ocr 可追踪，但没有 OCR engine；这不违反 Phase 3 的“标志”要求，却限制扫描件生产覆盖。
 12. **前端 high 和容器扫描已闭环，但只证明当前本地 digest。** 两个 high 均来自直接 dev dependency `@playwright/test` 经传递依赖 `playwright` 命中 GHSA-7mvr-c777-76hp（受影响 `<1.55.1`）；精确升级至 1.55.1 后全依赖和 production-only audit 都为 0，无 major 升级。当前 backend（133 packages，digest `7f090ada232d`）和 frontend（26 packages，digest `2d41a3e3c971`）Scout 均为 0C/0H/0M/0L；当前 backend SBOM 的凭据、环境文件、live endpoint 和业务载荷模式检查均为 0。目标 registry digest、CI 复扫和 provenance 仍需发布环境完成。
 13. **Git 基线和审计检查点已建立，但还不是正式发布标签。** `85d4bdb feat: complete Coze batch crawl readiness` 是批量抓取实现基线，`14bbf40 docs: record production audit checkpoint` 是审计文档检查点；最终发布仍需干净且经复核的 release checkpoint、签名 tag、CI green、SBOM 和镜像 digest。
 14. **本地高优先级竞态与数据边界已回归验证。** Local/Coze worker 在保存前使用条件状态推进，取消或远端失败不会覆盖 `cancelled`；审核提交锁定关联任务并在无 pending 文档时收敛为 `completed`；LLM cost 拒绝非有限/负数/超 Numeric(18,8) 范围值并量化到数据库精度。上述证据仍是 SQLite/fixture 边界，不替代 PostgreSQL 并发演练。
-15. **Coze 任务关联现在 fail-closed。** canonical request/response schema 都要求 strict non-empty string `task_id`；provider 在发网前验证请求且错误不回显载荷；主批次与失败 URL 重试在保存文档前核对响应 ID。真实 task 9 normalized ID 为 string `"9"`，并通过容器内 raw-response 重新校验；没有刻意制造 live 串单。
+15. **Coze 任务关联与状态推进现在 fail-closed。** strict task ID 与 response matching 保留；task 13 的 `TASK_STATE_CHANGED` 证明竞态被拒绝，source-column/row locking 与 queued→running 处理修复后 task 14 成功，未覆盖错误终态。
 16. **真实失败已进入监控。** task 8 后生成 `high_failure_rate`、severity `high`、status `open` 的本地告警，observed `0.4` 超过 threshold `0.2`。这证明当前本地规则能检测失败率，不证明生产告警投递、升级、确认或恢复闭环。
-17. **acceptance-summary 空 collection 处理有独立缺陷。** task 9 已成功完成后，`live_accept_coze_batch.py` 读取 acceptance-summary 得到 HTTP 503 `PROVIDER_UNAVAILABLE`；根因是 Qdrant 对不存在的 `odirag_chunks` collection count 返回 404。它不撤销 Coze/schema/crawl/DB PASS-LIVE，也不是 embedding 执行失败。qdrant-client 1.19 与 server 1.14 的兼容性 warning 需后续本地修复，本轮未改代码。
+17. **acceptance-summary 空 collection 处理已修复。** task 14 真实返回 HTTP 200、`collection_exists=false`、points 0。当前 503 只出现在两次 reindex，根因是 `ODIRAG_EMBEDDING_API_KEY` 为空，不再是 summary/Qdrant empty-state 缺陷。
+18. **RAG provider 仍 blocked。** 当前 `answer_provider=extractive`、`llm_provider=direct`、model `gpt-4.1-mini`，`ODIRAG_DIRECT_LLM_API_KEY` 为空；真实检索与引用回答没有执行。最小顺序是先配置 embedding key 并索引，再配置 Direct LLM key 与 `ODIRAG_ANSWER_PROVIDER=llm`。
 
 ## 3. Phase 0-15 需求到代码追踪矩阵
 
@@ -74,12 +75,12 @@
 | Source CRUD/test | api/routes/sources.py；services/sources.py；repositories/sources.py | test_sources_and_crawler.py | FIXTURE-VERIFIED | PostgreSQL FK/cascade 未 live 验证 |
 | generic crawler + adapter registry | crawler/generic.py；crawler/adapters.py；crawler/registry.py | test_crawler_adapters.py；test_fixture_crawl.py | FIXTURE-VERIFIED | 真实站点 DOM/反爬变化未知 |
 | retry/timeout/rate/encoding/pagination/URL normalization | crawler/fetcher.py；crawler/urls.py；crawler/generic.py | crawler/http security tests | FIXTURE-VERIFIED | DNS、代理、TLS、真实限流未验收 |
-| task state machine + inline/async execution + retry/cancel + provider-aware paths + structured unsafe-URL/queue errors | crawler/state.py；crawler/providers.py；services/crawl.py；repositories/crawl.py；tasks/crawl.py；routes/crawl_tasks.py | fixture regressions；local worker ping；real queued Coze task 9 completed with 0 failures | VERIFIED-LOCAL + PASS-LIVE bounded Coze path | local direct crawl remains DNS/SSRF-blocked；broker interruption recovery still needs target exercise |
+| task state machine + inline/async execution + retry/cancel + provider-aware paths + structured unsafe-URL/queue errors | crawler/state.py；crawler/providers.py；services/crawl.py；repositories/crawl.py；tasks/crawl.py；routes/crawl_tasks.py | fixture regressions；task 13 HTTP200→`TASK_STATE_CHANGED` history；task 14 completed after row/state locking fixes | VERIFIED-LOCAL + PASS-LIVE bounded Coze path | local direct crawl remains DNS/SSRF-blocked；broker interruption recovery still needs target exercise |
 | queue failure 可恢复 | services/crawl.py；routes/crawl_tasks.py | test_crawl_queue_failure_is_persisted_and_retryable | FIXTURE-VERIFIED | Redis broker outage live 未演练 |
 | raw HTML/list/detail/attachment download | services/crawl.py；crawler/storage.py | test_fixture_crawl.py | FIXTURE-VERIFIED | 仅 fixture 站点；下载存储为本地卷 |
 | HTML/PDF/DOCX/XLSX/TXT/ZIP 类型入口 | parsers/*；allowed attachment extensions | parser unit suite | FIXTURE-VERIFIED | full crawl fixture 主要覆盖 HTML/TXT；其他格式单独测试 |
 | repeated-run idempotency | repositories/crawl.py；services/crawl.py；0003 migration | test_fixture_crawl.py；test_crawl_reliability.py | FIXTURE-VERIFIED | 多 worker + PostgreSQL 并发未验收 |
-| 可达真实站点至少 10 篇 | scsia.org task 9 fetched/persisted 5 schema-valid articles/documents | bounded 5-article crawl PASS-LIVE；all 5 rejected, 3 need OCR, 0 chunks | PARTIAL-LIVE | 仍少于 10 篇且无可用/已索引内容；补 OCR、质量复核和扩展 crawl |
+| 可达真实站点至少 10 篇 | task 9 first persisted 5；task 14 current 5 documents with 1 accepted/4 rejected | bounded crawl and OCR-quality re-evaluation PASS-LIVE；approved doc exists, 0 chunks | PARTIAL-LIVE | 仍少于 10 篇且未索引；配置 embedding 后 reindex |
 
 ### Phase 3 - Parsing, Cleaning, Deduplication, Versioning
 
@@ -196,7 +197,7 @@
 | responsive design | frontend/src/styles/*；layouts/* | 历史 mobile/desktop QA | FIXTURE-VERIFIED | 当前轮未做全页视觉基线 |
 | safe Markdown | marked + DOMPurify usage | frontend tests/static audit | VERIFIED-LOCAL | CSP 仍依赖部署入口 |
 | 指定 Pinia/Axios/UI kit/ECharts | frontend/package.json | dependency audit | PARTIAL | 四类依赖未采用；属于指南架构偏差 |
-| Playwright critical journeys | frontend/e2e/*.spec.ts；playwright.config.ts | 串行 9 passed；live-stack 1 skipped；Coze fixture 2 passed；Vitest 16 passed | FIXTURE-VERIFIED | 真实外部 provider/live-stack gate 待目标环境 |
+| Playwright critical journeys | frontend/e2e/*.spec.ts；playwright.config.ts | 9 passed；live-stack 1 skipped；Coze fixture 2 passed；Vitest 18 passed | FIXTURE-VERIFIED | 真实外部 provider/live-stack gate 待 embedding/LLM 配置 |
 
 ### Phase 13 - Feedback Loop
 
@@ -269,7 +270,7 @@ OpenAPI 生成结果包含指南要求的 auth、sources、crawl-tasks、documen
 | vector store | InMemoryVectorStore；Qdrant FakeClient | real collection/index/persistence/delete/backup |
 | cache | InMemoryEmbeddingCache；local Redis connectivity only | Redis-backed cache TTL/ACL/persistence/failure behavior |
 | rate limiting | RedisFixedWindowRateLimiter unit contract；local Compose Redis counter and response headers | target Redis ACL/failover, multi-replica fairness, ingress interaction |
-| crawling | static fixture + MockTransport；local SSRF rejection；real Coze tasks 4-9；task 9 schema-valid 5-article discovery/fetch and PostgreSQL persistence | PASS-LIVE only for bounded Coze discovery/fetch/raw/schema/DB persistence；real DNS/TLS/robots/anti-bot breadth and at least 10 usable articles remain |
+| crawling | fixtures；local SSRF rejection；real Coze tasks 4-14；task 14 schema-valid 5-article crawl plus OCR/version/review evidence | PASS-LIVE for bounded Coze crawl and representative OCR-quality path；at least 10 usable/indexed articles remain |
 | LLM | Direct/Coze MockTransport | real model JSON stability, Coze async lifecycle, token/cost |
 | evaluation/experiments/load | tiny deterministic demo | representative corpus, production latency/cost/quality |
 | frontend E2E | Playwright route fixtures；local SQLite/deterministic 无拦截 smoke；Nginx/frontend HTTP smoke | deployed HTTPS、真实内容/引用、remote provider |
@@ -290,8 +291,8 @@ content gap detection → candidate official-site discovery → official-status 
 | column discovery | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | selector heuristics对 JS 网站有限 |
 | trial crawl | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | 只抓 bounded HTML；真实反爬/附件未验证 |
 | explicit Local Provider crawl contract | crawler/providers.py；services/crawl.py；crawler/state.py；repositories/crawl.py | test_fixture_crawl.py；test_crawl_reliability.py；provider unit tests；review convergence test | FIXTURE-VERIFIED | 仅确定性 fixture；真实公网 DNS/反爬和附件质量未验证；审核完成后等待任务会收敛为 completed |
-| Coze batch invocation/raw response/persistence | crawler/providers.py；services/crawl.py；schemas/coze.py；api/routes/crawl_tasks.py；frontend/src/views/CrawlTaskDetailView.vue | strict ID fixtures；49-test prior regression；真实 tasks 4-9；backend-container `parse_batch_crawl_response` revalidation of PostgreSQL raw response | PASS-LIVE (bounded crawl layer) | task 9 HTTP 200/completed, 1 attempt/0 retries/22,757 ms, string ID `"9"`; schema passed with 5 articles/discovered/fetched; 5 documents/lineage persisted and decisions consistent；content usability/indexing remain blocked |
-| acceptance-summary after crawl completion | routes/crawl_tasks.py；Qdrant count adapter；scripts/live_accept_coze_batch.py | task 9 post-completion live call | FAIL-LOCAL | absent `odirag_chunks` collection count returns Qdrant 404 and is surfaced as HTTP 503 `PROVIDER_UNAVAILABLE`; must be fixed without relabeling the successful crawl |
+| Coze batch invocation/raw response/persistence | crawler/providers.py；services/crawl.py；schemas/coze.py；routes/crawl_tasks.py | strict-ID/schema regressions；real tasks 4-14 | PASS-LIVE | task 14 HTTP 200/completed, 1 attempt/0 retries, strict BatchCrawlResult, 5 discovered/fetched/docs, 1 accepted/4 rejected/0 pending/failed |
+| acceptance-summary after crawl completion | routes/crawl_tasks.py；Qdrant count adapter；scripts/live_accept_coze_batch.py | task 9 historical 503；task 14 live recheck | VERIFIED-LOCAL | fixed: HTTP 200, `collection_exists=false`, points 0；index remains empty until embedding key is configured |
 | quality scoring | services/source_discovery.py；config thresholds | source discovery integration tests | FIXTURE-VERIFIED | 权重是启发式，未用生产标注集校准 |
 | manual approve/reject | routes/source_discovery.py；repository atomic update | integration + Playwright tests | FIXTURE-VERIFIED | 只有 admin，没有双人审批 |
 | activation to Source/SourceColumn | services/source_discovery.py；models/source.py | integration + Playwright tests；activation compensation test | FIXTURE-VERIFIED | PostgreSQL uniqueness/并发未 live；激活后不自动启动 crawl；异常补偿路径尚未在真实 PostgreSQL 演练 |
@@ -354,7 +355,7 @@ to the existing manual API path.
 | frontend lint/type-check/Vitest/build | PASS；17 Vitest tests，Vite 1850 modules | 本地 Node toolchain（Vitest/build 使用提升权限启动 esbuild） |
 | `npm audit` / `npm audit --omit=dev` | PASS；两种模式均为 0 vulnerabilities | 只证明当前 lockfile；目标 CI/registry 仍需复扫 |
 | fresh builder `python -m pip check` | PASS；No broken requirements found；Alembic 1.18.5 | 只验证依赖一致性，不是 CVE 扫描 |
-| Playwright fixture suite | PASS；串行 9 passed，1 live test skipped | route fixture；live gate 未开启 |
+| Playwright fixture suite | PASS；9 passed，1 live test skipped | route fixture；live gate 未开启 |
 | real Compose `live-stack.spec.ts` | BLOCKED-EXPECTED；登录/来源/文档页面可达，引用问答因 remote embedding 未配置而返回 provider unavailable | 没有真实 provider 与已索引语料；不得算 live pass |
 | isolated Uvicorn API smoke | PASS；health/login/Coze status/sources/crawl-tasks 均 HTTP 200；health 为 database healthy、Redis unavailable、Qdrant disabled | 临时 SQLite + deterministic providers；不证明 Docker、PostgreSQL、Redis、Qdrant 或外部 provider |
 | most recent local Docker Compose service/worker/scheduler acceptance | PASS-LOCAL（2026-08-07 当前检查点）；8 services healthy；worker inspect ping 成功；scheduler PID 存在并发送 recovery/monitoring tasks；backend/worker/scheduler 使用 `sha256:7f090ada232d349cdf8999be1308f26192cc297627a51972dca9920fb6bbc7a7` | 当前证据只覆盖 development 运行态，不代表生产 secret/TLS/容灾 |
@@ -364,9 +365,9 @@ to the existing manual API path.
 | current Docker/WSL control-plane check | PASS-LOCAL；交互式启动后 WSL、Docker Client/Server 29.6.2、Compose v5.3.1 均响应，8080 及项目端口可用，八服务 healthy | 仍未验证目标主机的自动启动、生产 secret/TLS、容灾和 registry provenance；未删除 VHD、容器、Volume 或数据库 |
 | last scanned hardened image build | PASS-LOCAL；backend/frontend `--pull --no-cache` 基线、runtime pip 移除、CSV/JSON/empty 配置与 npm 均通过；2026-08-07 当前 backend digest `7f090ada232d`（133 packages）和 frontend digest `2d41a3e3c971`（26 packages）的 Scout 结果均为 0C/0H/0M/0L | 当前扫描只证明本地 digests；最终 backend 代码层构建复用已验证依赖基线，目标 registry、CI、签名和 provenance 未验证 |
 | current real Compose Playwright | FAIL-EXPECTED；登录、sources、documents、chat 页面成功；查询返回 `A required provider is unavailable`，引用断言失败 | `embedding_provider=remote` 且无 key，数据库/Qdrant 无已索引文档；不是前端 live acceptance pass |
-| authenticated API / crawl-task evidence | PASS-LIVE bounded crawl；task 9 completed/completed/provider completed；PostgreSQL 1 invocation、5 documents、5 lineage、0 chunks；worker completed normally | acceptance-summary separately returns 503 on absent Qdrant collection；content usability/indexing not accepted |
-| Qdrant live local state | PASS-LOCAL health；`/healthz` 200；task 9 后 collection/point count 仍为 0 | all documents rejected and 0 chunks；absent collection count currently causes acceptance-summary 503；schema/point persistence still unverified |
-| Coze batch live checkpoint | PASS-LIVE (bounded crawl layer)；task 9 HTTP 200/invocation completed、attempts 1/retries 0/duration 22,757 ms；raw/normalized persisted；string ID `"9"`；container revalidation passed | 5 articles/discovered/fetched and 5 DB documents/lineage, 0 provider/task failures；all 5 rejected, 3 need OCR, 0 chunks/Qdrant points, so downstream not PASS-LIVE |
+| authenticated API / crawl-task evidence | PASS-LIVE；task 14 completed/completed/provider completed；5 docs, 1 accepted/4 rejected/0 pending/failed；review 3 approved | reindex 503 twice because embedding key empty；0 chunks |
+| Qdrant live local state | PASS-LOCAL health；direct query 0 collections/points；acceptance-summary HTTP 200/collection absent/points 0 | no fake fallback；schema/point persistence waits for real embedding |
+| Coze batch/OCR live checkpoint | PASS-LIVE；task 14 HTTP 200/completed, 1 attempt/0 retries, strict schema, 5 discovered/fetched/docs；doc 3 v1→v2 image_ocr accepted then approved | two OCR_FAILED docs remain rejected；embedding/index/RAG not yet exercised |
 
 ### scsia.org 实验记录（非 PASS-LIVE）
 
@@ -379,11 +380,15 @@ to the existing manual API path.
 - tasks 4-8 确立了 string ID、transport wrapper 和 SPA failure diagnostics。用户再次发布 Coze 后，task 9 以 `max_pages=1`、`max_articles=5` 执行：task/current stage/provider status 均 completed，无 provider error；invocation HTTP 200/completed、one attempt/zero retries、22,757 ms，raw/normalized 均持久化，normalized task ID 是 string `"9"`。
 - 当前 backend 容器从 PostgreSQL 读取 raw response 并用 `parse_batch_crawl_response` 重新校验：Pydantic schema passed，5 articles/discovered/fetched。统计为 accepted 0/rejected 5/pending 0/failed 0，provider failed URLs 0；task、normalized 与 5 条 persisted result 决策一致。PostgreSQL 为 5 documents、5 lineage、0 chunks、1 invocation。
 - 首篇“关于公布四川省2026年第六批软件企业及软件产品评估结果的通知”（`https://www.scsia.org/portal/new/7587`）为 image extraction、9 images、needs OCR、content length 0、rejected、index pending。五篇中三篇 image-only/needs-OCR/content length 0；另两篇 content length 349/203；全部 rejected。这里只记录元数据，不记录正文。
-- Qdrant 为 0 collections/points。`embedding_provider=remote` 且 key 未配置，但 embedding 未参与 task 9 抓取，任务仍 completed/failed 0。脚本在完成后读取 acceptance-summary 时因不存在的 `odirag_chunks` collection count 返回 404，最终 HTTP 503 `PROVIDER_UNAVAILABLE`；这不是 Coze/schema/crawl/embedding-execution 失败。另有 qdrant-client 1.19/server 1.14 compatibility warning。
+- Task 9 当时的 acceptance-summary 503 保留为历史：不存在的 collection count 被映射为 provider unavailable。该问题后来修复。
+- Task 13 保留为竞态失败证据：Coze HTTP 200 后本地状态变为 `TASK_STATE_CHANGED`。修复 source-column/row locking 与 queued→running 处理后，task 14 成功完成。同期修复了 `image_ocr` schema、重复 URL 版本刷新和人工审核幂等。
+- Task 14 (`max_pages=1`, `max_articles=5`) 为当前 checkpoint：Coze HTTP 200/completed，1 attempt/0 retries，raw/normalized 持久化，strict BatchCrawlResult passed；5 discovered/fetched/docs，1 accepted/4 rejected/0 pending/failed。文章元数据依次为：0/image/needs-OCR/OCR_FAILED/rejected；0/image/needs-OCR/OCR_FAILED/rejected；5358/image_ocr/OCR performed/accepted/score 70；349/html/rejected/score 0；203/html/rejected/score 10。
+- Document 3 version history is v1 length 0/image/rejected/score 0 → v2 length 5,358/image_ocr/accepted/score 0.70. `POST /reviews/3/approve` then made it approved; task 14 remained completed/pending 0. acceptance-summary returns HTTP 200, `collection_exists=false`, points 0.
+- Reindex was attempted twice and honestly returned HTTP 503 because the current remote `text-embedding-3-small`/1536 configuration has no embedding key. Chunks remain 0; direct Qdrant query shows 0 collections/points; no fake fallback. Direct LLM remains extractive mode with direct `gpt-4.1-mini` and no key, so live retrieval/cited answer was not executed.
 
-task 9 已证明 Coze workflow 可以在 bounded run 中返回并持久化真实 articles，故 discovery/fetch/raw/schema/DB persistence 分层结论为 PASS-LIVE。下一阻塞是 OCR/图片正文提取与质量复核；随后才是配置真实 embedding、创建 Qdrant collection/points 并完成 cited-answer 验收。至少 10 篇可用文章和生产门禁仍未满足。
+Task 14 将 OCR re-extraction、质量重判、版本刷新、人工批准与 summary 空 collection 处理提升为 live-verified。当前最小用户动作只有配置 `ODIRAG_EMBEDDING_API_KEY`、重启 backend 并索引；OCR 和 acceptance-summary 不再是当前阻塞。
 
-本机 PostgreSQL、Redis、Qdrant health、worker/scheduler、Nginx、frontend、锁定的 Alembic 1.18.5、npm audit 和当前本地镜像 Scout 均有通过证据；八服务 healthy。task 9 将 bounded Coze crawl 与 DB persistence 提升为 PASS-LIVE，但 OCR/content usability/chunks/indexing/cited-answer 仍 blocked。外部 live 项目仍必须按 `PRODUCTION_ACCEPTANCE_CHECKLIST.md` 执行；在至少 10 篇可用内容、真实 embedding/Qdrant points、其余 providers、生产 TLS/secret、CI/registry provenance 和 cited-answer evidence 完成前，发布结论保持 **NOT PRODUCTION ACCEPTED**。
+八服务 healthy，bounded Coze crawl/OCR/review/summary 均有 live evidence；但 0 chunks/Qdrant points，embedding 与 Direct LLM keys 均缺失。完成 embedding/index 后，才配置 Direct LLM key 与 `answer_provider=llm` 执行真实 RAG。在 cited-answer、其他 providers、生产 TLS/secret、CI/registry provenance 完成前，结论保持 **NOT PRODUCTION ACCEPTED**。
 
 ### 9.1 本轮调度回归补充
 
@@ -392,7 +397,7 @@ task 9 已证明 Coze workflow 可以在 bounded run 中返回并持久化真实
 short-circuiting, CSV/JSON/empty environment parsing, same-topic active-run skipping, minimum-interval
 cooldown, successful enqueue, queue failure persistence, redacted error observability, deployed response-wrapper parsing, strict string task IDs, pre-network invalid-request rejection, fail-closed main/retry response-ID matching, and distinct no-article/partial-failure timestamps. Ruff,
 Black (206 files), and mypy (154 source files) pass. Frontend lint/type-check/build pass,
-Vitest reports 17 passed tests, and fixture Playwright reports 9 passed plus 1 explicit live skip.
+Vitest reports 18 passed tests, and fixture Playwright reports 9 passed plus 1 explicit live skip.
 
 ## 10. 发布门禁
 

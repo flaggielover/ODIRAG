@@ -73,3 +73,24 @@ def test_batch_task_id_is_a_strict_non_empty_string() -> None:
             BatchCrawlRequest.model_validate({**request_payload, "task_id": invalid})
         with pytest.raises(ValidationError):
             BatchCrawlResponse.model_validate({**response_payload, "task_id": invalid})
+
+
+def test_image_ocr_requires_completed_ocr_state() -> None:
+    response_payload = json.loads(
+        (CASES_DIR / "sample_success_response.json").read_text(encoding="utf-8")
+    )
+    article = response_payload["articles"][0]
+    article.update(
+        extraction_method="image_ocr",
+        needs_ocr=False,
+        image_urls=["https://example.org/files/notice.png"],
+        image_count=1,
+        image_alt_texts=["OCR source image"],
+        warnings=["ocr_performed"],
+    )
+
+    BatchCrawlResponse.model_validate(response_payload)
+
+    article["needs_ocr"] = True
+    with pytest.raises(ValidationError, match="completed image OCR"):
+        BatchCrawlResponse.model_validate(response_payload)

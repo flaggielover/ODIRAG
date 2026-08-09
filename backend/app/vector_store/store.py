@@ -21,6 +21,8 @@ class VectorPoint:
 
 
 class VectorStore(Protocol):
+    async def collection_exists(self) -> bool: ...
+
     async def ensure_collection(self, dimensions: int) -> None: ...
 
     async def upsert(self, points: list[VectorPoint]) -> None: ...
@@ -48,6 +50,9 @@ class InMemoryVectorStore:
     @property
     def point_ids(self) -> frozenset[str]:
         return frozenset(self._points)
+
+    async def collection_exists(self) -> bool:
+        return self._dimensions is not None
 
     async def ensure_collection(self, dimensions: int) -> None:
         if dimensions <= 0:
@@ -128,6 +133,15 @@ class QdrantVectorStore:
         except ImportError as exc:
             raise ProviderUnavailableError("qdrant", "qdrant-client is not installed") from exc
         return qdrant_client.AsyncQdrantClient(url=self.url, api_key=self.api_key)
+
+    async def collection_exists(self) -> bool:
+        client = self._client()
+        try:
+            return bool(await client.collection_exists(self.collection_name))
+        except Exception as exc:
+            raise ProviderUnavailableError("qdrant", str(exc)) from exc
+        finally:
+            await client.close()
 
     async def ensure_collection(self, dimensions: int) -> None:
         models = import_module("qdrant_client.models")
@@ -210,6 +224,8 @@ class QdrantVectorStore:
         models = import_module("qdrant_client.models")
         client = self._client()
         try:
+            if not await client.collection_exists(self.collection_name):
+                return 0
             response = await client.count(
                 collection_name=self.collection_name,
                 count_filter=_qdrant_filter(models, filters or {}),

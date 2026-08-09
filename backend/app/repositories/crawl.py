@@ -15,6 +15,8 @@ from app.models import (
     CrawlTaskFailure,
     DataLineage,
     Document,
+    DocumentReview,
+    DocumentVersion,
     SourceColumn,
 )
 
@@ -213,19 +215,61 @@ class CrawlRepository:
         await self.session.refresh(task)
         return task
 
-    async def find_document(self, *, source_column_id: int, canonical_url: str) -> Document | None:
-        result = await self.session.execute(
-            select(Document).where(
-                Document.source_column_id == source_column_id,
-                Document.canonical_url == canonical_url,
-            )
+    async def lock_source_column(self, source_column_id: int) -> None:
+        await self.session.execute(
+            select(SourceColumn.id).where(SourceColumn.id == source_column_id).with_for_update()
         )
+
+    async def find_document(
+        self,
+        *,
+        source_column_id: int,
+        canonical_url: str,
+        lock_for_update: bool = False,
+    ) -> Document | None:
+        statement = select(Document).where(
+            Document.source_column_id == source_column_id,
+            Document.canonical_url == canonical_url,
+        )
+        if lock_for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
     async def add_document(self, document: Document) -> Document:
         self.session.add(document)
         await self.session.flush()
         return document
+
+    async def count_document_versions(self, document_id: int) -> int:
+        count = await self.session.scalar(
+            select(func.count(DocumentVersion.id)).where(DocumentVersion.document_id == document_id)
+        )
+        return int(count or 0)
+
+    async def add_document_version(self, version: DocumentVersion) -> DocumentVersion:
+        self.session.add(version)
+        await self.session.flush()
+        return version
+
+    async def latest_document_review(
+        self, document_id: int, review_type: str
+    ) -> DocumentReview | None:
+        result = await self.session.execute(
+            select(DocumentReview)
+            .where(
+                DocumentReview.document_id == document_id,
+                DocumentReview.review_type == review_type,
+            )
+            .order_by(DocumentReview.created_at.desc(), DocumentReview.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def mark_document_chunks_stale(self, document_id: int) -> None:
+        await self.session.execute(
+            update(Chunk).where(Chunk.document_id == document_id).values(vector_status="stale")
+        )
 
     async def add_attachment(self, attachment: Attachment) -> Attachment:
         self.session.add(attachment)
@@ -238,22 +282,33 @@ class CrawlRepository:
         return lineage
 
     async def ensure_document_lineage(
-        self, *, task_id: int, source_id: int, document_id: int
+        self,
+        *,
+        task_id: int,
+        source_id: int,
+        document_id: int,
+        document_version_id: int | None = None,
     ) -> DataLineage:
         result = await self.session.execute(
-            select(DataLineage).where(
+            select(DataLineage)
+            .where(
                 DataLineage.crawl_task_id == task_id,
                 DataLineage.document_id == document_id,
             )
+            .order_by(DataLineage.id)
+            .limit(1)
         )
         existing = result.scalar_one_or_none()
         if existing is not None:
+            if document_version_id is not None:
+                existing.document_version_id = document_version_id
             return existing
         lineage = DataLineage(
             lineage_id=str(uuid.uuid4()),
             source_id=source_id,
             crawl_task_id=task_id,
             document_id=document_id,
+            document_version_id=document_version_id,
         )
         return await self.add_lineage(lineage)
 

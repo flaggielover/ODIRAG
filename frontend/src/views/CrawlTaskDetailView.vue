@@ -85,6 +85,7 @@ async function retryFailure(failure: CrawlTaskFailure): Promise<void> {
         <div v-if="acceptanceSummary" class="metric-row">
           <div><strong>{{ formatNumber(acceptanceSummary.database_document_count) }}</strong><span>数据库文档</span></div>
           <div><strong>{{ formatNumber(acceptanceSummary.chunk_count) }}</strong><span>分块</span></div>
+          <div><strong>{{ acceptanceSummary.qdrant_collection_exists ? '已创建' : '未创建' }}</strong><span>Qdrant 集合</span></div>
           <div><strong>{{ formatNumber(acceptanceSummary.qdrant_point_count) }}</strong><span>Qdrant 向量点</span></div>
         </div>
         <div v-else-if="acceptanceError" class="notice" role="status">验收摘要不可用：{{ acceptanceError }}</div>

@@ -85,7 +85,7 @@
         "decision": {"type": "string", "enum": ["accepted", "rejected", "pending_review", "failed"]},
         "decision_reason": {"type": "string"},
         "document_type": {"type": ["string", "null"]},
-        "extraction_method": {"type": "string", "enum": ["html", "pdf", "doc", "docx", "xls", "xlsx", "image", "mixed"]},
+        "extraction_method": {"type": "string", "enum": ["html", "pdf", "doc", "docx", "xls", "xlsx", "image", "image_ocr", "mixed"]},
         "needs_ocr": {"type": "boolean"},
         "image_urls": {"type": "array", "items": {"type": "string", "format": "uri"}},
         "image_count": {"type": "integer", "minimum": 0},

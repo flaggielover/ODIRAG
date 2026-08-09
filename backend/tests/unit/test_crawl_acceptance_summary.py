@@ -9,10 +9,13 @@ import httpx
 import pytest
 
 from app.models import Chunk, CrawlTask, DataLineage, Document, Source, SourceColumn
+from app.providers import ProviderUnavailableError
 from app.vector_store import InMemoryVectorStore, QdrantVectorStore, VectorPoint
 
 
-async def test_vector_store_count_uses_payload_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_vector_store_count_uses_payload_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     memory = InMemoryVectorStore()
     await memory.upsert(
         [
@@ -27,6 +30,9 @@ async def test_vector_store_count_uses_payload_filters(monkeypatch: pytest.Monke
     calls: dict[str, object] = {}
 
     class FakeClient:
+        async def collection_exists(self, _collection_name: str) -> bool:
+            return True
+
         async def count(self, **kwargs):
             calls.update(kwargs)
             return SimpleNamespace(count=7)
@@ -40,6 +46,46 @@ async def test_vector_store_count_uses_payload_filters(monkeypatch: pytest.Monke
     assert calls["collection_name"] == "chunks"
     assert calls["exact"] is True
     assert calls["count_filter"] is not None
+
+
+async def test_vector_store_collection_lifecycle_and_missing_qdrant_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    memory = InMemoryVectorStore()
+    assert await memory.collection_exists() is False
+    await memory.ensure_collection(1)
+    assert await memory.collection_exists() is True
+
+    class MissingClient:
+        async def collection_exists(self, _collection_name: str) -> bool:
+            return False
+
+        async def count(self, **_kwargs):
+            raise AssertionError("count must not run for a missing collection")
+
+        async def close(self) -> None:
+            return None
+
+    qdrant = QdrantVectorStore(url="http://qdrant.test", collection_name="chunks")
+    monkeypatch.setattr(qdrant, "_client", lambda: MissingClient())
+    assert await qdrant.collection_exists() is False
+    assert await qdrant.count() == 0
+
+
+async def test_qdrant_collection_probe_preserves_service_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnavailableClient:
+        async def collection_exists(self, _collection_name: str) -> bool:
+            raise OSError("connection refused")
+
+        async def close(self) -> None:
+            return None
+
+    qdrant = QdrantVectorStore(url="http://qdrant.test", collection_name="chunks")
+    monkeypatch.setattr(qdrant, "_client", lambda: UnavailableClient())
+    with pytest.raises(ProviderUnavailableError):
+        await qdrant.collection_exists()
 
 
 async def _seed_acceptance_task(app) -> int:
@@ -154,5 +200,47 @@ async def test_acceptance_summary_counts_database_chunks_and_real_vector_points(
         "crawl_task_id": task_id,
         "database_document_count": 1,
         "chunk_count": 2,
+        "qdrant_collection_exists": True,
         "qdrant_point_count": 2,
     }
+
+
+async def test_acceptance_summary_returns_zero_for_missing_collection(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    task_id = await _seed_acceptance_task(app)
+
+    response = await client.get(
+        f"/api/crawl-tasks/{task_id}/acceptance-summary", headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "crawl_task_id": task_id,
+        "database_document_count": 1,
+        "chunk_count": 2,
+        "qdrant_collection_exists": False,
+        "qdrant_point_count": 0,
+    }
+
+
+async def test_acceptance_summary_preserves_unavailable_qdrant_error(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    task_id = await _seed_acceptance_task(app)
+    original_store = app.state.runtime.vector_store
+
+    class UnavailableStore:
+        async def collection_exists(self) -> bool:
+            raise ProviderUnavailableError("qdrant", "connection refused")
+
+    app.state.runtime.vector_store = UnavailableStore()
+    try:
+        response = await client.get(
+            f"/api/crawl-tasks/{task_id}/acceptance-summary", headers=auth_headers
+        )
+    finally:
+        app.state.runtime.vector_store = original_store
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"

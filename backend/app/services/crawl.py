@@ -5,6 +5,7 @@ import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from app.config import Settings
@@ -28,6 +29,7 @@ from app.models import (
     DataLineage,
     Document,
     DocumentReview,
+    DocumentVersion,
 )
 from app.repositories.crawl import CrawlRepository
 from app.schemas.crawl import CrawlTaskCreate
@@ -588,24 +590,26 @@ class CrawlService:
             return await self.get(task.id)
         except Exception as exc:
             await self.repository.session.refresh(task)
+            error_code = exc.code if isinstance(exc, AppError) else "COZE_INTERNAL_ERROR"
+            error_message = exc.message if isinstance(exc, AppError) else exc.__class__.__name__
             invocation.status = "failed"
-            invocation.error_code = "COZE_INTERNAL_ERROR"
-            invocation.error_message = exc.__class__.__name__
+            invocation.error_code = error_code
+            invocation.error_message = error_message
             invocation.finished_at = datetime.now(UTC)
             if task.status == "cancelled":
                 return await self._finish_cancelled_provider_result(
                     task,
                     provider_status="remote_failed_after_local_cancel",
                 )
-            task.provider_error_code = "COZE_INTERNAL_ERROR"
-            task.provider_error_message = exc.__class__.__name__
+            task.provider_error_code = error_code
+            task.provider_error_message = error_message
             task.provider_status = "failed"
             task.failed_count += 1
-            task.error_message = exc.__class__.__name__
+            task.error_message = error_code
             if task.status not in {"failed", "cancelled", "completed", "partial_failed"}:
-                self.state.transition(task, "failed", error="COZE_INTERNAL_ERROR")
+                self.state.transition(task, "failed", error=error_code)
             column.source.last_coze_status = "failed"
-            column.source.last_coze_error = "COZE_INTERNAL_ERROR"
+            column.source.last_coze_error = error_code
             await self.repository.commit()
             return await self.get(task.id)
 
@@ -649,18 +653,16 @@ class CrawlService:
 
         assert isinstance(column, SourceColumn)
         assert isinstance(article, BatchArticle)
+        await self.repository.lock_source_column(column.id)
         canonical_url = normalize_url(str(article.url))
         existing = await self.repository.find_document(
-            source_column_id=column.id, canonical_url=canonical_url
+            source_column_id=column.id,
+            canonical_url=canonical_url,
+            lock_for_update=True,
         )
         if existing is not None:
             task.url_duplicate_count += 1
-            existing.last_crawl_time = datetime.now(UTC)
-            await self.repository.ensure_document_lineage(
-                task_id=task.id,
-                source_id=column.source_id,
-                document_id=existing.id,
-            )
+            await self._refresh_coze_document(task, column, existing, article)
             return
         decision = article.decision
         is_local = task.crawl_provider == "local"
@@ -671,7 +673,9 @@ class CrawlService:
             "failed": "failed",
         }[decision]
         normalized_quality = (
-            (article.quality_score / 100) if article.quality_score is not None else None
+            (Decimal(str(article.quality_score)) / Decimal("100"))
+            if article.quality_score is not None
+            else None
         )
         document = Document(
             document_id=str(uuid.uuid4()),
@@ -706,28 +710,11 @@ class CrawlService:
         await self.repository.add_document(document)
         await self.repository.session.flush()
         self.repository.session.add(
-            DocumentReview(
-                document_id=document.id,
-                review_type="local_extraction" if is_local else "coze_quality",
-                reviewer="local_crawler" if is_local else "coze_workflow",
-                decision=decision,
-                quality_score=normalized_quality,
-                document_type=article.document_type,
-                topics_json=article.keywords,
-                summary=article.summary,
-                reasons_json=[article.decision_reason, *article.warnings],
-                extracted_fields_json={
-                    "organization": article.organization,
-                    "region": article.region,
-                    "column_name": article.column_name,
-                    "extraction_method": article.extraction_method,
-                    "needs_ocr": article.needs_ocr,
-                    "image_urls": [str(url) for url in article.image_urls],
-                    "image_count": article.image_count,
-                    "image_alt_texts": article.image_alt_texts,
-                },
-                model_name=None if is_local else "coze-workflow",
-                raw_response=article.model_dump_json(),
+            self._article_review(
+                document.id,
+                article,
+                is_local=is_local,
+                normalized_quality=normalized_quality,
             )
         )
         await self.repository.add_lineage(
@@ -755,6 +742,170 @@ class CrawlService:
                     error_message=attachment.error_message,
                 )
             )
+
+    async def _refresh_coze_document(
+        self,
+        task: CrawlTask,
+        column: object,
+        document: Document,
+        article: object,
+    ) -> None:
+        from app.models.source import SourceColumn
+        from app.schemas.coze import BatchArticle
+
+        assert isinstance(column, SourceColumn)
+        assert isinstance(article, BatchArticle)
+        is_local = task.crawl_provider == "local"
+        decision = article.decision
+        normalized_quality = (
+            (Decimal(str(article.quality_score)) / Decimal("100"))
+            if article.quality_score is not None
+            else None
+        )
+        publish_date = (
+            article.published_at.date()
+            if isinstance(article.published_at, datetime)
+            else article.published_at
+        )
+        new_hash = hashlib.sha256(article.content.encode("utf-8")).hexdigest()
+        language = "zh" if re.search(r"[\u4e00-\u9fff]", article.content) else "unknown"
+        values = {
+            "title": article.title,
+            "source_url": str(article.url),
+            "publish_date": publish_date,
+            "region": article.region or column.source.region,
+            "content": article.content,
+            "raw_content": article.content,
+            "content_hash": new_hash,
+            "word_count": len(article.content),
+            "language": language,
+            "document_type": article.document_type,
+        }
+        changed_fields = [
+            field_name
+            for field_name, value in values.items()
+            if getattr(document, field_name) != value
+        ]
+        review = self._article_review(
+            document.id,
+            article,
+            is_local=is_local,
+            normalized_quality=normalized_quality,
+        )
+        latest_review = await self.repository.latest_document_review(
+            document.id, review.review_type
+        )
+        review_changed = latest_review is None or latest_review.raw_response != review.raw_response
+        if not changed_fields and not review_changed:
+            document.last_crawl_time = datetime.now(UTC)
+            await self.repository.ensure_document_lineage(
+                task_id=task.id,
+                source_id=column.source_id,
+                document_id=document.id,
+            )
+            return
+        version: DocumentVersion | None = None
+        if changed_fields:
+            if await self.repository.count_document_versions(document.id) == 0:
+                await self.repository.add_document_version(
+                    self._document_version(document, changed_fields=())
+                )
+            document.version += 1
+            for field_name, value in values.items():
+                setattr(document, field_name, value)
+            document.index_status = "stale"
+            await self.repository.mark_document_chunks_stale(document.id)
+            version = await self.repository.add_document_version(
+                self._document_version(document, changed_fields=tuple(changed_fields))
+            )
+
+        document.quality_score = normalized_quality
+        document.rule_filter_status = "pending" if is_local else decision
+        document.llm_review_status = "pending" if is_local else decision
+        has_manual_decision = document.manual_review_status in {"approve", "reject"}
+        if changed_fields or not has_manual_decision:
+            document.manual_review_status = (
+                "pending" if decision in {"accepted", "pending_review"} else decision
+            )
+            document.final_status = {
+                "accepted": "pending_manual_review",
+                "pending_review": "pending_manual_review",
+                "rejected": "rejected",
+                "failed": "failed",
+            }[decision]
+        document.last_crawl_time = datetime.now(UTC)
+        self.repository.session.add(review)
+        if version is not None:
+            await self.repository.ensure_document_lineage(
+                task_id=task.id,
+                source_id=column.source_id,
+                document_id=document.id,
+                document_version_id=version.id,
+            )
+        else:
+            await self.repository.ensure_document_lineage(
+                task_id=task.id,
+                source_id=column.source_id,
+                document_id=document.id,
+            )
+
+    @staticmethod
+    def _article_review(
+        document_id: int,
+        article: object,
+        *,
+        is_local: bool,
+        normalized_quality: Decimal | None,
+    ) -> DocumentReview:
+        from app.schemas.coze import BatchArticle
+
+        assert isinstance(article, BatchArticle)
+        return DocumentReview(
+            document_id=document_id,
+            review_type="local_extraction" if is_local else "coze_quality",
+            reviewer="local_crawler" if is_local else "coze_workflow",
+            decision=article.decision,
+            quality_score=normalized_quality,
+            document_type=article.document_type,
+            topics_json=article.keywords,
+            summary=article.summary,
+            reasons_json=[article.decision_reason, *article.warnings],
+            extracted_fields_json={
+                "organization": article.organization,
+                "region": article.region,
+                "column_name": article.column_name,
+                "extraction_method": article.extraction_method,
+                "needs_ocr": article.needs_ocr,
+                "image_urls": [str(url) for url in article.image_urls],
+                "image_count": article.image_count,
+                "image_alt_texts": article.image_alt_texts,
+            },
+            model_name=None if is_local else "coze-workflow",
+            raw_response=article.model_dump_json(),
+        )
+
+    @staticmethod
+    def _document_version(
+        document: Document, *, changed_fields: tuple[str, ...]
+    ) -> DocumentVersion:
+        return DocumentVersion(
+            document_id=document.id,
+            version=document.version,
+            content_hash=document.content_hash
+            or hashlib.sha256(document.content.encode("utf-8")).hexdigest(),
+            content=document.content,
+            metadata_json={
+                "title": document.title,
+                "publish_date": (
+                    document.publish_date.isoformat() if document.publish_date else None
+                ),
+                "issuing_authority": document.issuing_authority,
+                "document_number": document.document_number,
+                "region": document.region,
+                "document_type": document.document_type,
+            },
+            changed_fields_json=list(changed_fields),
+        )
 
     async def retry(self, task_id: int) -> CrawlTask:
         task = await self.get(task_id)
@@ -945,10 +1096,14 @@ class CrawlService:
         return await self.repository.save_task(task)
 
     async def mark_queued(self, task_id: int) -> CrawlTask:
+        await self.repository.advance_task_if_status(
+            task_id,
+            expected_status="pending",
+            target_status="queued",
+            provider_status="queued",
+        )
         task = await self.get(task_id)
-        if task.status == "pending":
-            self.state.transition(task, "queued")
-            return await self.repository.save_task(task)
+        await self.repository.session.refresh(task)
         return task
 
     async def cancel(self, task_id: int) -> CrawlTask:

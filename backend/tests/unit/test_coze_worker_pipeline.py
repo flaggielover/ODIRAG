@@ -15,7 +15,17 @@ from app.crawler.providers import (
     CrawlProviderError,
     CrawlProviderResult,
 )
-from app.models import CozeInvocation, CrawlTask, CrawlTaskFailure, Document, Source, SourceColumn
+from app.models import (
+    CozeInvocation,
+    CrawlTask,
+    CrawlTaskFailure,
+    DataLineage,
+    Document,
+    DocumentReview,
+    DocumentVersion,
+    Source,
+    SourceColumn,
+)
 from app.repositories.crawl import CrawlRepository
 from app.schemas.coze import BatchCrawlResponse, parse_batch_crawl_response
 from app.services.crawl import CrawlService
@@ -113,6 +123,21 @@ async def _seed_task(session) -> int:
     return task.id
 
 
+async def _seed_followup_task(session, source_column_id: int) -> int:
+    task = CrawlTask(
+        source_column_id=source_column_id,
+        status="pending",
+        crawl_provider="coze",
+        provider="coze",
+        provider_contract="batch_crawl",
+        contract_mode="batch_crawl",
+        current_stage="pending",
+    )
+    session.add(task)
+    await session.commit()
+    return task.id
+
+
 def _article(title: str, suffix: str) -> dict[str, Any]:
     content = f"{title}的中文正文"
     return {
@@ -187,6 +212,27 @@ async def test_raw_response_survives_normalization_process_crash(app, test_setti
         assert invocation.normalized_response_json is None
 
 
+async def test_mark_queued_does_not_overwrite_a_fast_worker_claim(app, test_settings) -> None:
+    async with app.state.database.session_factory() as api_session:
+        task_id = await _seed_task(api_session)
+        api_service = CrawlService(
+            CrawlRepository(api_session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider({}),
+        )
+
+        async with app.state.database.session_factory() as worker_session:
+            claimed = await CrawlRepository(worker_session).claim_task(task_id)
+            assert claimed is not None
+            assert claimed.status == "running"
+
+        result = await api_service.mark_queued(task_id)
+
+        assert result.status == "running"
+        assert result.current_stage == "running"
+
+
 async def test_one_document_save_failure_keeps_other_articles(
     app, test_settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -228,6 +274,123 @@ async def test_one_document_save_failure_keeps_other_articles(
         assert failure.url.endswith("/two")
         assert failure.error_code == "COZE_DOCUMENT_SAVE_FAILED"
         assert failure.retryable is True
+
+
+async def test_ocr_recrawl_refreshes_document_and_identical_repeat_is_idempotent(
+    app, test_settings
+) -> None:
+    async with app.state.database.session_factory() as session:
+        first_task_id = await _seed_task(session)
+        failed_ocr = _article("OCR notice", "ocr-notice")
+        failed_ocr.update(
+            {
+                "content": "",
+                "content_length": 0,
+                "extraction_method": "image",
+                "needs_ocr": True,
+                "image_urls": ["https://example.com/images/ocr-notice.png"],
+                "image_count": 1,
+                "decision": "rejected",
+                "accepted": False,
+                "quality_score": 0,
+                "decision_reason": "OCR failed",
+                "warnings": ["OCR_FAILED"],
+            }
+        )
+        first_raw = _batch_response(first_task_id, [failed_ocr])
+        first_raw["statistics"].update({"articles_accepted": 0, "articles_rejected": 1})
+        first_service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(first_raw),
+        )
+
+        first_result = await first_service.execute(first_task_id)
+
+        assert first_result.status == "completed"
+        document = await session.scalar(select(Document))
+        assert document is not None
+        assert document.content == ""
+        assert document.final_status == "rejected"
+        source_column_id = document.source_column_id
+        assert source_column_id is not None
+
+        second_task_id = await _seed_followup_task(session, source_column_id)
+        recovered_ocr = _article("OCR notice", "ocr-notice")
+        recovered_content = "OCR recovered official notice content with enough evidence."
+        recovered_ocr.update(
+            {
+                "content": recovered_content,
+                "content_length": len(recovered_content),
+                "extraction_method": "image_ocr",
+                "needs_ocr": False,
+                "image_urls": ["https://example.com/images/ocr-notice.png"],
+                "image_count": 1,
+                "decision_reason": "OCR content passed quality review",
+                "warnings": ["ocr_performed"],
+            }
+        )
+        second_service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(_batch_response(second_task_id, [recovered_ocr])),
+        )
+
+        second_result = await second_service.execute(second_task_id)
+
+        await session.refresh(document)
+        assert second_result.status == "waiting_review"
+        assert second_result.url_duplicate_count == 1
+        assert second_result.pending_review_count == 1
+        assert document.content == recovered_content
+        assert document.version == 2
+        assert document.llm_review_status == "accepted"
+        assert document.manual_review_status == "pending"
+        assert document.final_status == "pending_manual_review"
+        assert document.index_status == "stale"
+        assert await session.scalar(select(func.count(Document.id))) == 1
+        assert await session.scalar(select(func.count(DocumentVersion.id))) == 2
+        assert await session.scalar(select(func.count(DocumentReview.id))) == 2
+        latest_review = await session.scalar(
+            select(DocumentReview).order_by(DocumentReview.id.desc()).limit(1)
+        )
+        assert latest_review is not None
+        assert latest_review.extracted_fields_json["extraction_method"] == "image_ocr"
+        assert latest_review.extracted_fields_json["needs_ocr"] is False
+        assert (
+            await session.scalar(
+                select(func.count(DataLineage.id)).where(
+                    DataLineage.crawl_task_id == second_task_id,
+                    DataLineage.document_version_id.is_not(None),
+                )
+            )
+            == 1
+        )
+
+        document.manual_review_status = "approve"
+        document.final_status = "approved"
+        await session.commit()
+        third_task_id = await _seed_followup_task(session, source_column_id)
+        third_service = CrawlService(
+            CrawlRepository(session),
+            UnusedFetcher(),
+            _settings(test_settings),
+            crawl_provider=FixtureProvider(_batch_response(third_task_id, [recovered_ocr])),
+        )
+
+        third_result = await third_service.execute(third_task_id)
+
+        await session.refresh(document)
+        assert third_result.status == "completed"
+        assert third_result.url_duplicate_count == 1
+        assert third_result.pending_review_count == 0
+        assert document.version == 2
+        assert document.manual_review_status == "approve"
+        assert document.final_status == "approved"
+        assert await session.scalar(select(func.count(DocumentVersion.id))) == 2
+        assert await session.scalar(select(func.count(DocumentReview.id))) == 2
 
 
 @pytest.mark.parametrize(

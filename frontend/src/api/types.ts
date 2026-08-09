@@ -290,6 +290,7 @@ export interface CrawlTaskAcceptanceSummary {
   crawl_task_id: number
   database_document_count: number
   chunk_count: number
+  qdrant_collection_exists: boolean
   qdrant_point_count: number
 }
 

@@ -5,7 +5,14 @@ import re
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    model_validator,
+)
 
 
 class CozeStrictModel(BaseModel):
@@ -64,7 +71,13 @@ class BatchAttachment(CozeStrictModel):
     file_type: str | None = None
     extracted_text: str | None = None
     download_status: Literal[
-        "pending", "success", "completed", "failed", "too_large", "unsupported", "skipped"
+        "pending",
+        "success",
+        "completed",
+        "failed",
+        "too_large",
+        "unsupported",
+        "skipped",
     ] = "pending"
     error_message: str | None = None
 
@@ -80,7 +93,9 @@ class BatchArticle(CozeStrictModel):
     content: str
     content_length: int = Field(ge=0)
     attachments: list[BatchAttachment] = Field(default_factory=list)
-    extraction_method: Literal["html", "pdf", "doc", "docx", "xls", "xlsx", "image", "mixed"]
+    extraction_method: Literal[
+        "html", "pdf", "doc", "docx", "xls", "xlsx", "image", "image_ocr", "mixed"
+    ]
     needs_ocr: bool = False
     image_urls: list[HttpUrl] = Field(default_factory=list)
     image_count: int = Field(default=0, ge=0)
@@ -102,6 +117,8 @@ class BatchArticle(CozeStrictModel):
             raise ValueError("accepted must be true exactly when decision is accepted")
         if self.extraction_method == "image" and not self.needs_ocr:
             raise ValueError("image extraction must set needs_ocr=true")
+        if self.extraction_method == "image_ocr" and self.needs_ocr:
+            raise ValueError("completed image OCR must set needs_ocr=false")
         if self.image_count != len(self.image_urls):
             raise ValueError("image_count must equal image_urls length")
         return self

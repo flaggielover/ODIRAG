@@ -192,9 +192,7 @@ def run_acceptance(
         if isinstance(item, dict) and item.get("contract") == "batch_crawl"
     ]
     latest = batch_invocations[0] if batch_invocations else {}
-    acceptance = api.request_json(
-        "GET", f"/crawl-tasks/{task_id}/acceptance-summary"
-    )
+    acceptance = api.request_json("GET", f"/crawl-tasks/{task_id}/acceptance-summary")
     if not isinstance(acceptance, dict):
         return EXIT_TASK_FAILED, {
             "status": "acceptance_summary_invalid",
@@ -222,6 +220,7 @@ def run_acceptance(
             acceptance.get("database_document_count")
         ),
         "chunk_count": _safe_count(acceptance.get("chunk_count")),
+        "qdrant_collection_exists": acceptance.get("qdrant_collection_exists") is True,
         "qdrant_point_count": _safe_count(acceptance.get("qdrant_point_count")),
         "batch_invocation_count": len(batch_invocations),
         "invocation_status": latest.get("status"),

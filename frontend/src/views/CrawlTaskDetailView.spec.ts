@@ -66,6 +66,7 @@ describe('CrawlTaskDetailView', () => {
       crawl_task_id: 9,
       database_document_count: 3,
       chunk_count: 8,
+      qdrant_collection_exists: true,
       qdrant_point_count: 8,
     })
     apiMocks.crawlInvocations.mockReset().mockResolvedValue([])
@@ -82,7 +83,24 @@ describe('CrawlTaskDetailView', () => {
     expect(wrapper.text()).toContain('验收摘要')
     expect(wrapper.text()).toContain('数据库文档')
     expect(wrapper.text()).toContain('Qdrant 向量点')
+    expect(wrapper.text()).toContain('已创建')
     expect(wrapper.text()).toContain('8')
+  })
+
+  it('shows an absent Qdrant collection without hiding database counts', async () => {
+    apiMocks.crawlTaskAcceptanceSummary.mockResolvedValueOnce({
+      crawl_task_id: 9,
+      database_document_count: 3,
+      chunk_count: 0,
+      qdrant_collection_exists: false,
+      qdrant_point_count: 0,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('未创建')
+    expect(wrapper.text()).toContain('3')
   })
 
   it('keeps task details visible and surfaces an acceptance-summary failure', async () => {

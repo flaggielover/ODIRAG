@@ -161,7 +161,7 @@ UTF-8 是请求和响应的唯一编码。真实部署入口已验证会在 `N01
 }
 ```
 
-支持 `pdf`、`doc`、`docx`、`xls`、`xlsx` 和图片。`file_type` 可以是字符串或 `null`；大小超过工作流限制返回 `too_large`，不支持格式返回 `unsupported`，请求失败返回 `failed`，尚未处理返回 `pending`，已处理也可返回 `completed`；这些状态均保留 URL 和错误信息，不能丢弃文章。正文主要由图片组成时必须返回 `extraction_method="image"`、`needs_ocr=true`，并保存图片 URL、数量、alt 文本和 warning `ocr_required`。
+支持 `pdf`、`doc`、`docx`、`xls`、`xlsx` 和图片。`file_type` 可以是字符串或 `null`；大小超过工作流限制返回 `too_large`，不支持格式返回 `unsupported`，请求失败返回 `failed`，尚未处理返回 `pending`，已处理也可返回 `completed`；这些状态均保留 URL 和错误信息，不能丢弃文章。正文主要由图片组成且 OCR 尚未完成时必须返回 `extraction_method="image"`、`needs_ocr=true`，并保存图片 URL、数量、alt 文本和 warning `ocr_required`。OCR 已完成且正文已回填时使用 `extraction_method="image_ocr"`、`needs_ocr=false` 和 warning `ocr_performed`，质量判断必须读取 OCR 后正文重新执行。
 
 ## 5. 质量判断规则
 
@@ -270,7 +270,7 @@ Acceptance 对已知有内容的栏目仍要求至少一个真实持久化文档
 
 ```text
 你是正文完整性节点。输入变量：title、content、content_length、image_urls、alt_texts、attachments。
-只输出 {"extraction_method":"html|pdf|doc|docx|xls|xlsx|image|mixed","needs_ocr":false,"content_complete":false,"warnings":[]}。
+只输出 {"extraction_method":"html|pdf|doc|docx|xls|xlsx|image|image_ocr|mixed","needs_ocr":false,"content_complete":false,"warnings":[]}。
 图片主体必须 needs_ocr=true；不要把图片正文判成普通空正文；不得编造 OCR 内容。
 ```
 
