@@ -212,7 +212,17 @@ async def test_qdrant_upsert_search_filters_and_delete_contract(monkeypatch) -> 
     )
     await store.delete(["point-1"])
     assert hits[0].document_id == "doc-1"
-    assert calls["upsert"]
+    collection_name, points, wait = calls["upsert"]
+    assert collection_name == "chunks"
+    assert wait is True
+    assert points[0].payload == {
+        "region": "四川",
+        "document_id": "doc-1",
+        "chunk_id": "point-1",
+        "content": "研发资金支持",
+        "title": "政策",
+        "source_url": "https://example.gov/policy",
+    }
     assert calls["query"]
     assert calls["delete"] == ("chunks", ["point-1"], True)
 

@@ -194,6 +194,7 @@ class QdrantVectorStore:
                         payload={
                             **point.payload,
                             "document_id": point.document_id,
+                            "chunk_id": point.point_id,
                             "content": point.content,
                             "title": point.title,
                             "source_url": point.source_url,
