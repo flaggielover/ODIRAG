@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-08。八个服务当前 healthy。Task 14 真实完成 bounded Coze crawl，并验证 image OCR 后版本刷新、质量重判、人工批准与 acceptance-summary：5 discovered/fetched/docs，1 accepted/4 rejected/0 pending/failed；doc 3 从 empty image/rejected 变为 length 5,358 image_ocr/accepted，再 approved；summary HTTP 200、collection absent、points 0。当前只因 embedding key 为空而无法索引；0 chunks/Qdrant points，无 fake fallback。Direct LLM key 也为空，真实 RAG 未执行。整体仍 NOT ACCEPTED。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-09。八个服务当前 healthy。Task 14 真实完成 bounded Coze crawl，并验证 image OCR 后版本刷新、质量重判、人工批准与 acceptance-summary：5 discovered/fetched/docs，1 accepted/4 rejected/0 pending/failed；doc 3 从 empty image/rejected 变为 length 5,358 image_ocr/accepted，再 approved；summary HTTP 200、collection absent、points 0。2026-08-09 credentialed reindex 已到达 OpenAI Embeddings，但 credential 被 HTTP 401 拒绝；0 chunks/Qdrant points，无 fake fallback 或半写入。Direct LLM key 仍为空，真实 RAG 未执行。整体仍 NOT ACCEPTED。
 
 ## 证据规则
 
@@ -518,10 +518,11 @@ score 0.70。现有 `POST /reviews/3/approve` 成功后文档为 approved，task
 acceptance-summary 已修复并真实返回 HTTP 200、`collection_exists=false`、points 0；OCR 和 summary
 不再是当前 blocker。
 
-两次 reindex 均真实返回 HTTP 503 `PROVIDER_UNAVAILABLE`。配置为 remote、
-`text-embedding-3-small`、1536 dimensions，但 `ODIRAG_EMBEDDING_API_KEY` 为空；chunks 0，Qdrant
-直接查询 0 collections/points，无 deterministic/fake fallback。当前 answer provider 是 extractive，
-LLM provider direct、model `gpt-4.1-mini`，`ODIRAG_DIRECT_LLM_API_KEY` 为空；未执行 live RAG。
+两次历史 pre-credential reindex 均真实返回 HTTP 503 `PROVIDER_UNAVAILABLE`。2026-08-09 backend
+加载了非空 `ODIRAG_EMBEDDING_API_KEY`，配置为 remote、`text-embedding-3-small`、1536 dimensions；
+新的真实 reindex 到达 OpenAI `/v1/embeddings`，但所有 provider 重试均返回 HTTP 401。chunks 0，
+Qdrant 直接查询 0 collections/points，无 deterministic/fake fallback 或半写入。当前 answer provider 是
+extractive，LLM provider direct、model `gpt-4.1-mini`，`ODIRAG_DIRECT_LLM_API_KEY` 为空；未执行 live RAG。
 
 先设置 `ODIRAG_SOURCE_COLUMN_ID` 为一个已人工批准并启用的真实栏目 ID；以下命令会在变量为空时立即失败：
 
@@ -571,7 +572,7 @@ $reindex.chunk_count
 $reindex.vector_point_ids.Count
 ~~~
 
-当前配置已是 OpenAI-compatible `remote` / `text-embedding-3-small` / 1536；用户最少只需设置 key 并重启 backend。当前无 key 的两次 reindex 均正确返回 HTTP 503 `PROVIDER_UNAVAILABLE`，chunks/Qdrant points 保持 0，且没有 fake fallback。配置后预期：reindex HTTP 200、chunk_count 与 vector IDs 均大于 0、collection 存在且 points 与 chunks 一致；provider model/dimension 与配置一致。
+当前配置已是 OpenAI-compatible `remote` / `text-embedding-3-small` / 1536。2026-08-09 非空 credential 已进入 backend，但真实 endpoint 返回 HTTP 401；因此用户最少只需在本机 `.env` 中把 `ODIRAG_EMBEDDING_API_KEY` 替换为有效 OpenAI Platform API key，再 recreate backend。失败后 chunks/Qdrant points 保持 0，且没有 fake fallback 或半写入。有效 credential 配置后预期：reindex HTTP 200、chunk_count 与 vector IDs 均大于 0、collection 存在且 points 与 chunks 一致；provider model/dimension 与配置一致。
 
 ## 12. Rerank provider
 
@@ -748,16 +749,16 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 
 只有 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、frontend、Alembic 和所选真实 provider 全部 PASS-LIVE，且日志/trace/备份恢复证据已归档，才可把部署标为生产接受。
 
-### 本机 development 栈证据（历史检查点；2026-08-08 当前补充）
+### 本机 development 栈证据（历史检查点；2026-08-09 当前补充）
 
 以下结果是真实本地 Compose 运行结果，标记为 `VERIFIED-LOCAL`。它们证明当前 development 栈，但不能替代目标生产环境的 `PASS-LIVE`：
 
 | 项目 | 结果 | 边界 |
 | --- | --- | --- |
-| Compose 服务 | 2026-08-08 当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx | development 配置未证明生产 secret/TLS、目标持久化和 registry provenance |
+| Compose 服务 | 2026-08-09 当前 8 个服务均 healthy：backend、frontend、postgres、redis、qdrant、worker、scheduler、nginx | development 配置未证明生产 secret/TLS、目标持久化和 registry provenance |
 | PostgreSQL | healthy；task 9 persistence history retained；task 14 current 5 docs, 1 accepted/4 rejected/0 pending/failed；doc 3 v1→v2 OCR version history and approved review persisted | 0 chunks until embedding configured；production scale/RPO/RTO unverified |
 | Redis | PONG、backend ping=True、应用配置 `redis`、响应含限流 header、共享 `odirag:ratelimit:*` key 存在 | 未证明 ACL、故障转移、多副本公平性和持久化恢复 |
-| Qdrant | health 正常；direct query 0 collections/points；task 14 acceptance-summary HTTP 200、collection absent、points 0 | reindex 503 twice because embedding key empty；no fake fallback；schema/points unverified |
+| Qdrant | health 正常；direct query 0 collections/points；task 14 acceptance-summary HTTP 200、collection absent、points 0 | credentialed reindex reached OpenAI but returned HTTP 401；no fake fallback/partial write；schema/points unverified |
 | worker/scheduler | healthy；task 13 historical `TASK_STATE_CHANGED` retained；task 14 completed after locking/state fixes | crawl/OCR/review PASS-LIVE；Brave/long-running failure recovery remains |
 | monitoring | task 8 后 `high_failure_rate` 告警为 severity `high`、status `open`，observed `0.4`、threshold `0.2` | 证明本地规则检测到失败率；生产通知投递、升级、确认、恢复和多实例聚合未验证 |
 | Nginx/frontend | fresh frontend 下 `/healthz`、`/`、`/api/system/health` 均 200；dependencies 全 healthy；修复旧 upstream IP 缓存后 `nginx -t` 通过，重建 backend 且不重启 Nginx 时代理 health 15/15 次均为 200；管理员页面登录并渲染仪表盘；浏览器控制台无 warning/error；真实栈 Playwright 到达 chat | live Playwright 在引用断言处失败：remote embedding 无 key 且无索引内容；HTTPS、目标多副本滚动发布和生产浏览器门禁未通过 |
@@ -766,4 +767,4 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 | Alembic | 正式约束 `>=1.18,<1.19`，锁定并实装 1.18.5；existing/fresh PostgreSQL 均到 `0006` 且 `check` 无漂移；专用库 round-trip 通过 | 未对生产业务库直接 downgrade；目标维护窗口、锁等待和回滚审批未验证 |
 | scsia.org | task 14 HTTP 200/completed、strict schema、5 docs；doc 3 OCR v2 length 5358 accepted then approved；1 accepted/4 rejected/0 pending/failed | embedding/index/cited-answer BLOCKED；two documents remain valid OCR_FAILED/rejected but OCR pipeline is no longer current blocker |
 
-因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。task 14 已使 bounded Coze crawl、OCR 后质量重判、人工批准和 acceptance-summary PASS-LIVE。当前最小用户动作仅为配置 `ODIRAG_EMBEDDING_API_KEY`、重启 backend 并索引；成功产生 chunks/Qdrant points 后，再配置 `ODIRAG_DIRECT_LLM_API_KEY` 与 `ODIRAG_ANSWER_PROVIDER=llm` 执行 live RAG。其余 provider、至少 10 篇可用内容、生产 TLS/secret、CI/registry 和 release gates 仍未验收。
+因此当前结论仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**。task 14 已使 bounded Coze crawl、OCR 后质量重判、人工批准和 acceptance-summary PASS-LIVE。当前最小用户动作仅为在本机 `.env` 中替换 `ODIRAG_EMBEDDING_API_KEY` 为有效 OpenAI Platform API key、recreate backend 并索引；成功产生 chunks/Qdrant points 后，再配置 `ODIRAG_DIRECT_LLM_API_KEY` 与 `ODIRAG_ANSWER_PROVIDER=llm` 执行 live RAG。其余 provider、至少 10 篇可用内容、生产 TLS/secret、CI/registry 和 release gates 仍未验收。

@@ -1,10 +1,10 @@
 # ODIRAG Production Readiness Report
 
-审计日期：2026-08-08
+审计日期：2026-08-09
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。2026-08-08 task 14 (`max_pages=1`, `max_articles=5`) 达到 task/current-stage/provider `completed/completed/completed`、`provider_error=null`；Coze HTTP 200/completed、1 attempt/0 retries，raw/normalized 持久化且 strict `BatchCrawlResult` 通过。结果为 5 discovered/fetched/documents、1 accepted、4 rejected、0 pending/failed。Document 3 从 v1 empty image/rejected 变为 v2 length 5,358 image_ocr/accepted，随后人工 approved，证明 OCR 后质量重判链路。acceptance-summary 已修复并返回 HTTP 200、`collection_exists=false`、points 0。两次 reindex 均因 remote embedding key 为空返回 503；0 chunks/Qdrant collections/points，无 fake fallback。Direct LLM key 也为空且 answer mode 为 extractive，故整体仍 **NOT PRODUCTION ACCEPTED**。
+代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。2026-08-08 task 14 (`max_pages=1`, `max_articles=5`) 达到 task/current-stage/provider `completed/completed/completed`、`provider_error=null`；Coze HTTP 200/completed、1 attempt/0 retries，raw/normalized 持久化且 strict `BatchCrawlResult` 通过。结果为 5 discovered/fetched/documents、1 accepted、4 rejected、0 pending/failed。Document 3 从 v1 empty image/rejected 变为 v2 length 5,358 image_ocr/accepted，随后人工 approved，证明 OCR 后质量重判链路。acceptance-summary 已修复并返回 HTTP 200、`collection_exists=false`、points 0。2026-08-09 backend 加载了非空 Embedding credential，真实 reindex 到达 OpenAI `/v1/embeddings`，但 provider 在所有重试中返回 HTTP 401；本地 API fail-closed 为 503，0 chunks/Qdrant collections/points，无 fake fallback 或半写入。Direct LLM key 仍为空且 answer mode 为 extractive，故整体仍 **NOT PRODUCTION ACCEPTED**。
 
 ## 1. 状态定义
 
@@ -23,7 +23,7 @@
 
 1. **当前 development 运行态健康。** 八服务 healthy；task 14 已验证 bounded Coze crawl、OCR re-extraction、quality re-evaluation、approval 和 acceptance-summary。生产 registry provenance、签名和 CI green 仍未完成。
 2. **测试真实性边界清晰但很窄。** backend/tests/conftest.py 统一使用 SQLite memory、InMemoryEmbeddingCache、InMemoryVectorStore、DeterministicEmbeddingProvider 和 DeterministicRerankProvider。
-3. **Coze crawl/OCR/review 已取得分层 PASS-LIVE。** task 9 保留为首个 bounded persistence checkpoint；task 13 保留为 HTTP 200 后 `TASK_STATE_CHANGED` 的竞态失败证据；修复 locking/state handling 后 task 14 成功。`image_ocr` schema、重复 URL 版本刷新和审核幂等路径均被真实链路覆盖。Remote embedding、Direct LLM/RAG、rerank 和 Brave 仍未 live 通过。
+3. **Coze crawl/OCR/review 已取得分层 PASS-LIVE。** task 9 保留为首个 bounded persistence checkpoint；task 13 保留为 HTTP 200 后 `TASK_STATE_CHANGED` 的竞态失败证据；修复 locking/state handling 后 task 14 成功。`image_ocr` schema、重复 URL 版本刷新和审核幂等路径均被真实链路覆盖。Remote embedding 已到达真实 OpenAI endpoint，但因 credential 401 仍为 FAIL-LIVE；Direct LLM/RAG、rerank 和 Brave 仍未 live 通过。
 4. **LLM token/cost 已支持真实响应透传，但仍需 live 验收。** Direct/Coze 适配器现在读取响应中的 usage/cost（若 provider 返回），Chat trace 持久化规范化 token 字段；缺失 usage 或价格时明确标记 `not_available`，cost 保持 0 作为 schema 兼容的“未知”值。真实 provider 方言、价格字段、计费和异步语义仍未验收。
 5. **Coze 存在高风险契约假设。** CozeAdapter 假设 POST /v3/chat 的同步响应直接包含 answer messages；真实 Chat v3 可能需要轮询会话和单独读取消息，必须 live 验证后才能接受。
 6. **共享限流代码已完成，目标环境仍未验收。** 非 test 环境默认使用 RedisFixedWindowRateLimiter；Redis 故障 fail-closed 返回结构化 503，不能静默退回进程内计数；Redis 连接/读写有依赖超时。限流身份只使用 IP，伪造 Bearer 不能分裂桶；只有显式可信代理 CIDR 才读取单跳 `X-Forwarded-For`。本地 Compose 已观察到真实 `odirag:ratelimit:*` key 和限流响应头，但 Redis ACL、故障转移、ingress 策略和多副本公平性仍需目标环境验证。
@@ -37,8 +37,8 @@
 14. **本地高优先级竞态与数据边界已回归验证。** Local/Coze worker 在保存前使用条件状态推进，取消或远端失败不会覆盖 `cancelled`；审核提交锁定关联任务并在无 pending 文档时收敛为 `completed`；LLM cost 拒绝非有限/负数/超 Numeric(18,8) 范围值并量化到数据库精度。上述证据仍是 SQLite/fixture 边界，不替代 PostgreSQL 并发演练。
 15. **Coze 任务关联与状态推进现在 fail-closed。** strict task ID 与 response matching 保留；task 13 的 `TASK_STATE_CHANGED` 证明竞态被拒绝，source-column/row locking 与 queued→running 处理修复后 task 14 成功，未覆盖错误终态。
 16. **真实失败已进入监控。** task 8 后生成 `high_failure_rate`、severity `high`、status `open` 的本地告警，observed `0.4` 超过 threshold `0.2`。这证明当前本地规则能检测失败率，不证明生产告警投递、升级、确认或恢复闭环。
-17. **acceptance-summary 空 collection 处理已修复。** task 14 真实返回 HTTP 200、`collection_exists=false`、points 0。当前 503 只出现在两次 reindex，根因是 `ODIRAG_EMBEDDING_API_KEY` 为空，不再是 summary/Qdrant empty-state 缺陷。
-18. **RAG provider 仍 blocked。** 当前 `answer_provider=extractive`、`llm_provider=direct`、model `gpt-4.1-mini`，`ODIRAG_DIRECT_LLM_API_KEY` 为空；真实检索与引用回答没有执行。最小顺序是先配置 embedding key 并索引，再配置 Direct LLM key 与 `ODIRAG_ANSWER_PROVIDER=llm`。
+17. **acceptance-summary 空 collection 处理已修复。** task 14 真实返回 HTTP 200、`collection_exists=false`、points 0。2026-08-09 provider 503 的下游原因是 OpenAI HTTP 401；summary/Qdrant empty-state 不是缺陷，且失败后直接 Qdrant/数据库核对证明没有半写入。
+18. **RAG provider 仍 blocked。** 当前 Embedding credential 非空但不被 OpenAI 接受；`answer_provider=extractive`、`llm_provider=direct`、model `gpt-4.1-mini`，`ODIRAG_DIRECT_LLM_API_KEY` 为空。真实检索与引用回答没有执行。最小顺序是先在本机替换有效 OpenAI Platform API key、recreate backend 并索引，再配置 Direct LLM key 与 `ODIRAG_ANSWER_PROVIDER=llm`。
 
 ## 3. Phase 0-15 需求到代码追踪矩阵
 
@@ -365,7 +365,7 @@ to the existing manual API path.
 | current Docker/WSL control-plane check | PASS-LOCAL；交互式启动后 WSL、Docker Client/Server 29.6.2、Compose v5.3.1 均响应，8080 及项目端口可用，八服务 healthy | 仍未验证目标主机的自动启动、生产 secret/TLS、容灾和 registry provenance；未删除 VHD、容器、Volume 或数据库 |
 | last scanned hardened image build | PASS-LOCAL；backend/frontend `--pull --no-cache` 基线、runtime pip 移除、CSV/JSON/empty 配置与 npm 均通过；2026-08-07 当前 backend digest `7f090ada232d`（133 packages）和 frontend digest `2d41a3e3c971`（26 packages）的 Scout 结果均为 0C/0H/0M/0L | 当前扫描只证明本地 digests；最终 backend 代码层构建复用已验证依赖基线，目标 registry、CI、签名和 provenance 未验证 |
 | current real Compose Playwright | FAIL-EXPECTED；登录、sources、documents、chat 页面成功；查询返回 `A required provider is unavailable`，引用断言失败 | `embedding_provider=remote` 且无 key，数据库/Qdrant 无已索引文档；不是前端 live acceptance pass |
-| authenticated API / crawl-task evidence | PASS-LIVE；task 14 completed/completed/provider completed；5 docs, 1 accepted/4 rejected/0 pending/failed；review 3 approved | reindex 503 twice because embedding key empty；0 chunks |
+| authenticated API / crawl-task evidence | PASS-LIVE；task 14 completed/completed/provider completed；5 docs, 1 accepted/4 rejected/0 pending/failed；review 3 approved | 2026-08-09 credentialed reindex reached OpenAI but was rejected with HTTP 401；0 chunks |
 | Qdrant live local state | PASS-LOCAL health；direct query 0 collections/points；acceptance-summary HTTP 200/collection absent/points 0 | no fake fallback；schema/point persistence waits for real embedding |
 | Coze batch/OCR live checkpoint | PASS-LIVE；task 14 HTTP 200/completed, 1 attempt/0 retries, strict schema, 5 discovered/fetched/docs；doc 3 v1→v2 image_ocr accepted then approved | two OCR_FAILED docs remain rejected；embedding/index/RAG not yet exercised |
 
@@ -384,11 +384,11 @@ to the existing manual API path.
 - Task 13 保留为竞态失败证据：Coze HTTP 200 后本地状态变为 `TASK_STATE_CHANGED`。修复 source-column/row locking 与 queued→running 处理后，task 14 成功完成。同期修复了 `image_ocr` schema、重复 URL 版本刷新和人工审核幂等。
 - Task 14 (`max_pages=1`, `max_articles=5`) 为当前 checkpoint：Coze HTTP 200/completed，1 attempt/0 retries，raw/normalized 持久化，strict BatchCrawlResult passed；5 discovered/fetched/docs，1 accepted/4 rejected/0 pending/failed。文章元数据依次为：0/image/needs-OCR/OCR_FAILED/rejected；0/image/needs-OCR/OCR_FAILED/rejected；5358/image_ocr/OCR performed/accepted/score 70；349/html/rejected/score 0；203/html/rejected/score 10。
 - Document 3 version history is v1 length 0/image/rejected/score 0 → v2 length 5,358/image_ocr/accepted/score 0.70. `POST /reviews/3/approve` then made it approved; task 14 remained completed/pending 0. acceptance-summary returns HTTP 200, `collection_exists=false`, points 0.
-- Reindex was attempted twice and honestly returned HTTP 503 because the current remote `text-embedding-3-small`/1536 configuration has no embedding key. Chunks remain 0; direct Qdrant query shows 0 collections/points; no fake fallback. Direct LLM remains extractive mode with direct `gpt-4.1-mini` and no key, so live retrieval/cited answer was not executed.
+- Two historical pre-credential reindex attempts returned HTTP 503. On 2026-08-09 backend loaded a non-empty credential and the next real reindex reached OpenAI `/v1/embeddings`, but every provider attempt returned HTTP 401. Chunks remain 0; direct Qdrant query shows 0 collections/points; no fake fallback or partial write. Direct LLM remains extractive mode with direct `gpt-4.1-mini` and no key, so live retrieval/cited answer was not executed.
 
-Task 14 将 OCR re-extraction、质量重判、版本刷新、人工批准与 summary 空 collection 处理提升为 live-verified。当前最小用户动作只有配置 `ODIRAG_EMBEDDING_API_KEY`、重启 backend 并索引；OCR 和 acceptance-summary 不再是当前阻塞。
+Task 14 将 OCR re-extraction、质量重判、版本刷新、人工批准与 summary 空 collection 处理提升为 live-verified。当前最小用户动作只有在 ignored `.env` 中把 `ODIRAG_EMBEDDING_API_KEY` 替换为有效 OpenAI Platform API key、recreate backend 并索引；OCR 和 acceptance-summary 不再是当前阻塞。
 
-八服务 healthy，bounded Coze crawl/OCR/review/summary 均有 live evidence；但 0 chunks/Qdrant points，embedding 与 Direct LLM keys 均缺失。完成 embedding/index 后，才配置 Direct LLM key 与 `answer_provider=llm` 执行真实 RAG。在 cited-answer、其他 providers、生产 TLS/secret、CI/registry provenance 完成前，结论保持 **NOT PRODUCTION ACCEPTED**。
+八服务 healthy，bounded Coze crawl/OCR/review/summary 均有 live evidence；但 0 chunks/Qdrant points，当前 Embedding credential 被 OpenAI 401 拒绝，Direct LLM key 缺失。完成 embedding/index 后，才配置 Direct LLM key 与 `answer_provider=llm` 执行真实 RAG。在 cited-answer、其他 providers、生产 TLS/secret、CI/registry provenance 完成前，结论保持 **NOT PRODUCTION ACCEPTED**。
 
 ### 9.1 本轮调度回归补充
 
