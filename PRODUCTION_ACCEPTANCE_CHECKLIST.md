@@ -668,6 +668,25 @@ Actual 2026-08-10 local checkpoint: fresh backend image installed Alembic `1.18.
 
 ## 11.2 Phase C bounded corpus expansion checkpoint
 
+### 11.2.1 Generalized-crawl code gate (local/fixture only)
+
+Run before any live corpus task:
+
+~~~powershell
+Push-Location backend
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_crawler_adapters.py tests\unit\test_coze_crawl_provider.py -q
+.\.venv\Scripts\ruff.exe check app tests
+.\.venv\Scripts\black.exe --check app tests
+.\.venv\Scripts\mypy.exe app
+Pop-Location
+~~~
+
+Expected current result: `356 passed`; Ruff, Black and mypy pass. This gate verifies deterministic HTML candidate scoring, URL normalization, bounded pagination, direct-detail extraction, attachment/image/OCR metadata, SPA/API fallback, site rules, stable failure codes and strict Coze relative-resource normalization. It must not be counted as a real document or provider acceptance.
+
+### 11.2.2 Live C1 gate
+
+Run each source through the authenticated Source/CrawlTask API after the backend runtime has loaded the new code. Use `max_pages=1` and `max_articles=5`. A task is eligible for C1 only when its persisted raw and normalized Coze response has `articles[]` with real URLs, `articles_discovered >= 1`, `articles_fetched >= 1`, and a strict `BatchCrawlResponse`; then continue through quality decision, manual approval, chunking and indexing. A HTTP 200 with `NO_ARTICLES`, a directory-page rejection, or a contract error is negative live evidence, not a success. Do not edit old task rows to pass.
+
 Run each canary through the authenticated API with `max_pages=1` and `max_articles=5`; do not mark a task successful merely because the provider returned HTTP 200.
 
 | Task | Column | Expected interpretation | Actual result |
@@ -677,7 +696,7 @@ Run each canary through the authenticated API with `max_pages=1` and `max_articl
 | 26 | 3 (KJT list) | article detail extraction followed by quality review | `1/1/1`, directory page rejected, quality `0.0` |
 | 27 | 2 (KJT detail) | strict detail contract | task failed, `COZE_CONTRACT_MISMATCH` |
 
-The current baseline after these live checks is 2 approved documents, 14 chunks and 14 Qdrant points. The three list-page canaries and one detail canary are **BLOCKED-LIVE** evidence that the deployed Coze workflow does not expand these official list pages and does not accept the KJT detail contract. Do not create 100 speculative documents, use the local provider, bypass manual review, or edit PostgreSQL directly. Resume Phase C only after a republished compatible workflow or user-approved compatible real detail URLs is available; continue independent Phase D-F checks now.
+The current baseline after these live checks is 2 approved documents, 14 chunks and 14 Qdrant points. The three list-page canaries and one detail canary remain **BLOCKED-LIVE** evidence until a fresh invocation proves real detail expansion; task 27's historical relative-image contract error is now diagnosable and will only be re-evaluated by a new task. Do not create 100 speculative documents, use the local provider to inflate live counts, bypass manual review, or edit PostgreSQL directly. Stop C1 at the first requirement for manual Coze republish/API key/cloud action and report that exact blocker.
 
 ## 11.3 Phase D-E local gates
 

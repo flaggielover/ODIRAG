@@ -47,7 +47,8 @@
     "contract_version": {"type": ["string", "null"]},
     "started_at": {"type": ["string", "null"], "format": "date-time"},
     "finished_at": {"type": ["string", "null"], "format": "date-time"},
-    "completed_at": {"type": ["string", "null"], "format": "date-time"}
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "diagnostics": {"type": ["object", "null"]}
   },
   "$defs": {
     "attachment": {

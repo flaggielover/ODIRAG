@@ -18,7 +18,13 @@
 
 The running local configuration is `rerank_provider=none`, `configured=false`, model `rerank-v3.5`, timeout `30.0`, failure policy `open`. A real debug search returned five Hybrid hits and `rerank_applied=false` with the explicit disabled warning. This is correct degradation evidence, not remote rerank acceptance. Real rerank acceptance is **BLOCKED-LIVE** until a reachable endpoint and `ODIRAG_RERANK_API_KEY` are configured; no credentials are recorded in this report.
 
-## Phase C checkpoint: bounded official corpus expansion (2026-08-09)
+## Phase C checkpoint: bounded official corpus expansion (2026-08-10)
+
+### Generalized-crawl implementation checkpoint
+
+The local deterministic crawler and the strict Coze transport boundary were extended without changing the accepted RAG/indexing path. HTML anchors are normalized and scored with same-site and navigation/asset exclusions; pagination supports explicit/`rel=next`/text/page-parameter signals with visited-page and no-new guards; detail URLs use common government selectors; SPA/API hints and typed `site_rules` can be configured; attachments and image/OCR-required metadata are retained; and diagnostics preserve candidate links, page classification, pagination/API events and stable failure codes. Relative Coze image/attachment URLs are resolved against the article URL in a deep validation copy only, so raw provider JSON remains unchanged and strict Pydantic validation still rejects malformed schemes. Local verification: backend `356 passed`, Ruff, Black and mypy pass. These results are **VERIFIED-LOCAL/fixture-verified**, not live corpus acceptance.
+
+The live baseline remains the following four normal authenticated tasks:
 
 The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 14 chunks and 14 Qdrant points. The run was bounded to the requested `max_pages=1` and `max_articles=5` and used only the authenticated `coze`/`batch_crawl` business path.
 
@@ -29,7 +35,7 @@ The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 
 | 26 | 3, KJT official list | HTTP 200, completed, `1/1/1` | rejected `1`, quality `0.0` | Same directory-page decision; no approved document |
 | 27 | 2, KJT existing detail | HTTP 200, failed | failed `1` | `COZE_CONTRACT_MISMATCH`; no document |
 
-All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Three independent list-page canaries and the detail-page contract failure establish a **BLOCKED-LIVE external Coze workflow**: the deployed batch workflow currently does not expand the available official list pages and does not accept the KJT detail contract. Phase C is stopped before speculative source creation and before the 100-approved-document cap. Reaching that cap requires a republished workflow that returns detail articles, or a user-approved set of compatible real detail URLs. No local/deterministic provider, direct database insertion, source trust downgrade, or historical-data rewrite was used. Phase D-F work that does not depend on this cloud behavior proceeds.
+All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Task 27's strict error was specifically six relative `image_urls`; the new parser can normalize that transport representation on a future invocation, but the historical row is immutable. The currently deployed Coze workflow still does not expand the tested list pages, so C1 remains **BLOCKED-LIVE pending a fresh authenticated canary**. No local/deterministic provider, direct database insertion, source trust downgrade, historical-data rewrite, or existing task relabeling was used. If the republished workflow still returns no detail articles, the exact raw/normalized response and failure code remain the stopping evidence.
 
 ## Phase D-E local production checkpoint (2026-08-10)
 

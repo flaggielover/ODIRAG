@@ -174,6 +174,27 @@ def test_batch_response_is_strict() -> None:
         BatchCrawlResponse.model_validate({**_response(), "unexpected": True})
 
 
+def test_batch_parser_normalizes_relative_resource_urls_without_relaxing_schema() -> None:
+    payload = _response()
+    payload["articles"][0]["image_urls"] = ["/images/scan.png"]
+    payload["articles"][0]["image_count"] = 1
+    payload["diagnostics"] = {"page_classifications": [{"kind": "html_detail_or_mixed"}]}
+    response, raw = parse_batch_crawl_response(payload)
+    assert response.articles[0].image_urls[0].unicode_string() == (
+        "https://example.com/images/scan.png"
+    )
+    assert response.diagnostics == payload["diagnostics"]
+    assert raw["articles"][0]["image_urls"] == ["/images/scan.png"]
+
+
+def test_batch_parser_keeps_invalid_resource_urls_as_strict_errors() -> None:
+    payload = _response()
+    payload["articles"][0]["image_urls"] = ["javascript:alert(1)"]
+    payload["articles"][0]["image_count"] = 1
+    with pytest.raises(ValueError, match="scheme"):
+        parse_batch_crawl_response(payload)
+
+
 def test_batch_response_accepts_complete_historical_json_fence() -> None:
     response, raw = parse_batch_crawl_response(
         "```json\n" + json.dumps(_response(), ensure_ascii=False) + "\n```"

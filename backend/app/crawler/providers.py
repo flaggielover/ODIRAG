@@ -11,6 +11,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.crawler.fetcher import Fetcher
+from app.crawler.generic import CrawlColumnResult, CrawlDiscoveryError
 from app.crawler.urls import UnsafeUrlError
 from app.schemas.coze import BatchCrawlRequest, BatchCrawlResponse, parse_batch_crawl_response
 
@@ -401,14 +402,39 @@ class LocalCrawlProvider:
         crawler = CrawlerAdapterRegistry.default(self.fetcher).get(
             str(payload.get("parser_type", "html"))
         )
-        documents = await crawler.crawl_column(
-            column_url=source_url,
-            selectors=selectors,
-            pagination=pagination,
-            max_pages=int(payload.get("max_pages", 1)),
-            request_interval_seconds=int(payload.get("request_interval_seconds", 0)),
-        )
-        max_articles = int(payload.get("max_articles", 5))
+        max_pages = _positive_int(payload.get("max_pages", 1), "max_pages")
+        max_articles = _positive_int(payload.get("max_articles", 5), "max_articles")
+        diagnostics: CrawlColumnResult | None = None
+        crawl_with_diagnostics = getattr(crawler, "crawl_column_with_diagnostics", None)
+        if callable(crawl_with_diagnostics):
+            try:
+                diagnostics = await crawl_with_diagnostics(
+                    column_url=source_url,
+                    selectors=selectors,
+                    pagination=pagination,
+                    max_pages=max_pages,
+                    max_articles=max_articles,
+                    request_interval_seconds=int(payload.get("request_interval_seconds", 0)),
+                )
+            except CrawlDiscoveryError as exc:
+                raise CrawlProviderError(
+                    exc.code,
+                    str(exc),
+                    retryable=exc.retryable,
+                ) from exc
+            documents = list(diagnostics.documents)
+        else:
+            documents = await crawler.crawl_column(
+                column_url=source_url,
+                selectors=selectors,
+                pagination=pagination,
+                max_pages=max_pages,
+                request_interval_seconds=int(payload.get("request_interval_seconds", 0)),
+            )
+        failures = list(diagnostics.diagnostics.failures) if diagnostics else []
+        warnings = list(diagnostics.diagnostics.warnings) if diagnostics else []
+        if not documents and not failures and "NO_ARTICLES" not in warnings:
+            warnings.append("NO_ARTICLES")
         articles = [
             {
                 "title": document.title,
@@ -423,25 +449,37 @@ class LocalCrawlProvider:
                     {
                         "name": attachment.name,
                         "url": attachment.url,
+                        "file_type": attachment.file_type,
                         "download_status": "pending",
                     }
                     for attachment in document.attachments
                 ],
-                "extraction_method": "html",
-                "needs_ocr": False,
-                "image_urls": [],
-                "image_count": 0,
-                "image_alt_texts": [],
+                "extraction_method": document.extraction_method,
+                "needs_ocr": document.needs_ocr,
+                "image_urls": list(document.image_urls),
+                "image_count": len(document.image_urls),
+                "image_alt_texts": list(document.image_alt_texts),
                 "decision": "pending_review",
                 "accepted": False,
                 "quality_score": None,
                 "decision_reason": "Local crawler requires downstream review",
-                "warnings": [],
+                "warnings": list(document.warnings),
             }
             for document in documents[:max_articles]
         ]
+        failed_urls = [
+            {
+                "url": failure.url,
+                "stage": failure.stage,
+                "error_code": failure.error_code,
+                "error_message": failure.error_message,
+                "retryable": failure.retryable,
+            }
+            for failure in failures
+        ]
+        discovery = diagnostics.diagnostics if diagnostics else None
         normalized = {
-            "success": True,
+            "success": not failures,
             "task_id": task_id,
             "source": {
                 "source_url": source_url,
@@ -450,17 +488,26 @@ class LocalCrawlProvider:
                 "column_name": payload.get("column_name"),
             },
             "statistics": {
-                "pages_visited": 0,
-                "articles_discovered": len(documents),
+                "pages_visited": discovery.pages_visited if discovery else 0,
+                "articles_discovered": (
+                    len(discovery.candidate_links) if discovery else len(documents)
+                ),
                 "articles_fetched": len(articles),
                 "articles_accepted": 0,
                 "articles_rejected": 0,
                 "articles_pending_review": len(articles),
-                "articles_failed": 0,
+                "articles_failed": len(failed_urls),
             },
             "articles": articles,
-            "failed_urls": [],
-            "warnings": ["local_pages_visited_not_instrumented"],
+            "failed_urls": failed_urls,
+            "warnings": warnings,
+            "diagnostics": {
+                "candidate_links": list(discovery.candidate_links) if discovery else [],
+                "normalized_links": list(discovery.normalized_links) if discovery else [],
+                "page_classifications": list(discovery.page_classifications) if discovery else [],
+                "pagination_events": list(discovery.pagination_events) if discovery else [],
+                "api_discovery": discovery.api_discovery if discovery else None,
+            },
         }
         batch, _raw = parse_batch_crawl_response(normalized)
         result = CrawlProviderResult(
@@ -499,6 +546,36 @@ class LocalCrawlProvider:
             raise ValueError("local provider supports only batch_crawl normalization")
         batch, _raw = parse_batch_crawl_response(payload)
         return batch.model_dump(mode="json"), batch
+
+
+def _positive_int(value: object, name: str) -> int:
+    if isinstance(value, bool):
+        raise CrawlProviderError(
+            "LOCAL_INVALID_ARGUMENT",
+            f"{name} must be a positive integer",
+            retryable=False,
+        )
+    if not isinstance(value, (int, float, str)):
+        raise CrawlProviderError(
+            "LOCAL_INVALID_ARGUMENT",
+            f"{name} must be a positive integer",
+            retryable=False,
+        )
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise CrawlProviderError(
+            "LOCAL_INVALID_ARGUMENT",
+            f"{name} must be a positive integer",
+            retryable=False,
+        ) from exc
+    if parsed < 1:
+        raise CrawlProviderError(
+            "LOCAL_INVALID_ARGUMENT",
+            f"{name} must be a positive integer",
+            retryable=False,
+        )
+    return parsed
 
 
 def _response_error(response: httpx.Response, *, attempts: int) -> CrawlProviderError | None:

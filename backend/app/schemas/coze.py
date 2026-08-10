@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from datetime import date, datetime
 from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from pydantic import (
     AliasChoices,
@@ -145,6 +147,7 @@ class BatchCrawlResponse(CozeStrictModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     completed_at: datetime | None = None
+    diagnostics: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_statistics(self) -> BatchCrawlResponse:
@@ -189,6 +192,12 @@ def parse_batch_crawl_response(payload: Any) -> tuple[BatchCrawlResponse, Any]:
                 break
             continue
         break
+    # Keep the provider response byte-for-byte available to the audit trail, but
+    # canonicalize relative resource URLs in a validation copy.  Coze workflows
+    # commonly emit ``/upload/image.png`` while the strict contract intentionally
+    # requires absolute HTTP URLs.  This is a transport normalization, not a
+    # schema relaxation: malformed URLs still fail Pydantic validation.
+    candidate = _canonicalize_batch_urls(candidate)
     return BatchCrawlResponse.model_validate(candidate), raw
 
 
@@ -208,6 +217,76 @@ def _decode_json_string(value: str) -> Any:
     if match:
         text = match.group("body").strip()
     return json.loads(text)
+
+
+def _canonicalize_batch_urls(candidate: Any) -> Any:
+    if not isinstance(candidate, dict):
+        return candidate
+    normalized = deepcopy(candidate)
+    articles = normalized.get("articles")
+    if not isinstance(articles, list):
+        return normalized
+    for article in articles:
+        if not isinstance(article, dict):
+            continue
+        article_url = article.get("url")
+        if not isinstance(article_url, str) or not article_url.strip():
+            continue
+        article_url = _try_normalize(article_url)
+        if article_url is None:
+            continue
+        article["url"] = article_url
+        image_urls = article.get("image_urls")
+        if isinstance(image_urls, list):
+            article["image_urls"] = [
+                (
+                    normalized_url
+                    if (normalized_url := _try_normalize(str(value), base_url=article_url))
+                    is not None
+                    else value
+                )
+                for value in image_urls
+            ]
+        attachments = article.get("attachments")
+        if isinstance(attachments, list):
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
+                    continue
+                value = attachment.get("url")
+                if isinstance(value, str):
+                    normalized_url = _try_normalize(value, base_url=article_url)
+                    if normalized_url is not None:
+                        attachment["url"] = normalized_url
+    return normalized
+
+
+def _try_normalize(value: str, *, base_url: str | None = None) -> str | None:
+    try:
+        parsed = urlsplit(urljoin(base_url, value) if base_url else value.strip())
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+            return None
+        if parsed.username is not None or parsed.password is not None:
+            return None
+        host = parsed.hostname.lower().rstrip(".")
+        port = parsed.port
+        default_port = (parsed.scheme.lower() == "http" and port == 80) or (
+            parsed.scheme.lower() == "https" and port == 443
+        )
+        authority = host if port is None or default_port else f"{host}:{port}"
+        path = parsed.path or "/"
+        while "//" in path:
+            path = path.replace("//", "/")
+        query = urlencode(
+            sorted(
+                (key, item)
+                for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+                if not key.lower().startswith("utm_")
+                and key.lower() not in {"spm", "from", "source"}
+            )
+        )
+        return urlunsplit((parsed.scheme.lower(), authority, path, query, ""))
+    except (TypeError, ValueError):
+        return None
 
 
 # Stable aliases for callers that use the provider-oriented terminology.

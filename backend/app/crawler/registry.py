@@ -16,6 +16,8 @@ class CrawlerAdapterRegistry:
             {
                 "html": generic,
                 "generic_html": generic,
+                "html_detail": generic,
+                "generic_api": generic,
                 "govcn_latest_json": GovCnLatestJsonAdapter(fetcher),
             }
         )
