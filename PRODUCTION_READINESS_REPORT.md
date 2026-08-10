@@ -53,6 +53,10 @@ All tasks below used the normal authenticated `coze`/`batch_crawl` path with `ma
 
 Task 28 metadata is real and uncorrupted (`government/official`, `region=四川省`, HTML, word count 1619, quality 0.85). Its two downloaded attachments are still `parse_status=pending` with zero parsed text, so attachment content is excluded from the indexing claim. A second reindex returned `cache_hits=9`, `embedded_count=0`, and direct Qdrant count stayed `23`, proving idempotency. Current totals are documents=10 (approved=3, rejected=7), chunks=23, crawl tasks=34, reviews=20, lineage=78, attachments=3. C1 has only one newly qualified document and therefore is **BLOCKED-LIVE** at the external Coze workflow boundary; C2/C3 are not started. The minimum unblock is a Coze republish/deploy that expands list/API results to real detail URLs and emits the strict batch response. No local provider, fixture, direct DB insertion, or historical task rewrite was used.
 
+### Redeploy verification (task 35)
+
+After the reported Coze republish, the same KJT notification column (`source_column_id=3`) was run through the authenticated API with `max_pages=1,max_articles=5`. The invocation was HTTP 200/completed with contract `batch_crawl`, but persisted `discovered/fetched/documents=1/1/1`; `articles[]` contained only the directory URL `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, and the quality decision was `rejected` with score `0.0`. The URL was already present, so the task added no document and no chunks. The required canary threshold (`>=2` discovered, fetched and article records, all real detail URLs) failed. This is a new external deployment blocker, not a reason to alter local code or the accepted 5/5 chain.
+
 ## Phase D-E local production checkpoint (2026-08-10)
 
 | Area | Verification | Status / remaining risk |

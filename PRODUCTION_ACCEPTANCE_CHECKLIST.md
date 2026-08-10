@@ -706,6 +706,10 @@ Tasks 29, 30 and 32 each returned a single directory-page document and were reje
 
 Current persisted totals after this checkpoint: `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, `crawl_tasks=34`, `reviews=20`, `lineage=78`, `attachments=3`. Regression commands and expected results: backend full suite `356 passed`; `ruff check`, `black --check`, and `mypy` pass; frontend lint/type-check/Vitest `18 passed`/build pass; live Playwright against `http://127.0.0.1:8080` `1 passed`; all eight Compose services healthy. These checks do not turn the blocked corpus gate into a live pass.
 
+#### 11.2.4 Redeploy canary result (task 35)
+
+The same KJT notification column (`source_column_id=3`) was rerun after the reported Coze republish with `max_pages=1,max_articles=5`. The invocation was HTTP 200/completed and strict `batch_crawl`, but `articles_discovered=1`, `articles_fetched=1`, `articles[]=1`; the sole URL was the directory page `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, not a detail URL, and the quality decision was rejected (`0.0`). The URL deduplicated against an existing rejected document, so totals remain `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, Qdrant points `23`, and `crawl_tasks=35`. The canary threshold was not met; do not start C1/C2/C3 expansion until the deployed Coze workflow demonstrably emits at least two real detail URLs from this column.
+
 ## 11.3 Phase D-E local gates
 
 Run the source-discovery contract checks without a Brave key; the expected result is an explicit provider blocker, never a fixture claim:
