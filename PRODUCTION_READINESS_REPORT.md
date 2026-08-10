@@ -59,6 +59,8 @@ After the reported Coze republish, the same KJT notification column (`source_col
 
 Task 36 was run once more to distinguish a parser regression from an endpoint mismatch. Its persisted raw `batch_result.articles` array contained one item, `success=true`, and an empty `failed_urls` array; the single item was still the directory URL. The local transport therefore received a one-article result from the deployed endpoint itself. No raw body, token, endpoint URL or credential is copied into this report.
 
+Task 37 repeated the canary with the same source column and confirmed the request contained the expected KJT list URL. Its raw article count was still `1`; task 36 and task 37 had the same endpoint/deployment identifiers and `workflow_version=batch_crawl-v1`. The remaining blocker is endpoint/version alignment between the local runtime and the Coze deployment verified in the console, not crawler parsing or data quality.
+
 ## Phase D-E local production checkpoint (2026-08-10)
 
 | Area | Verification | Status / remaining risk |

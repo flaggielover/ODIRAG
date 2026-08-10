@@ -712,6 +712,8 @@ The same KJT notification column (`source_column_id=3`) was rerun after the repo
 
 Task 36 repeated the canary and inspected the persisted raw response. Raw `batch_result.articles` itself contained one item with `success=true` and no failed URLs, proving the missing articles were not dropped by local Pydantic normalization. The local API endpoint currently returns the single-directory result even after the reported console republish; treat this as an endpoint/deployment mismatch and stop until the deployed endpoint is corrected.
 
+Task 37 confirmed the request still used the intended KJT list URL, while the raw response remained one directory article. Its invocation endpoint/deployment identifiers match task 36 and both report `batch_crawl-v1`. Before resuming C1, synchronize the local runtime to the exact Coze endpoint/version whose HTTP response was verified in the console; do not change crawler code or bypass the `articles>=2` and distinct-detail-URL gate.
+
 ## 11.3 Phase D-E local gates
 
 Run the source-discovery contract checks without a Brave key; the expected result is an explicit provider blocker, never a fixture claim:
