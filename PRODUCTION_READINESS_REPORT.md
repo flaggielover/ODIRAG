@@ -24,7 +24,7 @@ The running local configuration is `rerank_provider=none`, `configured=false`, m
 
 The local deterministic crawler and the strict Coze transport boundary were extended without changing the accepted RAG/indexing path. HTML anchors are normalized and scored with same-site and navigation/asset exclusions; pagination supports explicit/`rel=next`/text/page-parameter signals with visited-page and no-new guards; detail URLs use common government selectors; SPA/API hints and typed `site_rules` can be configured; attachments and image/OCR-required metadata are retained; and diagnostics preserve candidate links, page classification, pagination/API events and stable failure codes. Relative Coze image/attachment URLs are resolved against the article URL in a deep validation copy only, so raw provider JSON remains unchanged and strict Pydantic validation still rejects malformed schemes. Local verification: backend `356 passed`, Ruff, Black and mypy pass. These results are **VERIFIED-LOCAL/fixture-verified**, not live corpus acceptance.
 
-The live baseline remains the following four normal authenticated tasks:
+The live baseline remains the following normal authenticated tasks. The original tasks 24-27 are retained as historical negative evidence; tasks 28-34 are the post-generalization canaries.
 
 The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 14 chunks and 14 Qdrant points. The run was bounded to the requested `max_pages=1` and `max_articles=5` and used only the authenticated `coze`/`batch_crawl` business path.
 
@@ -36,6 +36,22 @@ The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 
 | 27 | 2, KJT existing detail | HTTP 200, failed | failed `1` | `COZE_CONTRACT_MISMATCH`; no document |
 
 All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Task 27's strict error was specifically six relative `image_urls`; the new parser can normalize that transport representation on a future invocation, but the historical row is immutable. The currently deployed Coze workflow still does not expand the tested list pages, so C1 remains **BLOCKED-LIVE pending a fresh authenticated canary**. No local/deterministic provider, direct database insertion, source trust downgrade, historical-data rewrite, or existing task relabeling was used. If the republished workflow still returns no detail articles, the exact raw/normalized response and failure code remain the stopping evidence.
+
+### Post-generalization live canaries (2026-08-10)
+
+All tasks below used the normal authenticated `coze`/`batch_crawl` path with `max_pages=1,max_articles=5`; raw and normalized invocation records remain persisted.
+
+| Task | Column | Result | Review / indexing | Interpretation |
+| --- | ---: | --- | --- | --- |
+| 28 | 2, KJT detail | HTTP 200, strict schema, `1/1/1` | approved document 9; 9 chunks and 9 Qdrant points | One qualified new official document |
+| 29 | 5, JXT list | `1/1/1` | directory page rejected | No detail expansion |
+| 30 | 3, KJT list | `1/1/1` | directory page rejected | No detail expansion |
+| 31 | 4, gov.cn JSON | `0/0/0` | no document | Empty API result |
+| 32 | 6, KJT policy list | `1/1/1` | directory page rejected | No detail expansion |
+| 33 | 7, MIIT list | `0/0/0` | no document | Empty list result |
+| 34 | 8, gov.cn HTML list | `0/0/0` | no document | Empty list result |
+
+Task 28 metadata is real and uncorrupted (`government/official`, `region=四川省`, HTML, word count 1619, quality 0.85). Its two downloaded attachments are still `parse_status=pending` with zero parsed text, so attachment content is excluded from the indexing claim. A second reindex returned `cache_hits=9`, `embedded_count=0`, and direct Qdrant count stayed `23`, proving idempotency. Current totals are documents=10 (approved=3, rejected=7), chunks=23, crawl tasks=34, reviews=20, lineage=78, attachments=3. C1 has only one newly qualified document and therefore is **BLOCKED-LIVE** at the external Coze workflow boundary; C2/C3 are not started. The minimum unblock is a Coze republish/deploy that expands list/API results to real detail URLs and emits the strict batch response. No local provider, fixture, direct DB insertion, or historical task rewrite was used.
 
 ## Phase D-E local production checkpoint (2026-08-10)
 
