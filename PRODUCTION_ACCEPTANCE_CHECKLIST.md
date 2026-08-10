@@ -710,6 +710,8 @@ Current persisted totals after this checkpoint: `documents=10`, `approved=3`, `r
 
 The same KJT notification column (`source_column_id=3`) was rerun after the reported Coze republish with `max_pages=1,max_articles=5`. The invocation was HTTP 200/completed and strict `batch_crawl`, but `articles_discovered=1`, `articles_fetched=1`, `articles[]=1`; the sole URL was the directory page `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, not a detail URL, and the quality decision was rejected (`0.0`). The URL deduplicated against an existing rejected document, so totals remain `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, Qdrant points `23`, and `crawl_tasks=35`. The canary threshold was not met; do not start C1/C2/C3 expansion until the deployed Coze workflow demonstrably emits at least two real detail URLs from this column.
 
+Task 36 repeated the canary and inspected the persisted raw response. Raw `batch_result.articles` itself contained one item with `success=true` and no failed URLs, proving the missing articles were not dropped by local Pydantic normalization. The local API endpoint currently returns the single-directory result even after the reported console republish; treat this as an endpoint/deployment mismatch and stop until the deployed endpoint is corrected.
+
 ## 11.3 Phase D-E local gates
 
 Run the source-discovery contract checks without a Brave key; the expected result is an explicit provider blocker, never a fixture claim:

@@ -57,6 +57,8 @@ Task 28 metadata is real and uncorrupted (`government/official`, `region=四川�
 
 After the reported Coze republish, the same KJT notification column (`source_column_id=3`) was run through the authenticated API with `max_pages=1,max_articles=5`. The invocation was HTTP 200/completed with contract `batch_crawl`, but persisted `discovered/fetched/documents=1/1/1`; `articles[]` contained only the directory URL `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, and the quality decision was `rejected` with score `0.0`. The URL was already present, so the task added no document and no chunks. The required canary threshold (`>=2` discovered, fetched and article records, all real detail URLs) failed. This is a new external deployment blocker, not a reason to alter local code or the accepted 5/5 chain.
 
+Task 36 was run once more to distinguish a parser regression from an endpoint mismatch. Its persisted raw `batch_result.articles` array contained one item, `success=true`, and an empty `failed_urls` array; the single item was still the directory URL. The local transport therefore received a one-article result from the deployed endpoint itself. No raw body, token, endpoint URL or credential is copied into this report.
+
 ## Phase D-E local production checkpoint (2026-08-10)
 
 | Area | Verification | Status / remaining risk |
