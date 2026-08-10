@@ -681,7 +681,7 @@ Push-Location backend
 Pop-Location
 ~~~
 
-Expected current result: `356 passed`; Ruff, Black and mypy pass. This gate verifies deterministic HTML candidate scoring, URL normalization, bounded pagination, direct-detail extraction, attachment/image/OCR metadata, SPA/API fallback, site rules, stable failure codes and strict Coze relative-resource normalization. It must not be counted as a real document or provider acceptance.
+Expected current result: `356 passed`; Ruff, Black and mypy pass. This gate verifies deterministic HTML candidate scoring, URL normalization, bounded pagination, direct-detail extraction, attachment/image/OCR metadata, SPA/API fallback, site rules, stable failure codes and strict Coze relative-resource normalization. A separate read-only public-URL smoke in the backend container currently returns `UnsafeUrlError` from the existing SSRF/public resolver for the tested government domains; do not weaken that resolver or count the smoke as live acceptance. This gate must not be counted as a real document or provider acceptance.
 
 ### 11.2.2 Live C1 gate
 
