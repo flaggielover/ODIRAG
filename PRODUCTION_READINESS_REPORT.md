@@ -1,10 +1,28 @@
 # ODIRAG Production Readiness Report
 
-审计日期：2026-08-10
+审计日期：2026-08-12
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。Task 23 的真实工信部 government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Production-strengthening Phase A 也已 PASS-LIVE：即使 Hybrid Retrieval 返回五个同主题但不支持结论的候选，Evidence Sufficiency Gate 仍按同一 chunk 的实体/关系和适用范围绑定在 Direct LLM 前拒答并返回零 citation/token/cost；受支持问题继续返回严格 citation。Phase B/D/E 已完成本地门禁，Phase F 已完成两题真实矩阵；语料规模、真实 remote rerank/Brave、生产 TLS/secret、容灾、代表性人工评测集和发布 provenance 仍未完成，整体仍 **NOT PRODUCTION ACCEPTED**。
+代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。Task 23 的真实工信部 government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Production-strengthening Phase A 也已 PASS-LIVE：即使 Hybrid Retrieval 返回五个同主题但不支持结论的候选，Evidence Sufficiency Gate 仍按同一 chunk 的实体/关系和适用范围绑定在 Direct LLM 前拒答并返回零 citation/token/cost；受支持问题继续返回严格 citation。Phase C 的正式多文章 canary、C1=10 与 C2=50 已 PASS-LIVE，C3=100 正在推进。真实 remote rerank/Brave、生产 TLS/secret、容灾、代表性人工评测集、附件解析/OCR 覆盖和发布 provenance 仍未完成，整体仍 **NOT PRODUCTION ACCEPTED**。
+
+## Phase C C2 checkpoint: 2026-08-12
+
+正式 Coze HTTP deployment 已与 Preview 对齐：对 `https://www.scsia.org/newslist/1.html` 的 bounded 请求（`max_pages=1,max_articles=5`）返回 HTTP 200、`workflow_version=batch_crawl-v1`、discovered/fetched/articles `5/5/5`，且五个 URL 均为不同详情页。随后只通过现有 authenticated Source/CrawlTask API、Coze strict batch contract、质量判断、人工审核和真实 reindex 推进；没有 Local provider、fixture、直接 SQL 插入、信任降级或历史记录改写。
+
+| C2 evidence | Live result | Status / remaining risk |
+| --- | --- | --- |
+| Corpus | 98 documents; 51 approved; 21 rejected; 26 pending manual review | 其中恰好 50 篇为 region 正常的 `government/official`；历史 scsia association 文档和 `region='??'` 保持不变 |
+| Sources | 28 source rows; 14 approved official source rows; 11 approved official domains | government/official 域包括四川财政、发改、生态环境、住建、科技、自然资源及国家部委；信任字段仍依赖既有治理流程 |
+| Index | 393 PostgreSQL chunks; 393 direct Qdrant exact points; collection green | 所有当前 chunks 均 indexed；document 98 重复 reindex 后文档 points 4→4、全局 393→393 |
+| Deduplication | approved canonical URL duplicates 0; approved content-hash duplicates 0 | 只证明当前已批准集合的 URL/content-hash 去重，不替代语义近重复评估 |
+| Crawl operations | tasks 38-128: 91 bounded tasks; 88 discovered/fetched; 0 provider item failures | 26 文档仍等待审核；空结果不是 provider failure，也未被计为成功文档 |
+| Attachments/OCR | 52 attachments downloaded; 52 remain `parse_status=pending`; one `requires_ocr=true` | **NOT ACCEPTED** for attachment parsing/OCR coverage；本次 C2 仅接受可由主 HTML 正文通过质量门的文档 |
+| Cost/latency | crawl average 218735 ms; P95 368467 ms | provider API/embedding cost未形成完整可核账记录；不得推断成本或 SLA 已通过 |
+
+C2 Data Quality Gate 为 **PASS-LIVE**，但仅代表 50 篇真实政府/官方主正文语料已通过现有业务链与去重/索引一致性检查，不代表附件型材料、OCR、成本或生产 SLA 已接受。C3 可继续到 100；D: 当前可用 107.29 GiB，高于 50 GiB 停止阈值。
+
+2026-08-12 regression：后端 `356 passed`，Ruff、mypy 通过；前端 lint/type-check、Vitest `18/18`、build 通过，fixture Playwright `10 passed, 1 skipped`。八个 Compose 服务 healthy，Alembic 无漂移，Redis PONG，8080 首页与 `/api/system/health` 均为 HTTP 200。真实 Evidence Sufficiency 回归返回五个 retrieval hits、Direct `gpt-4.1-mini`、一个可追溯 MIIT citation；无证据和三条 adversarial query 均在 LLM 前安全拒答。Black 本轮不能标记通过：Windows venv 中的 `black.exe` 连 `--version` 也会卡死；生产 runtime 刻意不含 pip，builder-stage `pip check` 的历史通过证据仍保留。
 
 ## Phase B checkpoint: 2026-08-10
 

@@ -1,6 +1,6 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-09。八个服务当前 healthy。Task 23 的真实 MIIT government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`；Phase A Evidence Sufficiency 已对“检索到无关 chunk”的场景取得 PASS-LIVE。更广泛的 Phase B-F 生产发布门禁仍未全部接受。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-12。八个服务当前 healthy。Task 23 的真实 MIIT government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`；Phase A Evidence Sufficiency 已对“检索到无关 chunk”的场景取得 PASS-LIVE；Phase C multi-article canary、C1=10 与 C2=50 已 PASS-LIVE，C3=100 正在推进。更广泛的生产发布门禁仍未全部接受。
 
 ## 当前 official-source 最后一关（PASS-LIVE）
 
@@ -713,6 +713,28 @@ The same KJT notification column (`source_column_id=3`) was rerun after the repo
 Task 36 repeated the canary and inspected the persisted raw response. Raw `batch_result.articles` itself contained one item with `success=true` and no failed URLs, proving the missing articles were not dropped by local Pydantic normalization. The local API endpoint currently returns the single-directory result even after the reported console republish; treat this as an endpoint/deployment mismatch and stop until the deployed endpoint is corrected.
 
 Task 37 confirmed the request still used the intended KJT list URL, while the raw response remained one directory article. Its invocation endpoint/deployment identifiers match task 36 and both report `batch_crawl-v1`. Before resuming C1, synchronize the local runtime to the exact Coze endpoint/version whose HTTP response was verified in the console; do not change crawler code or bypass the `articles>=2` and distinct-detail-URL gate.
+
+#### 11.2.5 Formal multi-article canary and C2 gate (2026-08-12)
+
+The deployment mismatch above is historical evidence, not the current state. The formal HTTP endpoint was called directly with `source_url=https://www.scsia.org/newslist/1.html`, `max_pages=1`, and `max_articles=5`. It returned HTTP 200, `workflow_version=batch_crawl-v1`, `articles_discovered=5`, `articles_fetched=5`, and five distinct detail URLs (`/portal/new/7587`, `/7556`, `/7555`, `/7551`, `/7542`). Mark the multi-article canary **PASS-LIVE**; retain scsia as association rather than changing its trust type.
+
+C1 and C2 then ran only through the authenticated Source/CrawlTask API with provider `coze`, strict `batch_crawl`, existing quality decisions, manual review, remote `text-embedding-3-small`, and real Qdrant upserts. No fixture, Local provider, direct SQL insertion, quality-threshold reduction, historical rewrite or source-trust downgrade was used.
+
+Current C2 acceptance values:
+
+| Gate | Expected | Actual 2026-08-12 | Status |
+| --- | --- | --- | --- |
+| qualified corpus | 50 government/official documents with valid region | 50 across 14 source rows and 11 domains | PASS-LIVE |
+| global persistence | database and audit counts retained | documents 98; approved 51; rejected 21; pending 26; tasks 128; reviews 160; lineage 539 | PASS-LIVE |
+| index consistency | PostgreSQL chunks = direct Qdrant exact points | 393 = 393; collection green | PASS-LIVE |
+| approved dedupe | duplicate canonical URLs/content hashes = 0 | 0 / 0 | PASS-LIVE |
+| repeat reindex | point IDs/count unchanged | document 98 points 4→4; global 393→393 | PASS-LIVE |
+| attachment text | parsed/OCR evidence for attachment-dependent claims | 52 downloaded, all parse pending; one requires OCR | **NOT ACCEPTED** |
+| disk guard | stop below 50 GiB free | D: 107.29 GiB free | PASS |
+
+The 50 qualified government/official documents exclude the retained historical association record with `region='??'`. Do not count the 26 pending documents as accepted. Do not claim attachment parsing or OCR success from `download_status=completed`; main HTML content is the accepted C2 evidence.
+
+Checkpoint regression commands/results: backend pytest `356 passed`; Ruff and mypy pass; frontend lint/type-check/Vitest `18/18`/build pass; fixture Playwright `10 passed, 1 skipped`; Compose config valid; all eight services healthy; Alembic `No new upgrade operations detected`; Redis PONG; 8080 and health API HTTP 200. The live evidence-sufficiency script still returns a grounded MIIT Direct-LLM citation and safe refusal for no-evidence/adversarial queries, preserving `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`. Current Black is **UNVERIFIED-LOCAL** because the Windows executable hangs on `--version`; do not replace that with a false pass. Runtime `python -m pip check` is not applicable because the hardened runtime intentionally omits pip; use the builder-stage check documented in Phase E.
 
 ## 11.3 Phase D-E local gates
 
