@@ -1010,7 +1010,7 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 
 ### Phase H/I provider gates
 
-- [ ] Remote rerank: `BLOCKED-EXTERNAL-RERANK-KEY`; current deterministic provider must not be reported as remote live acceptance.
+- [ ] Remote rerank: `BLOCKED-EXTERNAL-RERANK-KEY`; Compose uses `none` and host development uses deterministic. Neither may be reported as remote live acceptance. Provider/failure-policy regression: 79 passed.
 - [ ] Brave discovery: `BLOCKED-EXTERNAL-BRAVE-KEY`; provider contract tests do not replace a real Brave response.
 - [x] Missing provider credentials do not stop independent Phase J-M engineering work.
 

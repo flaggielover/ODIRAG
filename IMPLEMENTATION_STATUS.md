@@ -222,7 +222,7 @@ Last updated: 2026-08-13
 - Black remains **UNVERIFIED-LOCAL** because the Windows executable did not exit within a controlled 25-second check. D drive free space was 106.7 GiB, above the 50 GiB stop threshold.
 - Detailed evidence: [`DATA_QUALITY_REPORT.md`](DATA_QUALITY_REPORT.md).
 
-- **Phase H configuration audit:** current runtime selects deterministic rerank and has no remote rerank credential. Until a real remote call succeeds, status is `BLOCKED-EXTERNAL-RERANK-KEY`; deterministic results are not PASS-LIVE.
+- **Phase H configuration audit:** the real Compose backend selects `none` and has no remote rerank credential; the host development settings select deterministic without a credential. Until a real remote call succeeds, status is `BLOCKED-EXTERNAL-RERANK-KEY`; neither disabled nor deterministic results are PASS-LIVE. The existing provider, fail-open/fail-closed, redaction, timeout, HTTP error, invalid-response, metadata, and retrieval regressions passed 79 tests.
 - **Phase I configuration audit:** Brave is selected but its credential is absent. Status is `BLOCKED-EXTERNAL-BRAVE-KEY`; fixture contract tests are not PASS-LIVE.
 
 - Docker WSL data relocation remains intact on D drive with retained rollback evidence and no data deletion. As of the 2026-08-10 checkpoint Docker Desktop/Engine responds and all eight Compose services are healthy; backend/worker/scheduler use the same current image `sha256:b41a63d5b943f200304f9ee6a1d208d7fee62ff3920b4f77a19c97f5f0ccf163`. This is development evidence, not production TLS/secret/registry acceptance.
