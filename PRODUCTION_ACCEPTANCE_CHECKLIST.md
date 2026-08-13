@@ -1011,7 +1011,7 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 ### Phase H/I provider gates
 
 - [ ] Remote rerank: `BLOCKED-EXTERNAL-RERANK-KEY`; Compose uses `none` and host development uses deterministic. Neither may be reported as remote live acceptance. Provider/failure-policy regression: 79 passed.
-- [ ] Brave discovery: `BLOCKED-EXTERNAL-BRAVE-KEY`; provider contract tests do not replace a real Brave response.
+- [ ] Brave discovery: `BLOCKED-EXTERNAL-BRAVE-KEY`; provider contract tests do not replace a real Brave response. Source-discovery contract/security/manual-gate regression: 25 passed.
 - [x] Missing provider credentials do not stop independent Phase J-M engineering work.
 
 只有 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、frontend、Alembic 和所选真实 provider 全部 PASS-LIVE，且日志/trace/备份恢复证据已归档，才可把部署标为生产接受。
