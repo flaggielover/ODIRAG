@@ -1,10 +1,29 @@
 # ODIRAG Production Readiness Report
 
-审计日期：2026-08-12
+审计日期：2026-08-13
 审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
 结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
 
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。Task 23 的真实工信部 government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Production-strengthening Phase A 也已 PASS-LIVE：即使 Hybrid Retrieval 返回五个同主题但不支持结论的候选，Evidence Sufficiency Gate 仍按同一 chunk 的实体/关系和适用范围绑定在 Direct LLM 前拒答并返回零 citation/token/cost；受支持问题继续返回严格 citation。Phase C 的正式多文章 canary、C1=10 与 C2=50 已 PASS-LIVE，C3=100 正在推进。真实 remote rerank/Brave、生产 TLS/secret、容灾、代表性人工评测集、附件解析/OCR 覆盖和发布 provenance 仍未完成，整体仍 **NOT PRODUCTION ACCEPTED**。
+代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。Task 23 的真实工信部 government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Production-strengthening Phase A 也已 PASS-LIVE：即使 Hybrid Retrieval 返回五个同主题但不支持结论的候选，Evidence Sufficiency Gate 仍按同一 chunk 的实体/关系和适用范围绑定在 Direct LLM 前拒答并返回零 citation/token/cost；受支持问题继续返回严格 citation。Phase C 的正式多文章 canary、C1=10、C2=50 和 C3=100 均已 PASS-LIVE。真实 remote rerank/Brave、生产 TLS/secret、容灾、代表性人工评测集、附件解析/OCR 覆盖和发布 provenance 仍未完成，整体仍 **NOT PRODUCTION ACCEPTED**。
+
+## Phase C C3 final checkpoint: 2026-08-13
+
+本次 C3 只通过正常认证业务路径推进：Source/Column → `CrawlTask` → Coze `batch_crawl` → 自动质量判断 → 人工 approve → 真实 OpenAI Embedding → Qdrant。没有使用 fixture、Local provider、直接 SQL 插入、降低质量门、修改 source trust 或改写历史数据。C3 在恰好 100 篇合格官方文档处停止；第 101 篇候选保留为 `pending_manual_review`，没有越过上限。
+
+| Gate | Expected | Actual | Status |
+| --- | --- | --- | --- |
+| qualified corpus | 100 government/official documents with valid region | 100, across 31 source rows and 10 official domains | PASS-LIVE |
+| global persistence | database and audit counts retained | documents 182; approved 101; rejected 34; pending 47; tasks 221; reviews 296; lineage 1053 | PASS-LIVE |
+| index consistency | PostgreSQL chunks = direct Qdrant exact points | 821 = 821; `odirag_chunks` green | PASS-LIVE |
+| approved dedupe | canonical/source URL and content hashes = 0 duplicates | 0 / 0 | PASS-LIVE |
+| content gate | valid title, non-empty content, valid URL, non-corrupt region, indexed chunks | all zero-error checks; word count 180–6408; no approved document lacks chunks | PASS-LIVE |
+| repeat reindex | point IDs/count unchanged and cache reused | document 181: 4 chunks, 0 new embeddings, 4 cache hits; global points remained 821 | PASS-LIVE |
+| disk guard | stop below 50 GiB free | D: 106.86 GiB free | PASS |
+| attachment/OCR | parsed attachment evidence | 123 downloaded, 123 `parse_status=pending`, one `requires_ocr=true` | **NOT ACCEPTED** |
+
+Tasks 210–221 initially hit a simultaneous Coze network timeout after roughly 195 seconds. Serial retries recovered 210–218; 219–221 remain explicit failed evidence and did not contribute documents. A separate PowerShell 5.1 UTF-8 serialization error created Source 39 with `??` metadata; its rows were not approved or counted, and no historical row was silently repaired. Sources 40–45 were created with explicit UTF-8 request bytes and PostgreSQL byte verification before tasks were run.
+
+The final live regression remained PASS-LIVE: five real Qdrant retrieval hits, Direct `gpt-4.1-mini`, one exact MIIT citation, and safe pre-LLM refusal for the no-evidence and three adversarial queries. Backend `356 passed`; Ruff passed; mypy had no issues in 156 files; frontend lint/type-check, Vitest `18/18`, build and Playwright `10 passed, 1 skipped` passed. Black is **UNVERIFIED-LOCAL** because the Windows executable/import hangs; it is not claimed as a pass. All eight Compose services are healthy, PostgreSQL accepts connections, Redis returns PONG, Qdrant healthz and 8080/API health return HTTP 200.
 
 ## Phase C C2 checkpoint: 2026-08-12
 
@@ -40,7 +59,7 @@ The running local configuration is `rerank_provider=none`, `configured=false`, m
 
 ### Generalized-crawl implementation checkpoint
 
-The local deterministic crawler and the strict Coze transport boundary were extended without changing the accepted RAG/indexing path. HTML anchors are normalized and scored with same-site and navigation/asset exclusions; pagination supports explicit/`rel=next`/text/page-parameter signals with visited-page and no-new guards; detail URLs use common government selectors; SPA/API hints and typed `site_rules` can be configured; attachments and image/OCR-required metadata are retained; and diagnostics preserve candidate links, page classification, pagination/API events and stable failure codes. Relative Coze image/attachment URLs are resolved against the article URL in a deep validation copy only, so raw provider JSON remains unchanged and strict Pydantic validation still rejects malformed schemes. Local verification: backend `356 passed`, Ruff, Black and mypy pass. A read-only public-URL smoke from the backend container was rejected by the existing resolver as `UnsafeUrlError` for the four tested government domains; no SSRF rule was weakened and no database write was made. These results are **VERIFIED-LOCAL/fixture-verified**, not live corpus acceptance.
+The local deterministic crawler and the strict Coze transport boundary were extended without changing the accepted RAG/indexing path. HTML anchors are normalized and scored with same-site and navigation/asset exclusions; pagination supports explicit/`rel=next`/text/page-parameter signals with visited-page and no-new guards; detail URLs use common government selectors; SPA/API hints and typed `site_rules` can be configured; attachments and image/OCR-required metadata are retained; and diagnostics preserve candidate links, page classification, pagination/API events and stable failure codes. Relative Coze image/attachment URLs are resolved against the article URL in a deep validation copy only, so raw provider JSON remains unchanged and strict Pydantic validation still rejects malformed schemes. **Historical local verification** recorded backend `356 passed`, Ruff, Black and mypy; in the current 2026-08-13 run Black is `UNVERIFIED-LOCAL` because the Windows executable/import hangs. A read-only public-URL smoke from the backend container was rejected by the existing resolver as `UnsafeUrlError` for the four tested government domains; no SSRF rule was weakened and no database write was made. These results are **VERIFIED-LOCAL/fixture-verified**, not live corpus acceptance.
 
 The live baseline remains the following normal authenticated tasks. The original tasks 24-27 are retained as historical negative evidence; tasks 28-34 are the post-generalization canaries.
 
@@ -53,7 +72,7 @@ The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 
 | 26 | 3, KJT official list | HTTP 200, completed, `1/1/1` | rejected `1`, quality `0.0` | Same directory-page decision; no approved document |
 | 27 | 2, KJT existing detail | HTTP 200, failed | failed `1` | `COZE_CONTRACT_MISMATCH`; no document |
 
-All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Task 27's strict error was specifically six relative `image_urls`; the new parser can normalize that transport representation on a future invocation, but the historical row is immutable. The currently deployed Coze workflow still does not expand the tested list pages, so C1 remains **BLOCKED-LIVE pending a fresh authenticated canary**. No local/deterministic provider, direct database insertion, source trust downgrade, historical-data rewrite, or existing task relabeling was used. If the republished workflow still returns no detail articles, the exact raw/normalized response and failure code remain the stopping evidence.
+All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Task 27's strict error was specifically six relative `image_urls`; the new parser can normalize that transport representation on a future invocation, but the historical row is immutable. **At this 2026-08-09 checkpoint**, the deployed Coze workflow did not expand the tested list pages and C1 was blocked pending a fresh authenticated canary. The later 2026-08-12 five-article endpoint canary and C1/C2/C3 expansion resolved that blocker without relabeling these historical rows.
 
 ### Post-generalization live canaries (2026-08-10)
 
@@ -69,7 +88,7 @@ All tasks below used the normal authenticated `coze`/`batch_crawl` path with `ma
 | 33 | 7, MIIT list | `0/0/0` | no document | Empty list result |
 | 34 | 8, gov.cn HTML list | `0/0/0` | no document | Empty list result |
 
-Task 28 metadata is real and uncorrupted (`government/official`, `region=四川省`, HTML, word count 1619, quality 0.85). Its two downloaded attachments are still `parse_status=pending` with zero parsed text, so attachment content is excluded from the indexing claim. A second reindex returned `cache_hits=9`, `embedded_count=0`, and direct Qdrant count stayed `23`, proving idempotency. Current totals are documents=10 (approved=3, rejected=7), chunks=23, crawl tasks=34, reviews=20, lineage=78, attachments=3. C1 has only one newly qualified document and therefore is **BLOCKED-LIVE** at the external Coze workflow boundary; C2/C3 are not started. The minimum unblock is a Coze republish/deploy that expands list/API results to real detail URLs and emits the strict batch response. No local provider, fixture, direct DB insertion, or historical task rewrite was used.
+Task 28 metadata is real and uncorrupted (`government/official`, `region=四川省`, HTML, word count 1619, quality 0.85). Its two downloaded attachments are still `parse_status=pending` with zero parsed text, so attachment content is excluded from the indexing claim. A second reindex returned `cache_hits=9`, `embedded_count=0`, and direct Qdrant count stayed `23`, proving idempotency. **At this 2026-08-10 checkpoint**, totals were documents=10 (approved=3, rejected=7), chunks=23, crawl tasks=34, reviews=20, lineage=78 and attachments=3; C1 was therefore blocked. This is retained as historical evidence and was superseded by the 2026-08-12/13 C1/C2/C3 PASS-LIVE checkpoints.
 
 ### Redeploy verification (task 35)
 
@@ -158,7 +177,7 @@ Tasks 19-22 的 invocation 均持久化 raw/normalized response，是重新发�
 | no-evidence safety | PASS-LIVE for zero-hit, non-empty irrelevant, and same-topic unsupported relation/scope retrieval. Mars/dinosaur trace `b38598b2-89a3-4cd2-92b3-ee733b013f71` plus cancellation/original-numeric-penalty/scope traces `e07f742b-fa91-4e52-bd5f-cd7de42d96fc` / `7b1434b2-a01f-4005-872c-bf98ce314667` / `99cba6de-53db-42f1-8fbf-e127f9858fd9` each had 5 candidates, `refusal=true`, 0 citations/tokens/cost. |
 | `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP` | **5/5** |
 
-知识库真实闭环无需新的外部动作，task 23 已完成 5/5。Phase A 已关闭本轮有界样例中的非空无关、同主题错误关系、缺失金额和错误适用范围误答风险；Phase F 已留下两题真实矩阵基线，但更广泛的统计保证仍依赖代表性人工评测集。后续仅继续 external gates：真实 remote rerank、最多 100 篇阶段语料、Brave、生产工程和完整 RAG evaluation；不得回退 official-only 或篡改历史数据。
+知识库真实闭环无需新的外部动作，task 23 已完成 5/5。Phase A 已关闭本轮有界样例中的非空无关、同主题错误关系、缺失金额和错误适用范围误答风险；Phase C 已完成 100 篇合格官方文档的阶段门，Phase F 已留下两题真实矩阵基线。更广泛的统计保证仍依赖代表性人工评测集。后续仅继续 external gates：真实 remote rerank、Brave、生产工程、附件解析/OCR 和完整 RAG evaluation；不得回退 official-only 或篡改历史数据。
 
 ## 1. 状态定义
 
@@ -234,7 +253,7 @@ Tasks 19-22 的 invocation 均持久化 raw/normalized response，是重新发�
 | raw HTML/list/detail/attachment download | services/crawl.py；crawler/storage.py | test_fixture_crawl.py | FIXTURE-VERIFIED | 仅 fixture 站点；下载存储为本地卷 |
 | HTML/PDF/DOCX/XLSX/TXT/ZIP 类型入口 | parsers/*；allowed attachment extensions | parser unit suite | FIXTURE-VERIFIED | full crawl fixture 主要覆盖 HTML/TXT；其他格式单独测试 |
 | repeated-run idempotency | repositories/crawl.py；services/crawl.py；0003 migration | test_fixture_crawl.py；test_crawl_reliability.py | FIXTURE-VERIFIED | 多 worker + PostgreSQL 并发未验收 |
-| 可达真实站点至少 10 篇 | tasks 9/14 association corpus plus task 23 official MIIT document | crawl/OCR/index/formal official answer PASS-LIVE；2 approved docs/14 chunks/14 points | PARTIAL-LIVE | 仍少于 10 篇可用代表性内容，但 official-only answer gate 已通过 |
+| 可达真实站点至少 10 篇 | authenticated Coze tasks through 221；C1/C2/C3 corpus checkpoints | 100 qualifying government/official documents across 31 source rows and 10 domains；821 indexed chunks/points | PASS-LIVE | 内容分布仍非代表性人工评测集；123 个附件尚未解析 |
 
 ### Phase 3 - Parsing, Cleaning, Deduplication, Versioning
 
@@ -424,7 +443,7 @@ OpenAPI 生成结果包含指南要求的 auth、sources、crawl-tasks、documen
 | vector store | InMemoryVectorStore；Qdrant FakeClient | real collection/index/persistence/delete/backup |
 | cache | InMemoryEmbeddingCache；local Redis connectivity only | Redis-backed cache TTL/ACL/persistence/failure behavior |
 | rate limiting | RedisFixedWindowRateLimiter unit contract；local Compose Redis counter and response headers | target Redis ACL/failover, multi-replica fairness, ingress interaction |
-| crawling | fixtures；local SSRF rejection；real Coze tasks 4-14；task 14 schema-valid 5-article crawl plus OCR/version/review evidence | PASS-LIVE for bounded Coze crawl and representative OCR-quality path；at least 10 usable/indexed articles remain |
+| crawling | fixtures；local SSRF rejection；real Coze tasks through 221；schema-valid multi-article canary；OCR/version/review evidence | PASS-LIVE for bounded Coze crawl and 100 approved government/official documents；attachment parsing/OCR coverage remains open |
 | LLM | Direct/Coze MockTransport | real model JSON stability, Coze async lifecycle, token/cost |
 | evaluation/experiments/load | tiny deterministic demo | representative corpus, production latency/cost/quality |
 | frontend E2E | Playwright route fixtures；local SQLite/deterministic 无拦截 smoke；Nginx/frontend HTTP smoke | deployed HTTPS、真实内容/引用、remote provider |
@@ -495,7 +514,7 @@ to the existing manual API path.
 
 ## 9. 最终本地验证
 
-以下结果已在本次审计结束时重新执行并记录：
+以下表格是 2026-08-09 审计检查点的历史结果。2026-08-13 C3 最终回归以本报告顶部 C3 表为准；其中 pytest/Ruff/mypy 已重跑通过，Black 因 Windows 可执行文件和 import 卡死而是 **UNVERIFIED-LOCAL**，不能沿用下表的历史 PASS 作为本轮通过。
 
 | Check | Result | Boundary |
 | --- | --- | --- |
@@ -518,10 +537,10 @@ to the existing manual API path.
 | current local Nginx/frontend/API/browser smoke | PASS-LOCAL；Nginx 1.30.4 `nginx -t` 通过；捕获并修复滚动 backend 后缓存旧 IP 的 502；Docker DNS 动态 `resolve` 加载后重建 backend，Nginx 未重启且代理 health 15/15 次均为 200；`/healthz`、`/`、`/api/system/health` 均 200；API database/redis/qdrant 均 healthy；管理员页面登录成功并渲染仪表盘；浏览器控制台无 warning/error；安全响应头存在 | HTTP development 入口和交互式本地浏览器证据；自动化 live Playwright、HTTPS、多副本滚动发布和 remote provider 门禁未验证 |
 | current Docker/WSL control-plane check | PASS-LOCAL；交互式启动后 WSL、Docker Client/Server 29.6.2、Compose v5.3.1 均响应，8080 及项目端口可用，八服务 healthy | 仍未验证目标主机的自动启动、生产 secret/TLS、容灾和 registry provenance；未删除 VHD、容器、Volume 或数据库 |
 | last scanned hardened image build | PASS-LOCAL；current backend `b41a63d5b943` Scout is 0C/0H/0M/0L and frontend `7dcc62cebccd` is 0C/0H/0M/3L with no fixed libxml2 version | Target registry must still be scanned, signed and given provenance; do not treat the frontend low findings as resolved |
-| current real Compose Playwright | PASS-LOCAL；当前 8-point index 下重跑 1 passed | association source 仍必须拒答；未断言 official answer |
-| authenticated API / crawl-task evidence | PASS-LIVE；task 23 completed；1 official doc accepted/approved/indexed；summary 6 chunks/6 points；formal Direct citation plus zero-hit/non-empty irrelevant refusal passed | Tasks 19-22 remain pre-redeploy failure history |
-| Qdrant live local state | PASS-LIVE；direct REST 1 collection/14 points；task 23 has 6/6 required payloads and stable IDs after repeat reindex | live delete/compensation drill、备份与生产拓扑仍未验 |
-| Coze batch/OCR/live official checkpoint | PASS-LIVE；task 14 preserves OCR evidence；task 23 HTTP 200/completed, strict schema, 1 official doc accepted/approved/indexed, 6 chunks/6 points, formal Direct citation | two historical OCR_FAILED docs remain rejected |
+| current real Compose Playwright | PASS-LOCAL；fixture suite 10 passed/1 explicit live-stack skip；formal live API evidence separately retained | HTTPS/target browser and production identity policy remain unverified |
+| authenticated API / crawl-task evidence | PASS-LIVE；tasks through 221；100 qualifying official documents；formal Direct citation plus zero-hit/non-empty irrelevant refusal passed | Historical failed/pending tasks remain audit evidence and are not counted |
+| Qdrant live local state | PASS-LIVE；direct REST collection `odirag_chunks` green with exact count 821, matching 821 PostgreSQL chunks；repeat reindex reused cache without point growth | live delete/compensation drill、备份与生产拓扑仍未验 |
+| Coze batch/OCR/live official checkpoint | PASS-LIVE；task 14 preserves OCR evidence；task 23 preserves the official 5/5 baseline；C3 adds 100 clean approved government/official documents | 123 downloaded attachments remain parse-pending; one requires OCR |
 
 ### scsia.org 实验记录（分层 PASS-LIVE）
 
@@ -544,15 +563,15 @@ to the existing manual API path.
 
 Task 14 保留 OCR/association 证据；task 23 已完成 government/official 正常业务闭环；Phase A 已对本轮有界的非空无关、同主题错误关系/范围和拒答残留 citation 风险完成 Live 验收。Citation precision/recall 已排除正确拒答样本，answer grounding rate 改为独立 citation-claim 检查，避免被测门控循环自证。下一步是 Phase B 的真实 Rerank 与可重复检索评估，不需要重新设计已验收主链。
 
-八服务 healthy，task 23 主链与 Phase A evidence gate 均 PASS-LIVE；当前全局仍为 2 approved documents、14 chunks、14 Qdrant points。`KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Phase B/D/E 已完成本地门禁，Phase F 有两题真实矩阵证据；在 remote rerank、最多 100 篇阶段语料、Brave、代表性完整评估、生产 TLS/secret、CI/registry provenance 完成前，整体发布结论仍保持 **NOT PRODUCTION ACCEPTED**。
+八服务 healthy，task 23 主链与 Phase A evidence gate 均 PASS-LIVE；当前全局为 182 documents、101 approved、821 chunks 和 821 Qdrant points，其中恰好 100 篇符合本轮 government/official、region 正常的 C3 资格门。`KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Phase C 已完成，Phase B/D/E 已完成本地门禁，Phase F 有两题真实矩阵证据；在 remote rerank、Brave、代表性完整评估、附件解析/OCR、生产 TLS/secret、CI/registry provenance 完成前，整体发布结论仍保持 **NOT PRODUCTION ACCEPTED**。
 
 ### 9.1 本轮调度回归补充
 
 `backend/.venv/Scripts/python.exe -m pytest -q --cov=app --cov-report=term` completed with
 `257 passed` and `81.33%` total coverage. The added scheduler and Coze-state coverage includes disabled/no-topic
 short-circuiting, CSV/JSON/empty environment parsing, same-topic active-run skipping, minimum-interval
-cooldown, successful enqueue, queue failure persistence, redacted error observability, deployed response-wrapper parsing, strict string task IDs, pre-network invalid-request rejection, fail-closed main/retry response-ID matching, and distinct no-article/partial-failure timestamps. Ruff,
-Black, and mypy (155 source files) pass. Frontend lint/type-check/build pass,
+cooldown, successful enqueue, queue failure persistence, redacted error observability, deployed response-wrapper parsing, strict string task IDs, pre-network invalid-request rejection, fail-closed main/retry response-ID matching, and distinct no-article/partial-failure timestamps. **Historical** Ruff,
+Black, and mypy (155 source files) pass; current C3 Black is separately marked `UNVERIFIED-LOCAL`. Frontend lint/type-check/build pass,
 Vitest reports 18 passed tests, and fixture Playwright reports 9 passed plus 1 explicit live skip.
 
 ## 10. 发布门禁

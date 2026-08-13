@@ -1,10 +1,29 @@
 # ODIRAG Production Acceptance Checklist
 
-本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-12。八个服务当前 healthy。Task 23 的真实 MIIT government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`；Phase A Evidence Sufficiency 已对“检索到无关 chunk”的场景取得 PASS-LIVE；Phase C multi-article canary、C1=10 与 C2=50 已 PASS-LIVE，C3=100 正在推进。更广泛的生产发布门禁仍未全部接受。
+本文是部署到真实环境前的执行清单，不是模拟成功清单。最后审阅：2026-08-13。八个服务当前 healthy。Task 23 的真实 MIIT government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`；Phase A Evidence Sufficiency 已对“检索到无关 chunk”的场景取得 PASS-LIVE；Phase C multi-article canary、C1=10、C2=50 与 C3=100 已 PASS-LIVE。更广泛的生产发布门禁仍未全部接受。
 
 ## 当前 official-source 最后一关（PASS-LIVE）
 
 当前合法判定是索引 hit metadata 中 `official_status` 忽略大小写后等于 `official`。`organization_type` 和域名只用于来源治理/人工核验，不参与 chat-time 判定；不要把 association 改成 government，不要关闭 `grounding_require_official_source`。
+
+## Phase C C3 最终验收（2026-08-13）
+
+本表只记录真实业务链结果；不得用 pending、fixture、Local provider 或直接数据库写入替代通过项。
+
+| Gate | Expected | Actual | Status |
+| --- | --- | --- | --- |
+| C3 qualified corpus | 100 government/official docs, valid non-corrupt region | 100 docs, 31 source rows, 10 domains | PASS-LIVE |
+| database totals | auditable persisted counts | documents 182; approved 101; rejected 34; pending 47; tasks 221; reviews 296; lineage 1053 | PASS-LIVE |
+| PostgreSQL/Qdrant | chunks equal direct exact points | 821 PostgreSQL chunks; Qdrant `odirag_chunks` green; exact count 821 | PASS-LIVE |
+| deduplication | approved URL/content hash duplicates zero | 0 / 0 | PASS-LIVE |
+| content and metadata | non-empty title/content, valid URL, region not null/`??`, indexed | all approved qualifying rows pass; word count 180–6408; zero approved docs without chunks | PASS-LIVE |
+| idempotent reindex | no duplicate points; cache reuse | document 181 reindex: 4 chunks, 4 cache hits, 0 new embeddings; Qdrant remained 821 | PASS-LIVE |
+| disk safety | stop if D: <50 GiB | D: 106.86 GiB free | PASS |
+| attachments/OCR | parsed attachment text | 123 downloaded, all parse pending; one requires OCR | **NOT ACCEPTED** |
+
+Tasks 210–221 initially failed together with `COZE_NETWORK_ERROR` after approximately 195 seconds. Serial retry recovered 210–218; 219–221 remain failed evidence and contributed no accepted documents. Source 39 retains a PowerShell 5.1 encoding error (`??`) as audit evidence and was excluded from the qualified count; it was not silently repaired. Sources 40–45 were verified in PostgreSQL with UTF-8 bytes before use.
+
+The final live regression is independently verified: five real retrieval hits, Direct `gpt-4.1-mini`, one exact citation, and safe refusal for no-evidence/adversarial questions. Backend `356 passed`; Ruff and mypy passed; frontend lint/type-check/Vitest `18/18`/build passed; Playwright `10 passed, 1 skipped`; eight Compose services healthy; PostgreSQL accepting, Redis `PONG`, Qdrant healthz 200, and 8080/API health 200. Black remains `UNVERIFIED-LOCAL` because the Windows executable hangs.
 
 已执行结果：
 
@@ -681,7 +700,7 @@ Push-Location backend
 Pop-Location
 ~~~
 
-Expected current result: `356 passed`; Ruff, Black and mypy pass. This gate verifies deterministic HTML candidate scoring, URL normalization, bounded pagination, direct-detail extraction, attachment/image/OCR metadata, SPA/API fallback, site rules, stable failure codes and strict Coze relative-resource normalization. A separate read-only public-URL smoke in the backend container currently returns `UnsafeUrlError` from the existing SSRF/public resolver for the tested government domains; do not weaken that resolver or count the smoke as live acceptance. This gate must not be counted as a real document or provider acceptance.
+Expected code gate: `356 passed`; Ruff and mypy pass. Black must also pass when the local executable is responsive; at the 2026-08-13 C3 checkpoint it hangs and is therefore **UNVERIFIED-LOCAL**, not a pass. This gate verifies deterministic HTML candidate scoring, URL normalization, bounded pagination, direct-detail extraction, attachment/image/OCR metadata, SPA/API fallback, site rules, stable failure codes and strict Coze relative-resource normalization. A separate read-only public-URL smoke in the backend container currently returns `UnsafeUrlError` from the existing SSRF/public resolver for the tested government domains; do not weaken that resolver or count the smoke as live acceptance. This gate must not be counted as a real document or provider acceptance.
 
 ### 11.2.2 Live C1 gate
 
@@ -696,21 +715,21 @@ Run each canary through the authenticated API with `max_pages=1` and `max_articl
 | 26 | 3 (KJT list) | article detail extraction followed by quality review | `1/1/1`, directory page rejected, quality `0.0` |
 | 27 | 2 (KJT detail) | strict detail contract | task failed, `COZE_CONTRACT_MISMATCH` |
 
-The historical pre-generalization baseline was 2 approved documents, 14 chunks and 14 Qdrant points. The three list-page canaries and one detail canary remain **BLOCKED-LIVE** evidence until a fresh invocation proves real detail expansion; task 27's historical relative-image contract error is now diagnosable and will only be re-evaluated by a new task. Do not create 100 speculative documents, use the local provider to inflate live counts, bypass manual review, or edit PostgreSQL directly. Stop C1 at the first requirement for manual Coze republish/API key/cloud action and report that exact blocker.
+The historical pre-generalization baseline was 2 approved documents, 14 chunks and 14 Qdrant points. **Historical status only:** the three list-page canaries and one detail canary were **BLOCKED-LIVE** until a fresh invocation proved real detail expansion; task 27's historical relative-image contract error remains immutable evidence. The later 2026-08-12 canary and 2026-08-13 C3 checkpoint supersede this stop condition. Do not create speculative documents, use the local provider to inflate live counts, bypass manual review, or edit PostgreSQL directly.
 
 #### 11.2.3 Post-generalization live checkpoint (2026-08-10)
 
 The backend rollout and local code gate passed, then tasks 28-34 were run through the authenticated API with `max_pages=1,max_articles=5`. Task 28 is the only new qualifying result: KJT detail `1/1/1`, strict response, manual approval, document 9, `government/official`, `region=四川省`, HTML word count 1619, quality 0.85. It generated 9 chunks and 9 real Qdrant points using `text-embedding-3-small`; a second reindex produced 9 cache hits and did not increase the direct Qdrant count (23). Its two attachments have `download_status=completed` but `parse_status=pending` and zero parsed text, so attachment parsing is not accepted.
 
-Tasks 29, 30 and 32 each returned a single directory-page document and were rejected. Tasks 31, 33 and 34 returned `0/0/0` with HTTP 200. Together with tasks 25-27, these are independent negative live results across KJT, JXT, MIIT and gov.cn. They do not satisfy C1 (10 approved documents from at least 2 sources). The exact blocker is the deployed Coze batch workflow: it must be republished/deployed with list/API detail expansion and the strict `BatchCrawlResult` contract. Until that external action occurs, mark C1/C2/C3 **BLOCKED-LIVE/PENDING**, do not use Local provider or fixtures to inflate counts, and do not modify prior task rows.
+Tasks 29, 30 and 32 each returned a single directory-page document and were rejected. Tasks 31, 33 and 34 returned `0/0/0` with HTTP 200. Together with tasks 25-27, these are independent negative live results across KJT, JXT, MIIT and gov.cn. **At this historical checkpoint they did not satisfy C1** (10 approved documents from at least 2 sources); the then-current Coze deployment required republish/deploy with list/API detail expansion and the strict `BatchCrawlResult` contract. That blocker was later resolved; current C1/C2/C3 status is recorded at the top of this checklist. No prior task rows were modified.
 
-Current persisted totals after this checkpoint: `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, `crawl_tasks=34`, `reviews=20`, `lineage=78`, `attachments=3`. Regression commands and expected results: backend full suite `356 passed`; `ruff check`, `black --check`, and `mypy` pass; frontend lint/type-check/Vitest `18 passed`/build pass; live Playwright against `http://127.0.0.1:8080` `1 passed`; all eight Compose services healthy. These checks do not turn the blocked corpus gate into a live pass.
+Current persisted totals **at this historical checkpoint** were `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, `crawl_tasks=34`, `reviews=20`, `lineage=78`, `attachments=3`. The later C3 table at the top is the current total. Historical regression commands recorded backend full suite `356 passed`, `ruff check`, `black --check`, and `mypy`; in the current C3 run Black is `UNVERIFIED-LOCAL` because the executable hangs. These checks did not turn the then-blocked corpus gate into a live pass.
 
 #### 11.2.4 Redeploy canary result (task 35)
 
-The same KJT notification column (`source_column_id=3`) was rerun after the reported Coze republish with `max_pages=1,max_articles=5`. The invocation was HTTP 200/completed and strict `batch_crawl`, but `articles_discovered=1`, `articles_fetched=1`, `articles[]=1`; the sole URL was the directory page `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, not a detail URL, and the quality decision was rejected (`0.0`). The URL deduplicated against an existing rejected document, so totals remain `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, Qdrant points `23`, and `crawl_tasks=35`. The canary threshold was not met; do not start C1/C2/C3 expansion until the deployed Coze workflow demonstrably emits at least two real detail URLs from this column.
+The same KJT notification column (`source_column_id=3`) was rerun after the reported Coze republish with `max_pages=1,max_articles=5`. **Historical result:** HTTP 200/completed and strict `batch_crawl`, but `articles_discovered=1`, `articles_fetched=1`, `articles[]=1`; the sole URL was the directory page `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, not a detail URL, and the quality decision was rejected (`0.0`). The URL deduplicated against an existing rejected document, so totals at that time remained `documents=10`, `approved=3`, `rejected=7`, `chunks=23`, Qdrant points `23`, and `crawl_tasks=35`. The canary threshold was not met then; the later five-article canary resolved it.
 
-Task 36 repeated the canary and inspected the persisted raw response. Raw `batch_result.articles` itself contained one item with `success=true` and no failed URLs, proving the missing articles were not dropped by local Pydantic normalization. The local API endpoint currently returns the single-directory result even after the reported console republish; treat this as an endpoint/deployment mismatch and stop until the deployed endpoint is corrected.
+Task 36 repeated the canary and inspected the persisted raw response. **Historical result:** raw `batch_result.articles` itself contained one item with `success=true` and no failed URLs, proving the missing articles were not dropped by local Pydantic normalization. This recorded the then-current endpoint/deployment mismatch; it was resolved by the later endpoint alignment and is not the current stop condition.
 
 Task 37 confirmed the request still used the intended KJT list URL, while the raw response remained one directory article. Its invocation endpoint/deployment identifiers match task 36 and both report `batch_crawl-v1`. Before resuming C1, synchronize the local runtime to the exact Coze endpoint/version whose HTTP response was verified in the console; do not change crawler code or bypass the `articles>=2` and distinct-detail-URL gate.
 
@@ -800,7 +819,7 @@ if ($null -eq $refusal -or -not $refusal.refused -or $refusal.cited_chunk_ids.Co
 
 Expected: every mode must record its actual retrieval mode and top-k. The selected `hybrid_rerank` report must retrieve the real official MIIT chunk, use Direct LLM only when evidence is sufficient, return a non-empty cited answer, and safely refuse the no-evidence question. When `ODIRAG_RERANK_PROVIDER=none`, a `rerank_provider_disabled` warning is correct degradation and must not be reported as remote-rerank acceptance. A two-question matrix is a live plumbing gate only; retain a larger human-reviewed corpus for release-quality and SLA conclusions.
 
-Actual local regression checkpoint (2026-08-10): backend `350 passed`; Ruff, Black (203 files), and mypy (155 source files) passed. Frontend lint, type-check, Vitest `18/18`, and production build passed; Playwright reported `10 passed, 1 skipped`. The skip is an explicit live-stack gate and is not reported as Live Acceptance. All eight Compose services were healthy, and 8080 root plus `/api/system/health` returned 200.
+Actual local regression checkpoint (2026-08-10, historical): backend `350 passed`; Ruff, Black (203 files), and mypy (155 source files) passed. Frontend lint, type-check, Vitest `18/18`, and production build passed; Playwright reported `10 passed, 1 skipped`. The skip is an explicit live-stack gate and is not reported as Live Acceptance. The current 2026-08-13 C3 regression supersedes this table and records Black as `UNVERIFIED-LOCAL` because the Windows executable hangs. All eight Compose services were healthy, and 8080 root plus `/api/system/health` returned 200.
 
 ## 12. Rerank provider
 
@@ -997,4 +1016,4 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 | scsia.org | task 14 HTTP 200/completed、strict schema、5 docs；doc 3 OCR v2 length 5358 accepted/approved/indexed；8 chunks/8 points；hybrid retrieval 5 hits | association source is correctly refused by official-only grounding；region metadata `??` breaks province auto-filter；two docs remain OCR_FAILED/rejected |
 | MIIT official | task 23 HTTP 200/completed、strict schema、1 doc accepted/approved/indexed；6 chunks/6 points；Hybrid 5 official hits；Direct answer 1 exact citation；zero-hit 与 non-empty irrelevant retrieval 均安全拒答 | Phase A PASS-LIVE；仍需 Phase B-F 的广泛评估与生产门禁 |
 
-因此知识库真实闭环结论为 **PASS-LIVE / 5/5**，Phase A Evidence Sufficiency 也为 **PASS-LIVE**。Phase B/D/E 已完成本地门禁，Phase F 已完成两题真实矩阵但不代表代表性质量评估。整体生产发布仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**：真实 remote rerank、Phase C 最多 100 篇阶段语料、Phase D Brave、region `??` 历史数据、生产 TLS/secret、CI/registry 和代表性 Phase F 评估仍未全部验收。
+因此知识库真实闭环结论为 **PASS-LIVE / 5/5**，Phase A Evidence Sufficiency 和 Phase C C1/C2/C3（100 篇合格官方文档、821 chunks/points）也为 **PASS-LIVE**。Phase B/D/E 已完成本地门禁，Phase F 已完成两题真实矩阵但不代表代表性质量评估。整体生产发布仍为 **NOT ACCEPTED / EXTERNAL ACCEPTANCE REQUIRED**：真实 remote rerank、Phase D Brave、region `??` 历史数据、附件解析/OCR、生产 TLS/secret、CI/registry 和代表性 Phase F 评估仍未全部验收。
