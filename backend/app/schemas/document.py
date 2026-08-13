@@ -40,13 +40,21 @@ class DocumentAttachmentResponse(BaseModel):
     local_path: str | None
     mime_type: str | None
     file_extension: str | None
+    file_type: str
     file_size: int | None
     file_hash: str | None
     download_status: str
     parse_status: str
     parsed_text: str | None
+    extracted_text_length: int
+    parser: str | None
     page_count: int | None
     requires_ocr: bool
+    ocr_status: str
+    ocr_provider: str | None
+    error_code: str | None
+    retryable: bool
+    parse_attempted_at: datetime | None
     error_message: str | None
     created_at: datetime
     updated_at: datetime
@@ -70,6 +78,21 @@ class DocumentReviewResponse(BaseModel):
     prompt_name: str | None
     prompt_version: str | None
     raw_response: str | None
+    created_at: datetime
+
+
+class DocumentMetadataCorrectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    field_name: str
+    old_value: str | None
+    new_value: str | None
+    status: str
+    reason: str
+    evidence_source: str | None
+    correction_key: str
     created_at: datetime
 
 
@@ -117,6 +140,7 @@ class DocumentDetailResponse(DocumentSummaryResponse):
     versions: list[DocumentVersionResponse] = Field(default_factory=list)
     attachments: list[DocumentAttachmentResponse] = Field(default_factory=list)
     reviews: list[DocumentReviewResponse] = Field(default_factory=list)
+    metadata_corrections: list[DocumentMetadataCorrectionResponse] = Field(default_factory=list)
 
 
 class DocumentUpdate(BaseModel):

@@ -211,6 +211,20 @@ Last updated: 2026-08-13
 
 ## Known Issues
 
+## Phase G checkpoint (2026-08-13)
+
+- **Data Debt Cleanup: PASS-LOCAL.** Migration `0009_attachment_parsing_audit` is applied to the real PostgreSQL database and `alembic check` reports no drift.
+- The cleanup did not create CrawlTasks, modify the approved Phase C corpus, change grounding, or alter source trust. `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE`, 101 approved documents, 821 chunks, and 821 Qdrant points remain the verified baseline.
+- Pending-review outcome: 0 automatic approvals, 1 deterministic hard rejection, 46 `HUMAN_REVIEW_REQUIRED`. This preserves the mandatory manual approval gate.
+- Attachment outcome: 123 terminal records, with 77 failed, 46 unsupported, 0 parsed, and 0 pending. The single OCR-required record is explicitly `OCR_UNAVAILABLE`; no text or OCR success was fabricated.
+- Historical metadata: 16 `region='??'` observations were written to immutable unresolved correction-audit rows; historical document values and the `scsia.org` association classification remain unchanged.
+- Verification: Phase G targeted tests 12 passed; full backend suite 364 passed; Ruff and mypy passed; eight Compose services are healthy; 8080 and dependency health returned 200/healthy.
+- Black remains **UNVERIFIED-LOCAL** because the Windows executable did not exit within a controlled 25-second check. D drive free space was 106.7 GiB, above the 50 GiB stop threshold.
+- Detailed evidence: [`DATA_QUALITY_REPORT.md`](DATA_QUALITY_REPORT.md).
+
+- **Phase H configuration audit:** current runtime selects deterministic rerank and has no remote rerank credential. Until a real remote call succeeds, status is `BLOCKED-EXTERNAL-RERANK-KEY`; deterministic results are not PASS-LIVE.
+- **Phase I configuration audit:** Brave is selected but its credential is absent. Status is `BLOCKED-EXTERNAL-BRAVE-KEY`; fixture contract tests are not PASS-LIVE.
+
 - Docker WSL data relocation remains intact on D drive with retained rollback evidence and no data deletion. As of the 2026-08-10 checkpoint Docker Desktop/Engine responds and all eight Compose services are healthy; backend/worker/scheduler use the same current image `sha256:b41a63d5b943f200304f9ee6a1d208d7fee62ff3920b4f77a19c97f5f0ccf163`. This is development evidence, not production TLS/secret/registry acceptance.
 - Real Coze batch, OpenAI embedding, and Direct LLM credentials are supplied only in the ignored local `.env`; they were never printed or committed. Embedding and the Direct strict AnswerResult provider call are live-verified. Brave, rerank, and production secret/TLS acceptance remain absent.
 - Git history contains implementation baseline `85d4bdb`, audit checkpoint `14bbf40`, and Docker recovery acceptance checkpoint `9cea9bd`. A clean reviewed release checkpoint, signed release tag, CI result, SBOM and registry provenance remain release gates.

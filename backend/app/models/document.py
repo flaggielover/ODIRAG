@@ -130,6 +130,9 @@ class Document(IdMixin, TimestampMixin, Base):
     reviews: Mapped[list[DocumentReview]] = relationship(
         back_populates="document", cascade="all, delete-orphan", passive_deletes=True
     )
+    metadata_corrections: Mapped[list[DocumentMetadataCorrection]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", passive_deletes=True
+    )
     structured_knowledge: Mapped[list[StructuredKnowledge]] = relationship(
         back_populates="document", cascade="all, delete-orphan", passive_deletes=True
     )
@@ -168,8 +171,10 @@ class Attachment(IdMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("file_size IS NULL OR file_size >= 0", name="file_size_nonnegative"),
         CheckConstraint("page_count IS NULL OR page_count >= 0", name="page_count_nonnegative"),
+        CheckConstraint("extracted_text_length >= 0", name="extracted_text_length_nonnegative"),
         Index("ix_attachments_document_download", "document_id", "download_status"),
         Index("ix_attachments_document_parse", "document_id", "parse_status"),
+        Index("ix_attachments_ocr_status", "ocr_status"),
     )
 
     document_id: Mapped[int] = mapped_column(
@@ -180,6 +185,9 @@ class Attachment(IdMixin, TimestampMixin, Base):
     local_path: Mapped[str | None] = mapped_column(String(4096))
     mime_type: Mapped[str | None] = mapped_column(String(255), index=True)
     file_extension: Mapped[str | None] = mapped_column(String(32), index=True)
+    file_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unknown", server_default="unknown", index=True
+    )
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     file_hash: Mapped[str | None] = mapped_column(String(128), index=True)
     download_status: Mapped[str] = mapped_column(
@@ -189,10 +197,23 @@ class Attachment(IdMixin, TimestampMixin, Base):
         String(32), nullable=False, default="pending", server_default="pending", index=True
     )
     parsed_text: Mapped[str | None] = mapped_column(Text)
+    extracted_text_length: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    parser: Mapped[str | None] = mapped_column(String(64))
     page_count: Mapped[int | None] = mapped_column(Integer)
     requires_ocr: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    ocr_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_required", server_default="not_required"
+    )
+    ocr_provider: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    retryable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    parse_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[str | None] = mapped_column(Text)
 
     document: Mapped[Document] = relationship(back_populates="attachments")
@@ -233,6 +254,39 @@ class DocumentReview(IdMixin, CreatedAtMixin, Base):
     raw_response: Mapped[str | None] = mapped_column(Text)
 
     document: Mapped[Document] = relationship(back_populates="reviews")
+
+
+class DocumentMetadataCorrection(IdMixin, CreatedAtMixin, Base):
+    """Immutable audit record for historical metadata observations/corrections.
+
+    A record may be ``unresolved`` when the original value is known to be bad but
+    no trustworthy replacement has been established.  The cleanup job never
+    mutates the document directly; applied corrections must go through the
+    versioning service and retain this audit record.
+    """
+
+    __tablename__ = "document_metadata_corrections"
+    __table_args__ = (
+        UniqueConstraint("correction_key", name="uq_document_metadata_corrections_key"),
+        CheckConstraint("status IN ('unresolved', 'applied', 'rejected')", name="status_valid"),
+        Index("ix_document_metadata_corrections_document", "document_id"),
+        Index("ix_document_metadata_corrections_status", "status"),
+    )
+
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    field_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    old_value: Mapped[str | None] = mapped_column(Text)
+    new_value: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unresolved", server_default="unresolved"
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_source: Mapped[str | None] = mapped_column(String(1024))
+    correction_key: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    document: Mapped[Document] = relationship(back_populates="metadata_corrections")
 
 
 class Chunk(IdMixin, TimestampMixin, Base):

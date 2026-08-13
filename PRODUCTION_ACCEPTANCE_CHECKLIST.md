@@ -995,6 +995,25 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 
 ## 15. 结束条件与当前结论
 
+### Phase G data-debt acceptance（2026-08-13 actual）
+
+- [x] Real PostgreSQL upgraded to `0009_attachment_parsing_audit`; `alembic check` returned `No new upgrade operations detected`.
+- [x] All 123 attachments reached a terminal audit state: 77 failed, 46 unsupported, 0 pending.
+- [x] No attachment/OCR success was fabricated; the one OCR-required case records `OCR_UNAVAILABLE`.
+- [x] Manual review gate preserved: auto-approved 0, deterministic hard-rejected 1, human review required 46.
+- [x] Sixteen historical `region='??'` values retained with unresolved immutable correction records; no silent update.
+- [x] Phase C accepted corpus retained: 101 approved documents, 821 chunks, Qdrant collection `odirag_chunks` with 821 points.
+- [x] Full backend regression: 364 passed; Ruff and mypy passed; eight Compose services healthy; 8080/health returned 200.
+- [ ] Black local gate: `UNVERIFIED-LOCAL` because the Windows executable exceeded the controlled 25-second timeout.
+- [ ] Attachment content recovery: `BLOCKED-EXTERNAL` until source bytes/OCR are available.
+- [ ] Remaining document decisions: `BLOCKED-HUMAN` for 46 records.
+
+### Phase H/I provider gates
+
+- [ ] Remote rerank: `BLOCKED-EXTERNAL-RERANK-KEY`; current deterministic provider must not be reported as remote live acceptance.
+- [ ] Brave discovery: `BLOCKED-EXTERNAL-BRAVE-KEY`; provider contract tests do not replace a real Brave response.
+- [x] Missing provider credentials do not stop independent Phase J-M engineering work.
+
 只有 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、frontend、Alembic 和所选真实 provider 全部 PASS-LIVE，且日志/trace/备份恢复证据已归档，才可把部署标为生产接受。
 
 ### 本机 development 栈证据（历史检查点；2026-08-09 当前补充）

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Attachment, DataLineage, Document, DocumentVersion
+from app.models import (
+    Attachment,
+    DataLineage,
+    Document,
+    DocumentMetadataCorrection,
+    DocumentReview,
+    DocumentVersion,
+)
 
 
 class DocumentRepository:
@@ -22,7 +31,7 @@ class DocumentRepository:
         source_id: int | None = None,
         query: str | None = None,
         limit: int = 100,
-    ) -> list[Document]:
+    ) -> builtins.list[Document]:
         statement = select(Document).options(selectinload(Document.source))
         if final_status is not None:
             statement = statement.where(Document.final_status == final_status)
@@ -44,7 +53,7 @@ class DocumentRepository:
         result = await self.session.execute(
             statement.order_by(Document.updated_at.desc(), Document.id.desc()).limit(limit)
         )
-        return list(result.scalars().all())
+        return builtins.list(result.scalars().all())
 
     async def get_detail(self, document_id: int) -> Document | None:
         result = await self.session.execute(
@@ -54,6 +63,7 @@ class DocumentRepository:
                 selectinload(Document.versions),
                 selectinload(Document.attachments),
                 selectinload(Document.reviews),
+                selectinload(Document.metadata_corrections),
             )
             .execution_options(populate_existing=True)
             .where(Document.id == document_id)
@@ -70,6 +80,74 @@ class DocumentRepository:
 
     async def get_attachment(self, attachment_id: int) -> Attachment | None:
         return await self.session.get(Attachment, attachment_id)
+
+    async def list_pending_attachments(
+        self, *, limit: int = 1000, include_incomplete_audit: bool = False
+    ) -> builtins.list[Attachment]:
+        predicate = Attachment.parse_status == "pending"
+        if include_incomplete_audit:
+            predicate = or_(
+                predicate,
+                Attachment.file_type.is_(None),
+                Attachment.parse_attempted_at.is_(None),
+                (
+                    Attachment.parse_status.in_(("failed", "unsupported"))
+                    & Attachment.error_code.is_(None)
+                ),
+            )
+        result = await self.session.scalars(
+            select(Attachment).where(predicate).order_by(Attachment.id).limit(limit)
+        )
+        return builtins.list(result.all())
+
+    async def list_pending_documents(self, *, limit: int = 1000) -> builtins.list[Document]:
+        result = await self.session.scalars(
+            select(Document)
+            .where(Document.final_status.in_(("pending", "pending_manual_review", "pending_llm")))
+            .options(selectinload(Document.attachments))
+            .order_by(Document.id)
+            .limit(limit)
+        )
+        return builtins.list(result.all())
+
+    async def list_invalid_region_documents(self, *, limit: int = 1000) -> builtins.list[Document]:
+        result = await self.session.scalars(
+            select(Document).where(Document.region == "??").order_by(Document.id).limit(limit)
+        )
+        return builtins.list(result.all())
+
+    async def has_review(self, document_id: int, review_type: str) -> bool:
+        review_id = await self.session.scalar(
+            select(DocumentReview.id)
+            .where(
+                DocumentReview.document_id == document_id,
+                DocumentReview.review_type == review_type,
+            )
+            .limit(1)
+        )
+        return review_id is not None
+
+    async def has_data_debt_review(self, document_id: int) -> bool:
+        return await self.has_review(document_id, "data_debt_audit")
+
+    async def add_review(self, review: DocumentReview) -> DocumentReview:
+        self.session.add(review)
+        await self.session.flush()
+        return review
+
+    async def add_metadata_correction_if_absent(
+        self, correction: DocumentMetadataCorrection
+    ) -> bool:
+        existing = await self.session.scalar(
+            select(DocumentMetadataCorrection.id).where(
+                DocumentMetadataCorrection.correction_key == correction.correction_key
+            )
+        )
+        if existing is not None:
+            return False
+        self.session.add(correction)
+        await self.session.flush()
+        return True
 
     async def version_count(self, document_id: int) -> int:
         count = await self.session.scalar(

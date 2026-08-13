@@ -56,7 +56,7 @@ class IndexRepository:
             select(Attachment)
             .where(
                 Attachment.document_id == document_id,
-                Attachment.parse_status == "completed",
+                Attachment.parse_status.in_({"completed", "parsed"}),
                 Attachment.parsed_text.is_not(None),
             )
             .order_by(Attachment.id)

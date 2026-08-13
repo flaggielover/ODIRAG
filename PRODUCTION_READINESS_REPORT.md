@@ -514,6 +514,16 @@ to the existing manual API path.
 
 ## 9. 最终本地验证
 
+## Phase G 数据质量检查点（2026-08-13）
+
+Phase G 在真实 PostgreSQL 上完成了 `0009_attachment_parsing_audit` 迁移和幂等清理。结果为 182 documents、101 approved、35 rejected、46 pending manual review、821 chunks。Qdrant 仍为 `odirag_chunks`，821 points；既有 5/5 PASS-LIVE 主链与 100 篇 Phase C 合格官方文档未被改动。
+
+123 个历史附件全部离开 `pending`：77 `failed`、46 `unsupported`、0 `parsed`。其中 76 个缺少本地下载字节，1 个需要 OCR 但当前无 OCR provider；这些是明确失败状态，不是解析成功。16 个 `region='??'` 仅新增不可变 `unresolved` correction audit，未修改历史记录。46 个文档仍需人工审核，系统没有用规则重放绕过人工门禁。
+
+本轮验证：backend 364 passed，Ruff PASS，mypy PASS，真实 PostgreSQL Alembic check PASS；Black Windows 25 秒控制运行仍不退出，标记 `UNVERIFIED-LOCAL`。八个 Compose 服务 healthy，8080 和 `/api/system/health` 返回 200，database/Redis/Qdrant healthy。D 盘可用 106.7 GiB。
+
+Remote rerank 当前 `configured=false` 且运行时 provider 为 deterministic，因此 Phase H 为 `BLOCKED-EXTERNAL-RERANK-KEY`，不能声称 remote PASS-LIVE。Brave provider 已实现但 `configured=false`，Phase I 为 `BLOCKED-EXTERNAL-BRAVE-KEY`。详见 [`DATA_QUALITY_REPORT.md`](DATA_QUALITY_REPORT.md)。
+
 以下表格是 2026-08-09 审计检查点的历史结果。2026-08-13 C3 最终回归以本报告顶部 C3 表为准；其中 pytest/Ruff/mypy 已重跑通过，Black 因 Windows 可执行文件和 import 卡死而是 **UNVERIFIED-LOCAL**，不能沿用下表的历史 PASS 作为本轮通过。
 
 | Check | Result | Boundary |

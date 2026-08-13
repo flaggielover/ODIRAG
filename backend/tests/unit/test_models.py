@@ -15,6 +15,7 @@ EXPECTED_TABLES = {
     "crawl_task_failures",
     "coze_invocations",
     "documents",
+    "document_metadata_corrections",
     "document_versions",
     "attachments",
     "document_reviews",
