@@ -524,6 +524,8 @@ Phase G 在真实 PostgreSQL 上完成了 `0009_attachment_parsing_audit` 迁移
 
 Remote rerank 当前 `configured=false`；真实 Compose backend provider 为 `none`，host development settings 为 deterministic，因此 Phase H 为 `BLOCKED-EXTERNAL-RERANK-KEY`，不能声称 remote PASS-LIVE。Provider 合同、超时、HTTP 错误、非法响应、错误脱敏、fail-open/fail-closed、metadata 与 retrieval 共 79 项测试通过。Brave provider 已实现但 `configured=false`，Phase I 为 `BLOCKED-EXTERNAL-BRAVE-KEY`；候选归一化、provider errors、content-gap、official validation、HTTPS/redirect defenses、manual approval/activation、retry/scheduler/API 共 25 项测试通过。没有创建真实 Brave run 或 CrawlTask，也没有把 fixture 结果标为 live。详见 [`DATA_QUALITY_REPORT.md`](DATA_QUALITY_REPORT.md)。
 
+Phase J 已从真实 approved/indexed official corpus 生成 100 条 `DRAFT_EVAL_SET`：93 个不同 document/chunk、11 个官方域名、18/18 类别覆盖、10 条安全/拒答案例。由于人工确认数为 0，状态是 `BLOCKED-HUMAN-EVAL-REVIEW`，`evaluation_results.json` 中所有正式质量指标保持 null。不能把历史一题/两题 plumbing gate 替代为代表性评测。详见 [`RAG_EVALUATION_REPORT.md`](RAG_EVALUATION_REPORT.md)。
+
 以下表格是 2026-08-09 审计检查点的历史结果。2026-08-13 C3 最终回归以本报告顶部 C3 表为准；其中 pytest/Ruff/mypy 已重跑通过，Black 因 Windows 可执行文件和 import 卡死而是 **UNVERIFIED-LOCAL**，不能沿用下表的历史 PASS 作为本轮通过。
 
 | Check | Result | Boundary |

@@ -1,0 +1,31 @@
+{
+  "blocker": "BLOCKED-HUMAN-EVAL-REVIEW",
+  "dataset_status": "DRAFT_EVAL_SET",
+  "human_verified_count": 0,
+  "metrics": {
+    "citation_accuracy": null,
+    "citation_precision": null,
+    "citation_recall": null,
+    "grounded_answer_rate": null,
+    "mrr": null,
+    "ndcg_at_10": null,
+    "ndcg_at_5": null,
+    "recall_at_10": null,
+    "recall_at_5": null,
+    "refusal_accuracy": null,
+    "unsupported_answer_rate": null
+  },
+  "notes": [
+    "Candidate questions are derived from real persisted official documents and chunks.",
+    "Metrics remain null until a human verifies questions, expected answers, and evidence.",
+    "Remote rerank is independently blocked by missing external credentials."
+  ],
+  "question_count": 100,
+  "retrieval_modes": [
+    "bm25",
+    "vector",
+    "hybrid",
+    "hybrid_rerank"
+  ],
+  "status": "NOT_RUN"
+}

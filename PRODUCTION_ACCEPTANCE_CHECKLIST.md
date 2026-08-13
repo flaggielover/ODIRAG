@@ -1014,6 +1014,15 @@ if ($trace.token_usage_json.measurement -eq 'not_available') { Write-Warning 'Pr
 - [ ] Brave discovery: `BLOCKED-EXTERNAL-BRAVE-KEY`; provider contract tests do not replace a real Brave response. Source-discovery contract/security/manual-gate regression: 25 passed.
 - [x] Missing provider credentials do not stop independent Phase J-M engineering work.
 
+### Phase J formal evaluation gate
+
+- [x] Generated 100 candidate cases from real approved/indexed official PostgreSQL documents and chunks.
+- [x] Positive cases include real document ID, source URL and chunk ID; 93 distinct document/chunk identities and 11 official domains are represented.
+- [x] All 18 required fact, temporal, regional, attachment/OCR, multi-document, refusal and adversarial categories are represented.
+- [x] Dataset is explicitly `DRAFT_EVAL_SET`; `human_verified_count=0`; formal metrics are null in `evaluation_results.json`.
+- [ ] Human verification of question, expected answer, evidence identities, refusal expectation, region and temporal constraint: `BLOCKED-HUMAN-EVAL-REVIEW`.
+- [ ] Four-mode formal matrix with remote rerank: also depends on `BLOCKED-EXTERNAL-RERANK-KEY`.
+
 只有 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、frontend、Alembic 和所选真实 provider 全部 PASS-LIVE，且日志/trace/备份恢复证据已归档，才可把部署标为生产接受。
 
 ### 本机 development 栈证据（历史检查点；2026-08-09 当前补充）
