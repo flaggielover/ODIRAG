@@ -1,5 +1,4 @@
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -321,19 +320,16 @@ def test_compose_csv_trusted_proxy_environment_regression(
     assert settings.trusted_proxy_ips == ["172.30.0.10", "10.0.0.0/8"]
 
 
-def test_dotenv_csv_trusted_proxy_environment_regression() -> None:
-    env_file = Path(".tmp") / f"config-compat-{uuid4().hex}.env"
-    try:
-        env_file.write_text(
-            "ODIRAG_TRUSTED_PROXY_IPS= 172.30.0.10 , 10.0.0.0/8 \n",
-            encoding="utf-8",
-        )
+def test_dotenv_csv_trusted_proxy_environment_regression(tmp_path: Path) -> None:
+    env_file = tmp_path / "config-compat.env"
+    env_file.write_text(
+        "ODIRAG_TRUSTED_PROXY_IPS= 172.30.0.10 , 10.0.0.0/8 \n",
+        encoding="utf-8",
+    )
 
-        settings = Settings(_env_file=env_file)
+    settings = Settings(_env_file=env_file)
 
-        assert settings.trusted_proxy_ips == ["172.30.0.10", "10.0.0.0/8"]
-    finally:
-        env_file.unlink(missing_ok=True)
+    assert settings.trusted_proxy_ips == ["172.30.0.10", "10.0.0.0/8"]
 
 
 @pytest.mark.parametrize(
