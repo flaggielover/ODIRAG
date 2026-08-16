@@ -9,6 +9,8 @@ from app.parsers.base import ParsedArtifact, ParsedTable, table_to_markdown
 
 
 class XlsxParser:
+    version = "1"
+
     def __init__(self, *, max_rows_per_sheet: int = 10_000) -> None:
         self.max_rows_per_sheet = max_rows_per_sheet
 

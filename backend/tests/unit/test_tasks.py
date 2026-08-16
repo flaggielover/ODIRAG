@@ -102,7 +102,11 @@ async def test_gap_scan_queues_only_new_gaps(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(source_discovery_tasks, "DatabaseManager", FakeDatabase)
     monkeypatch.setattr(source_discovery_tasks, "SourceDiscoveryRepository", FakeRepository)
     monkeypatch.setattr(source_discovery_tasks, "SourceDiscoveryService", FakeService)
-    monkeypatch.setattr(source_discovery_tasks, "HttpFetcher", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        source_discovery_tasks,
+        "build_source_discovery_fetcher",
+        lambda *_args, **_kwargs: object(),
+    )
     monkeypatch.setattr(
         source_discovery_tasks.celery_app,
         "send_task",

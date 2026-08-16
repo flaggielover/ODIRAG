@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-qdrant",
+  "title": "QDRANT_OVERVIEW",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"type":"stat","title":"Active points","gridPos":{"h":6,"w":8,"x":0,"y":0},"targets":[{"expr":"odirag_qdrant_collection_points{collection=\"odirag_chunks_bailian_v4\"}"}]},
+    {"type":"timeseries","title":"Request rate","gridPos":{"h":8,"w":16,"x":8,"y":0},"targets":[{"expr":"sum(rate(rest_responses_total[5m]))","legendFormat":"requests/s"}]},
+    {"type":"timeseries","title":"Request latency","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (le) (rate(rest_responses_duration_seconds_bucket[5m])))","legendFormat":"P95"}]},
+    {"type":"table","title":"Collection points","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"odirag_qdrant_collection_points","format":"table","instant":true}]}
+  ]
+}

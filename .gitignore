@@ -10,6 +10,7 @@ env/
 .tmp/
 backend/.mypy_cache/
 backend/.pytest_cache/
+.pytest_cache/
 backend/pytest-cache-files-*/
 backend/.pytest-tmp-*/
 backend/.test-data/
@@ -45,18 +46,34 @@ data/raw/*
 data/parsed/*
 data/attachments/*
 data/reports/*
-data/evaluation/runs/*
 data/experiments/runs/*
 data/indexes/*
 data/load-tests/*
+data/evaluation/*
+data/performance/*
 !data/raw/.gitkeep
 !data/parsed/.gitkeep
 !data/attachments/.gitkeep
 !data/reports/.gitkeep
+!data/evaluation/demo_benchmark.yaml
+!data/evaluation/evaluation_results.json
+!data/evaluation/phase_j_draft.json
+!data/evaluation/phase_ab_benchmark.json
+!data/evaluation/runs/
+data/evaluation/runs/*
 !data/evaluation/runs/.gitkeep
 !data/experiments/runs/.gitkeep
 !data/indexes/.gitkeep
 !data/load-tests/.gitkeep
+
+# Production backups, release artifacts, and recovery output
+artifacts/
+backups/
+*.backup
+*.dump
+*.sql.gz
+*.tar.zst
+*.tgz
 
 # Local service state and logs
 *.log
@@ -64,6 +81,8 @@ data/load-tests/*
 *.sqlite3
 *.db
 .docker/
+.pytest-tmp/
+pytest-cache-files-*/
 
 # OS/editor files
 .DS_Store

@@ -1,0 +1,17 @@
+groups:
+  - name: odirag-containers
+    rules:
+      - alert: ContainerDown
+        expr: odirag_container_running{stack="application"} == 0
+        for: 2m
+        labels: {severity: critical, service: container}
+        annotations:
+          summary: Production container metrics disappeared
+          description: No production container metrics are visible; inspect Docker and cAdvisor.
+      - alert: ContainerRestartLoop
+        expr: increase(odirag_container_restarts_total{stack="application"}[15m]) > 3
+        for: 5m
+        labels: {severity: warning, service: container}
+        annotations:
+          summary: Production container is restarting repeatedly
+          description: A production container restarted more than three times in fifteen minutes.

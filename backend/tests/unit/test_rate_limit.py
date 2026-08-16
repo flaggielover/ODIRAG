@@ -63,7 +63,9 @@ class FakeRedis:
 async def test_redis_fixed_window_limiter_uses_shared_counter() -> None:
     redis = FakeRedis()
     limiter = RedisFixedWindowRateLimiter(
-        "redis://unused/0", client=redis, clock=lambda: 1.0  # type: ignore[arg-type]
+        "redis://unused/0",
+        client=redis,
+        clock=lambda: 1.0,  # type: ignore[arg-type]
     )
 
     first = await limiter.check("auth:ip:test", limit=1, window_seconds=60)
@@ -139,7 +141,9 @@ class BrokenRedis(FakeRedis):
 
 async def test_redis_limiter_fails_closed_when_backend_is_unavailable() -> None:
     limiter = RedisFixedWindowRateLimiter(
-        "redis://unused/0", client=BrokenRedis(), clock=lambda: 1.0  # type: ignore[arg-type]
+        "redis://unused/0",
+        client=BrokenRedis(),
+        clock=lambda: 1.0,  # type: ignore[arg-type]
     )
 
     with pytest.raises(RateLimitBackendUnavailable):

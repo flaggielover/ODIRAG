@@ -136,7 +136,6 @@ class EvaluationApplicationService:
         run_metadata: dict[str, object] | None = None,
         additional_filters: dict[str, Any] | None = None,
     ) -> EvaluationRun:
-
         run = await self.repository.create_run(
             EvaluationRun(
                 run_name=request.run_name,
@@ -365,6 +364,15 @@ class _ChatEvaluationAdapter:
                 "conflicts": list(answer.conflicts),
                 "outdated": list(answer.outdated),
                 "hallucination_method": "citation_quote_binding_v1",
+                "selected_context_chunk_ids": list(answer.selected_context_chunk_ids),
+                "generated_answer": answer.generated_answer,
+                "generated_cited_chunk_ids": list(answer.generated_cited_chunk_ids),
+                "answer_support_validated": answer.answer_support_validated,
+                "answer_validation_decision": (
+                    answer.answer_validation_decision.as_dict()
+                    if answer.answer_validation_decision is not None
+                    else None
+                ),
             },
             # The evaluation metric deliberately does not consume the ChatService
             # gate result; it independently checks citation-bound claims below.

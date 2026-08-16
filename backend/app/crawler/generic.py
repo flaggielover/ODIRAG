@@ -596,11 +596,12 @@ class GenericCrawler:
             date_selector,
             ("time", "meta[property='article:published_time']", ".date", ".time"),
         )
-        publish_date = (
-            _tag_value(date_element, "content")
-            if date_element is not None and date_element.name == "meta"
-            else date_element.get_text(" ", strip=True) if date_element is not None else None
-        )
+        if date_element is None:
+            publish_date = None
+        elif date_element.name == "meta":
+            publish_date = _tag_value(date_element, "content")
+        else:
+            publish_date = date_element.get_text(" ", strip=True)
         attachment_selector = _optional_selector(selectors, "attachment") or "a[href]"
         attachments: list[CrawledAttachment] = []
         seen_attachments: set[str] = set()

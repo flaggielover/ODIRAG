@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urljoin
@@ -21,6 +22,7 @@ class FetchResponse:
     content: bytes
     content_type: str
     encoding: str
+    content_disposition: str | None = None
 
     @property
     def text(self) -> str:
@@ -48,6 +50,7 @@ class HttpFetcher:
         max_redirects: int = 5,
         user_agent: str = "ODIRAG/0.1 (+official-document-crawler)",
         client: httpx.AsyncClient | None = None,
+        client_factory: Callable[[], httpx.AsyncClient] | None = None,
         resolver: HostResolver | None = None,
     ) -> None:
         if timeout_seconds <= 0:
@@ -61,6 +64,7 @@ class HttpFetcher:
         self.max_redirects = max_redirects
         self.user_agent = user_agent
         self._client = client
+        self._client_factory = client_factory
         self._resolver = resolver
 
     @retry(
@@ -71,10 +75,14 @@ class HttpFetcher:
     )
     async def fetch(self, url: str) -> FetchResponse:
         owns_client = self._client is None
-        client = self._client or httpx.AsyncClient(
-            timeout=self.timeout_seconds,
-            follow_redirects=False,
-            headers={"User-Agent": self.user_agent, "Accept": "*/*"},
+        client = self._client or (
+            self._client_factory()
+            if self._client_factory is not None
+            else httpx.AsyncClient(
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
+                headers={"User-Agent": self.user_agent, "Accept": "*/*"},
+            )
         )
         try:
             current_url = url
@@ -110,6 +118,7 @@ class HttpFetcher:
                         content=content,
                         content_type=content_type.split(";", 1)[0].strip().lower(),
                         encoding=encoding,
+                        content_disposition=response.headers.get("content-disposition"),
                     )
             raise RedirectLimitError("response exceeded the redirect limit")
         finally:

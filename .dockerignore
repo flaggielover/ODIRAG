@@ -21,11 +21,38 @@
 **/.vite
 **/coverage
 
+# Runtime and evidence data are provided through named volumes, never builds.
+data
+artifacts
+playwright-report
+test-results
+*.sqlite
+*.sqlite3
+
+# Production runtime secrets live outside the source tree.
+deploy/production/secrets/*
+!deploy/production/secrets/.gitignore
+!deploy/production/secrets/README.md
+
+# Reports and local planning evidence are not runtime dependencies.
+*_REPORT.md
+PHASE_1_EXECUTION_PLAN.md
+PRODUCTION_ACCEPTANCE_CHECKLIST.md
+PRODUCTION_READINESS_REPORT.md
+IMPLEMENTATION_STATUS.md
+docs
+
 **/.env
 **/.env.*
 !**/.env.example
 
 backend/tests
+
+.pytest-tmp
+pytest-cache-files-*
+.pytest-phase5-audit
+.tmp
+.test-data
 
 *.log
 .DS_Store

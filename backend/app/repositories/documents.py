@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -80,6 +80,34 @@ class DocumentRepository:
 
     async def get_attachment(self, attachment_id: int) -> Attachment | None:
         return await self.session.get(Attachment, attachment_id)
+
+    async def list_attachment_processing_batch(
+        self,
+        *,
+        limit: int,
+        attachment_ids: builtins.list[int] | None = None,
+        eligible_only: bool = False,
+    ) -> builtins.list[Attachment]:
+        query = select(Attachment).order_by(Attachment.id).limit(limit)
+        if attachment_ids is not None:
+            query = query.where(Attachment.id.in_(attachment_ids))
+        if eligible_only:
+            query = query.where(
+                or_(
+                    Attachment.parse_status == "pending",
+                    Attachment.retryable.is_(True),
+                    and_(
+                        Attachment.download_error_code == "DOWNLOAD_SSRF_BLOCKED",
+                        Attachment.processed_at.is_(None),
+                    ),
+                    and_(
+                        Attachment.requires_ocr.is_(True),
+                        Attachment.processed_at.is_(None),
+                    ),
+                )
+            )
+        result = await self.session.scalars(query)
+        return builtins.list(result.all())
 
     async def list_pending_attachments(
         self, *, limit: int = 1000, include_incomplete_audit: bool = False

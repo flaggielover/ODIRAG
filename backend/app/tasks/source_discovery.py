@@ -5,11 +5,10 @@ import asyncio
 import structlog
 
 from app.config import get_settings
-from app.crawler import HttpFetcher
 from app.database.session import DatabaseManager
 from app.repositories.source_discovery import SourceDiscoveryRepository
 from app.schemas.source_discovery import SourceDiscoveryRunCreate
-from app.services.source_discovery import SourceDiscoveryService
+from app.services.source_discovery import SourceDiscoveryService, build_source_discovery_fetcher
 from app.tasks.celery_app import celery_app
 
 logger = structlog.get_logger(__name__)
@@ -39,11 +38,8 @@ async def _run(run_id: int) -> dict[str, int | str]:
             service = SourceDiscoveryService(
                 SourceDiscoveryRepository(session),
                 settings,
-                fetcher=HttpFetcher(
-                    timeout_seconds=settings.crawler_timeout_seconds,
-                    max_bytes=min(settings.max_download_bytes, 4 * 1024 * 1024),
-                    max_redirects=settings.crawler_max_redirects,
-                    user_agent="ODIRAG/0.1 source-discovery-worker",
+                fetcher=build_source_discovery_fetcher(
+                    settings, user_agent="ODIRAG/0.1 source-discovery-worker"
                 ),
             )
             run = await service.execute(run_id)
@@ -73,11 +69,8 @@ async def _scan_gaps() -> dict[str, int | str]:
             service = SourceDiscoveryService(
                 repository,
                 settings,
-                fetcher=HttpFetcher(
-                    timeout_seconds=settings.crawler_timeout_seconds,
-                    max_bytes=min(settings.max_download_bytes, 4 * 1024 * 1024),
-                    max_redirects=settings.crawler_max_redirects,
-                    user_agent="ODIRAG/0.1 source-discovery-scheduler",
+                fetcher=build_source_discovery_fetcher(
+                    settings, user_agent="ODIRAG/0.1 source-discovery-scheduler"
                 ),
             )
             created = queued = skipped = no_gap = failed = 0

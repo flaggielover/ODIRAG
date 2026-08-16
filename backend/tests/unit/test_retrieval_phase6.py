@@ -31,7 +31,7 @@ def test_query_analysis_infers_dates_and_canonical_region() -> None:
     )
     assert analysis.inferred_filters == {
         "publish_date_gte": "2026-01-01",
-        "region": "四川",
+        "region": "四川省",
     }
     assert analysis.applied_filters["document_type"] == "产业政策"
     with pytest.raises(ValueError, match="unsupported metadata filters"):
@@ -53,7 +53,7 @@ async def test_all_retrieval_modes_emit_complete_trace() -> None:
                 content,
                 "软件政策",
                 "https://example.gov/policy",
-                {"region": "四川", "publish_date": "2026-02-01"},
+                {"region": "四川省", "publish_date": "2026-02-01"},
             )
         ]
     )
@@ -66,7 +66,7 @@ async def test_all_retrieval_modes_emit_complete_trace() -> None:
                 "软件政策",
                 content,
                 "https://example.gov/policy",
-                {"region": "四川", "publish_date": "2026-02-01"},
+                {"region": "四川省", "publish_date": "2026-02-01"},
             )
         ]
     )
@@ -86,7 +86,7 @@ async def test_all_retrieval_modes_emit_complete_trace() -> None:
         assert trace.trace_id
         assert trace.final_results
         assert trace.timings_ms["total"] >= 0
-        assert trace.analysis.applied_filters["region"] == "四川"
+        assert trace.analysis.applied_filters["region"] == "四川省"
         if mode is RetrievalMode.HYBRID_RERANK:
             assert trace.warnings == ("rerank_provider_disabled",)
 

@@ -1,0 +1,59 @@
+groups:
+  - name: odirag-host
+    rules:
+      - alert: HostDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels: {severity: critical, service: host}
+        annotations:
+          summary: Host exporter is unreachable
+          description: node_exporter has been unavailable for more than two minutes.
+      - alert: HighCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels: {severity: warning, service: host}
+        annotations:
+          summary: Host CPU utilization is high
+          description: CPU utilization has exceeded 85 percent for ten minutes.
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+        for: 10m
+        labels: {severity: warning, service: host}
+        annotations:
+          summary: Host memory utilization is high
+          description: Memory utilization has exceeded 85 percent for ten minutes.
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+        for: 10m
+        labels: {severity: warning, service: host}
+        annotations:
+          summary: Filesystem free space is low
+          description: A non-temporary filesystem has less than 15 percent free space.
+      - alert: FilesystemCritical
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.05
+        for: 5m
+        labels: {severity: critical, service: host}
+        annotations:
+          summary: Filesystem free space is critical
+          description: A non-temporary filesystem has less than 5 percent free space.
+      - alert: TextfileMetricsStale
+        expr: time() - odirag_textfile_last_success_timestamp_seconds > 180
+        for: 2m
+        labels: {severity: warning, service: monitoring}
+        annotations:
+          summary: Production textfile metrics are stale
+          description: The bounded production collector has not published successfully for more than three minutes.
+      - alert: TextfileMetricsMissing
+        expr: absent(odirag_textfile_last_success_timestamp_seconds)
+        for: 2m
+        labels: {severity: warning, service: monitoring}
+        annotations:
+          summary: Production textfile metrics are missing
+          description: Node exporter has not exposed the bounded production textfile collector timestamp.
+      - alert: TextfileDependencyCollectorFailed
+        expr: odirag_textfile_collector_success == 0
+        for: 2m
+        labels: {severity: warning, service: monitoring}
+        annotations:
+          summary: A production textfile dependency collector failed
+          description: The fixed-label Qdrant or PostgreSQL collector could not refresh its metrics.

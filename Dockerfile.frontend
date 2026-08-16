@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG NODE_IMAGE=node:22-alpine
-ARG NGINX_IMAGE=nginx:1.30.4-alpine-slim
+ARG NODE_IMAGE=node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+ARG NGINX_IMAGE=nginx:1.30.4-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c
 
 FROM ${NODE_IMAGE} AS builder
 
@@ -15,6 +15,17 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build
 
 FROM ${NGINX_IMAGE} AS runtime
+
+ARG ODIRAG_SOURCE_REVISION=unknown
+ARG ODIRAG_RELEASE=development
+ARG ODIRAG_BUILD_CREATED=unknown
+ARG ODIRAG_SOURCE_URL=https://github.com/flaggielover/ODIRAG
+
+LABEL org.opencontainers.image.source="${ODIRAG_SOURCE_URL}" \
+      org.opencontainers.image.revision="${ODIRAG_SOURCE_REVISION}" \
+      org.opencontainers.image.version="${ODIRAG_RELEASE}" \
+      org.opencontainers.image.created="${ODIRAG_BUILD_CREATED}" \
+      org.opencontainers.image.title="ODIRAG frontend"
 
 COPY deployment/frontend.nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html

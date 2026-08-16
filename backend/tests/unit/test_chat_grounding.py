@@ -7,7 +7,7 @@ import pytest
 from app.bm25 import BM25Document, BM25Index
 from app.embedding import DeterministicEmbeddingProvider
 from app.llm import AnswerResult
-from app.providers import ProviderResponseError
+from app.providers import ProviderResponseError, ProviderUnavailableError
 from app.rag import EvidenceSufficiencyGate, GroundingService
 from app.rerank import NoRerankProvider
 from app.retrieval import RetrievalEngine
@@ -52,10 +52,40 @@ class StubLLM:
         return self.result
 
 
+class CaptureRecorder:
+    def __init__(self) -> None:
+        self.provider_events: list[tuple[str, str, str, str]] = []
+        self.stage_events: list[tuple[str, str, str]] = []
+
+    def record_provider(
+        self,
+        provider: str,
+        operation: str,
+        outcome: str,
+        duration_seconds: float,
+        *,
+        error_category: str | None = None,
+    ) -> None:
+        assert duration_seconds >= 0
+        self.provider_events.append((provider, operation, outcome, error_category or "none"))
+
+    def record_rag_stage(
+        self,
+        stage: str,
+        outcome: str,
+        duration_seconds: float,
+        *,
+        error_category: str | None = None,
+    ) -> None:
+        assert duration_seconds >= 0
+        self.stage_events.append((stage, outcome, error_category or "none"))
+
+
 async def _service(
     result: AnswerResult,
     *,
     documents: list[tuple[str, str, str, str]] | None = None,
+    recorder: CaptureRecorder | None = None,
 ) -> ChatService:
     documents = documents or [
         (
@@ -110,11 +140,13 @@ async def _service(
             embedding_provider=embedding,
             vector_store=vector_store,
             rerank_provider=NoRerankProvider(),
+            recorder=recorder,
         ),
         EvidenceSufficiencyGate(),
         GroundingService(),
         orchestrator=llm,
         prompt="Use only evidence",
+        recorder=recorder,
     )
 
 
@@ -130,6 +162,8 @@ async def test_llm_answer_uses_only_stored_citations_and_urls() -> None:
     assert not answer.refusal
     assert answer.citations[0].chunk_id == "chunk-1"
     assert answer.citations[0].url == "https://example.gov/policy"
+    assert answer.selected_context_chunk_ids == ("chunk-1",)
+    assert answer.generated_cited_chunk_ids == ("chunk-1",)
 
 
 @pytest.mark.asyncio
@@ -150,6 +184,22 @@ async def test_chat_trace_persists_provider_usage_and_cost() -> None:
         "cost_measurement": "provider_reported",
     }
     assert trace.cost == Decimal("0.0007")
+    expected_stages = {
+        "query_routing",
+        "retrieval_analysis",
+        "retrieval_bm25",
+        "retrieval_embedding",
+        "retrieval_vector",
+        "retrieval_fusion",
+        "retrieval_total",
+        "evidence_gate",
+        "grounding",
+        "direct_llm",
+        "citation_validation",
+        "total",
+    }
+    assert expected_stages <= trace.stage_timings_json.keys()
+    assert all(trace.stage_timings_json[stage] >= 0 for stage in expected_stages)
 
 
 @pytest.mark.asyncio
@@ -222,6 +272,7 @@ async def test_llm_receives_only_gate_supported_hits() -> None:
 
     assert not answer.refusal
     assert [item["chunk_id"] for item in service.orchestrator.contexts[0]] == ["supported"]
+    assert service.orchestrator.contexts[0][0]["metadata"]["publish_date"] == "2026-02-01"
 
 
 @pytest.mark.asyncio
@@ -245,3 +296,58 @@ async def test_answer_with_value_absent_from_citation_becomes_safe_refusal() -> 
     assert answer.citations == ()
     assert answer.answer_support_validated is False
     assert service.orchestrator.calls == 1
+    assert answer.generated_answer == "软件企业研发补助比例为80%。"
+    assert answer.generated_cited_chunk_ids == ("ratio",)
+    assert answer.selected_context_chunk_ids == ("ratio",)
+    trace = service.repository.trace
+    assert trace.evidence_decision_json["generated_answer"] == "软件企业研发补助比例为80%。"
+    assert trace.evidence_decision_json["generated_cited_chunk_ids"] == ["ratio"]
+    assert trace.evidence_decision_json["selected_context_chunk_ids"] == ["ratio"]
+    assert trace.evidence_decision_json["answer_validation_decision"] == {
+        "sufficient": False,
+        "confidence": 0.0,
+        "reason": "answer_contains_unsupported_exact_values",
+        "supported_chunk_ids": [],
+        "unsupported_aspects": ["80%"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_invalid_model_contract_becomes_a_safe_refusal() -> None:
+    service = await _service(AnswerResult(answer="不会被使用", cited_chunk_ids=["chunk-1"]))
+
+    async def invalid_output(**_kwargs):
+        raise ProviderResponseError("direct_llm", "invalid structured output")
+
+    service.orchestrator.generate_answer = invalid_output
+    answer = await service.answer("软件企业有哪些研发支持措施？")
+
+    assert answer.refusal
+    assert answer.refusal_reasons == ("model_output_invalid",)
+    assert answer.citations == ()
+
+
+@pytest.mark.asyncio
+async def test_direct_llm_failure_is_counted_before_trace_persistence() -> None:
+    recorder = CaptureRecorder()
+    service = await _service(
+        AnswerResult(answer="unused", cited_chunk_ids=["chunk-1"]),
+        recorder=recorder,
+    )
+
+    async def unavailable_output(**_kwargs):
+        raise ProviderUnavailableError("direct_llm", "request_timeout")
+
+    service.orchestrator.generate_answer = unavailable_output
+    vector_store = service.retrieval_engine.vector_store
+    assert isinstance(vector_store, InMemoryVectorStore)
+    query = next(iter(vector_store._points.values())).content
+
+    with pytest.raises(ProviderUnavailableError, match="request_timeout"):
+        await service.answer(query)
+
+    assert service.repository.trace is None
+    assert ("stub_llm", "generate_answer", "error", "timeout") in (recorder.provider_events)
+    assert ("direct_llm", "error", "timeout") in recorder.stage_events
+    assert ("end_to_end", "error", "timeout") in recorder.stage_events
+    assert ("error", "error", "timeout") in recorder.stage_events

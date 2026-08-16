@@ -1,30 +1,332 @@
 # ODIRAG Implementation Status
 
-Last updated: 2026-08-13
+## Attachment / OCR Production Closure (2026-08-15, latest authoritative)
 
-## Current Phase
+This section supersedes older attachment counts, attachment acceptance decisions,
+backend-test totals, backend image runtime, and Alembic head values below. Gold,
+RAG, P95, Remote Rerank, and Brave results remain frozen.
 
-- Phase: Production strengthening Phases A-F complete with recorded limits; Phase C multi-article canary, C1=10, C2=50 and C3=100 are PASS-LIVE
-- Status: **KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 and EVIDENCE_SUFFICIENCY=PASS-LIVE.** The accepted MIIT path remains intact. A deterministic fail-closed gate now separates retrieval/rerank from grounding, restricts LLM context and citations to supported chunks, validates exact answer values against cited evidence, persists its decision, and prevents non-empty but irrelevant retrieval from becoming an answer.
-- Next Action: Preserve the 100-document Phase C checkpoint and continue only the remaining external production gates: remote rerank, Brave-backed source discovery, representative human evaluation, target TLS/secrets, disaster recovery, CI/registry provenance and attachment parsing/OCR coverage. Do not lower quality/grounding thresholds, count pending documents, or rewrite historical rows.
+- Real current state: attachments `123`; parsed `60`; failed `8`; unsupported
+  `55`; pending `0`; terminal rate `100%`.
+- Download attempt coverage is `123/123`; status-completed `115`; byte-verified
+  success `70`; local files `69`; failure `8`, all real `DOWNLOAD_HTTP_404`.
+- True parser-format denominator is `67`: PDF `46/53`, DOCX `13/13`, XLSX
+  `1/1`; end-to-end parsing coverage is `60/67 = 89.55%`. All 60 files that
+  reached a supported parser succeeded.
+- Nine incorrect DOCX MIME responses contained OLE legacy bytes and are now
+  terminal `UNSUPPORTED_LEGACY_FORMAT`, not parser failures.
+- OCR provider is not configured. One image remains OCR-eligible but its source is
+  HTTP 404, so actual OCR attempts/success are `0/0`; `ATTACHMENT_OCR=PARTIAL`.
+- Parsed provenance is complete `60/60`; directed quality sampling passed `10/10`.
+  The attachment volume has 69 files and zero temporary-file residue.
+- Text-attachment repeat processing is a real cache hit with unchanged byte hash,
+  parse timestamp, processed timestamp, and extracted length. No attachment chunks
+  or Qdrant points were added.
+- Final regression is pytest `518/518`; Ruff check PASS; Ruff format `245/245`;
+  mypy `169` files; compileall and Alembic check PASS. Black `--version` reached
+  the bounded 30-second Windows timeout with no residual process.
+- Backend, worker, and scheduler all run final image
+  `sha256:6d1b89444b4ef9fda3885521f6e3fbbee61c0a8fc41e3dd450352dfcd0cbacb9`;
+  all 8 Compose services and API dependencies are healthy. Alembic is
+  `0012_attachment_processing_audit (head)` with no drift.
+- Frozen core remains documents `182`, approved `101`, rejected `35`, pending
+  `46`, chunks `821`, Qdrant green/`821`; Gold artifact hashes are unchanged.
+- Detailed evidence: `ATTACHMENT_BASELINE_REPORT.md` and
+  `ATTACHMENT_OCR_REPORT.md`.
+
+## Final Gold Quality Closure (2026-08-15, latest authoritative)
+
+This section supersedes older Gold metrics, quality-guard results, image IDs,
+backend-test counts, and migration status below where they differ.
+
+- Checkpoint restore completed with the dirty working tree and every volume
+  preserved. Final `odirag/backend:local` manifest list is
+  `sha256:70b8e21a15aa2b2f1f3fccfccb56ce6aa3e68d36b1119384d43e59632e55f7c5`;
+  backend, worker, and scheduler run that same image and are healthy.
+- Final Live Guard run 15: supported `14 answer / 9 refuse`, with `14/14`
+  answered cases grounded; Gold refusal `10/10`, citations `0`, unsupported
+  answers `0`, and errors `0`. QA14 is `5/8`, hence
+  `QUALITY_GUARD=FAIL-LIVE-QUALITY` while refusal safety is PASS.
+- Final Gold run 16: 100/100, zero execution errors. Recall@5/10
+  `0.885/0.885`, MRR `0.840667`, nDCG@5/10 `0.806227`, exact citation P/R
+  `0.288069/0.433333`, grounded `0.948276`, refusal accuracy `0.68`, unsupported
+  answer rate `0`, Evidence Sufficiency Accuracy `0.96`, Supported Answer Recall
+  `0.644444`.
+- Final confusion: Gold supported `58 answer / 32 refuse`; Gold refusal
+  `0 answer / 10 refuse`. The accurate result is
+  `GOLD_EVALUATION_QUALITY=PARTIAL`; no further validator or evaluation loop ran.
+- Remote provider boundary remains `PASS-LIVE`; run 16 coverage is
+  `67/100 applied + 33/100 HTTP 429 fail-open`, so
+  `GOLD_RUN16_RERANK_APPLICATION_COVERAGE=PARTIAL-LIVE`.
+- Final engineering regression: pytest `501 passed in 35.19s`; Ruff PASS; Ruff
+  format `237 files already formatted`; mypy PASS across 167 files; compileall,
+  Alembic check, and diff check PASS. Black is
+  `UNVERIFIED-WINDOWS-TIMEOUT` after the only controlled 120-second check.
+- Runtime/data: 8/8 services healthy; homepage 200; API, PostgreSQL, Redis, and
+  Qdrant healthy; documents `182`, approved `101`, rejected `35`, pending `46`,
+  chunks `821`, Qdrant green/`821` points; migration
+  `0011_attachment_download_audit (head)` with no drift.
+- Formal artifacts are `data/evaluation/gold_run_16/`,
+  `data/evaluation/gold_metrics.json`, `data/evaluation/gold_summary.md`, and the
+  run16 root `gold_failure_matrix.json/.csv`.
+
+## Phase AD Gold evaluation closure (2026-08-14, latest authoritative checkpoint)
+
+This section supersedes the older Human Evaluation and Gold metrics below where
+they differ. It does not change the completed Remote Rerank, Brave Source
+Discovery, Source Governance, SSRF, or Phase C results.
+
+- Human review is complete. The canonical workbook
+  `data/evaluation/eval_human_review.xlsx` was reviewed row-by-row and imported
+  through the formal importer. Live PostgreSQL dry-run and apply both returned
+  `TOTAL=100`, `REVIEWED=100`, `UNREVIEWED=0`, `PASS=100`, `FIX=0`, `REJECT=0`,
+  `VERIFIED=100`, and `TRACEABILITY_ERRORS=0`; the final artifact is
+  `data/evaluation/phase_j_human_verified.json`. Therefore
+  `HUMAN_REVIEW_INFRASTRUCTURE=PASS-LOCAL`, `HUMAN_EVALUATION=PASS-HUMAN`,
+  `HUMAN_VERIFIED_COUNT=100`, and `HUMAN_REVIEW_COMPLETE=true`.
+- Formal real-chain Gold run `6` completed all 100 questions with zero execution
+  errors. Retrieval metrics were Recall@5 `0.885`, Recall@10 `0.885`, MRR `0.809`,
+  nDCG@5 `0.789022`, and nDCG@10 `0.789022`. Citation precision/accuracy was
+  `0.067513`, citation recall/completeness `0.116667`, grounded-answer rate
+  `1.0` over 20 assessed answers, refusal accuracy `0.3`, unsupported-answer rate
+  `0.0` over 10 intended refusals, and evidence-sufficiency accuracy `0.56`.
+- The answer-quality gate did not pass: 80/100 cases refused, including 70 cases
+  labelled supported. Independent run `7` selected two supported and two refusal
+  questions; both refusal cases passed their refusal contract, but both supported
+  cases refused. The authoritative status is
+  `GOLD_EVALUATION=COMPLETE-WITH-QUALITY-FAILURE` and
+  `QUALITY_GUARD=FAIL-LIVE-QUALITY` (2/4 passed). No threshold, validator,
+  grounding, citation, or refusal rule was weakened.
+- Run `5` is retained only as a failed preflight: its source rows used unsupported
+  metadata filters and it produced no valid evaluation samples. It is excluded from
+  Gold metrics.
+- Run `6` persisted 100 remote-provider traces, 68 applied reranks, and 31
+  fail-open traces. This does not invalidate the provider acceptance, but the
+  100-case application coverage is recorded as `PARTIAL-LIVE`; no credentials or
+  provider response bodies are stored in the report.
+- Gold artifacts are `data/evaluation/gold_run_6/gold_metrics.json` and
+  `data/evaluation/gold_run_6/gold_summary.md`; the independent guard artifacts are
+  under `data/evaluation/gold_quality_run_7/`.
+- The latest fixed performance matrix remains 60 valid samples: P50 `1638 ms`,
+  P95 `6774 ms`, P99 `9129 ms`, with the `<5000 ms` target unmet. Core state is
+  unchanged: documents `182`, approved `101`, rejected `35`, pending manual review
+  `46`, chunks `821`, Qdrant green with `821` points, and
+  `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE`.
+- Completed provider statuses remain `REMOTE_RERANK_PROVIDER=PASS-LIVE`,
+  `REMOTE_RERANK_FULL_RAG=PASS-LIVE`, and `BRAVE_SOURCE_DISCOVERY=PASS-LIVE`.
+
+## Phase Z Source Governance Closure (2026-08-14, latest authoritative checkpoint)
+
+This section supersedes older Brave Source Discovery conclusions where they differ.
+The Remote Rerank and historical Brave sections below remain as audit evidence.
+
+- Real Brave run `4`, candidate `7`, validated the Sichuan Provincial Department
+  of Economy and Information Technology at
+  `https://jxt.sc.gov.cn/scjxt/index.shtml`: HTTPS/HTTP 200, exact host and site,
+  trusted `.gov.cn` suffix, government markers, and official score `1.0`.
+- Six bounded columns fetched `30` real details. The embedded `#panel-20002`
+  announcement panel accepted `2/5` DIRECT software-policy documents; total trial
+  result was `2 accepted / 28 rejected`, average accepted length `798`, and quality
+  `0.7667` against the unchanged `0.65` threshold.
+- Before approval, Candidate 7 activation returned HTTP `409`
+  `INVALID_SOURCE_CANDIDATE_STATE`. The explicit human decision then used the
+  formal API: `pending_approval -> approved` at
+  `2026-08-14T06:01:58.993737Z`, followed by formal activation.
+- Activation created enabled official government Source `46` and only the proven
+  `trial_crawled` announcement SourceColumn `191`. The five `0/5` columns remain
+  in candidate audit history and were not activated. Automatic discovery remains
+  disabled with zero configured topics; no CrawlTask was created.
+- The persisted run-level summary still reports `approved_count=0` and
+  `activated_count=0`; this is an aggregate-counter drift. Candidate, approval,
+  event-lineage, Source, and SourceColumn records are the authoritative activation
+  evidence and are internally consistent.
+- Final statuses: `BRAVE_SEARCH_PROVIDER=PASS-LIVE`, `BRAVE_SSRF=PASS-LIVE`,
+  official validation/column discovery/trial crawl/manual governance/source
+  activation all `PASS-LIVE`, and `BRAVE_SOURCE_DISCOVERY=PASS-LIVE`.
+- Post-activation invariants: documents `182`, approved `101`, rejected `35`,
+  pending manual review `46`, chunks `821`, Qdrant green with `821` points, and
+  `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE`. Remote Rerank remains
+  `REMOTE_RERANK_PROVIDER=PASS-LIVE` and `REMOTE_RERANK_FULL_RAG=PASS-LIVE`;
+  no Cohere call was made during Phase Z.
+
+## Phase W-X-Y Closure (2026-08-14, latest authoritative checkpoint)
+
+This section supersedes the older Phase T-U provider status where the two differ.
+The older sections remain below as historical evidence and are not current status.
+
+### Phase W: Remote Rerank full RAG
+
+- The prior failing trace `f9a44597-a18e-46ae-8aa5-5d36632cddc1` contained 40
+  literal ASCII `?` characters in the persisted caller query. The root cause was
+  corrupted caller-side UTF-8 serialization, not loss of retrieved evidence or an
+  Answer Validation defect. No backend validator, relation, evidence, citation, or
+  grounding rule was changed.
+- Trace `70906f7f-648f-4356-a0ee-47829afae7c1` completed real Remote Rerank and
+  Direct LLM execution, returned a supported official answer, and cited real chunk
+  `0bf55b37-7bf1-5ce9-834a-f46754e84fec` with its title and source URL.
+- Trace `e0e57258-4d19-44a9-94d4-ea8430a6f2c4` returned the supported answer that the existing-stock APP
+  filing stage was September 2023 through March 2024 and the supervision/inspection
+  stage was April through June 2024. It passed the unchanged relation validator and
+  cited the same real official chunk.
+- Broad multi-fact trace `b48ca4d8-1f40-49c8-b98e-f4c057851963` safely refused with
+  `insufficient_evidence_relevance`. No-evidence trace
+  `47570efd-6352-4213-8abf-ce0fbc3408c7` also safely refused before the answer LLM.
+- Current result: `REMOTE_RERANK_PROVIDER=PASS-LIVE` and
+  `REMOTE_RERANK_FULL_RAG=PASS-LIVE`: two supported cited answers and two safe
+  refusals, with valid real citation provenance.
+
+### Phase X: Brave Source Discovery and SSRF
+
+- The previous `198.18.0.0/15` rejection was traced to local fake-IP DNS behavior.
+  The secure resolution path now uses fail-closed DoH, validates the resolved
+  addresses, pins the vetted IP at connection time while retaining the original
+  HTTP Host and TLS SNI, revalidates redirects, and rejects IPv6 site-local as well
+  as private, reserved, loopback, link-local, and fake-IP destinations. SSRF rules
+  were not weakened.
+- Only `backend`, `worker`, and `scheduler` were rebuilt/recreated; all three were
+  healthy after rollout. PostgreSQL, Redis, Qdrant, frontend, nginx, and all Docker
+  volumes were preserved.
+- Real Brave run `3`, candidate `6`, used
+  `https://jxt.sc.gov.cn/scjxt/index.shtml`. Official validation returned HTTP 200
+  with exact HTTPS host, `.gov.cn` evidence, and official score `1.0`. Column
+  discovery found 12 real columns.
+- The bounded trial fetched 60 pages and accepted 0 documents. Every trial ended
+  `NO_RELEVANT_DETAIL_DOCUMENTS`; quality was `0.5`, below threshold `0.65`.
+  Candidate 6 was rejected and run 3 failed at the quality gate.
+- No candidate was approved or activated; no Source or CrawlTask was created. The
+  manual approval gate was not reached, so
+  `MANUAL_SOURCE_APPROVAL_REQUIRED=NO` for this rejected candidate.
+- Current result: `BRAVE_SEARCH_PROVIDER=PASS-LIVE`, `SSRF=PASS-LIVE`, official
+  validation `PASS-LIVE`, column discovery `PASS-LIVE`, and trial/quality
+  `FAIL-LIVE`. Genuine public government URLs pass while private, fake-IP, mixed,
+  redirect, and rebinding cases remain fail-closed.
+
+### Phase Y: Invariants and regression
+
+- Final read-only re-audit confirmed HTTP 8080 `200`, `/api/system/health` `200`
+  and healthy PostgreSQL/Redis/Qdrant dependencies. PostgreSQL remains at
+  `documents=182`, `approved=101`, `rejected=35`, `pending_manual_review=46`, and
+  `chunks=821`; Qdrant `odirag_chunks` is green with exact points `821`.
+- Targeted Phase W-X-Y regression passed: `127 passed`; Ruff lint, Ruff format,
+  Black, strict mypy, and `git diff --check` passed for the scoped files.
+- `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE` is confirmed unchanged.
+
+Last updated: 2026-08-14
+
+## Phase T-U Live Results (latest authoritative provider checkpoint)
+
+- Running Remote Rerank is now `provider=remote`, model `rerank-v3.5`. Exactly five
+  real Cohere requests were made and all five returned validated remote results with
+  `applied=true`, non-empty reranked candidates, finite scores in `[0,1]`, and zero
+  provider errors. Three `/api/search/debug` requests passed the strict provider,
+  score, chunk-provenance, warning, and count assertions.
+- The supported Chat trace `f9a44597-a18e-46ae-8aa5-5d36632cddc1` persisted remote
+  rerank (`8 -> 8`, 1282.509 ms), sufficient evidence and a real Direct LLM call.
+  Final Answer Validation conservatively rejected the generated answer with
+  `answer_contains_unsupported_relation`, so it returned zero citations. The
+  no-evidence trace `06766442-fc45-4b6f-b70e-cce45e2173bd` also reranked `8 -> 8`
+  (1109.401 ms), then correctly refused before the answer LLM with zero citations
+  and zero answer-LLM tokens. Therefore `REMOTE_RERANK_PROVIDER=PASS-LIVE`, while
+  the full supported RAG/citation gate is `PARTIAL` rather than a fabricated pass.
+- Brave made two real searches. Run 1 received no usable URLs because the request
+  query was corrupted by the local PowerShell encoding boundary. Run 2 used an
+  explicit Unicode query and returned five real `sc.gov.cn` candidates, including
+  `jxt.sc.gov.cn`, `fgw.sc.gov.cn`, `kjt.sc.gov.cn`, `www.sc.gov.cn`, and
+  `jhj.sc.gov.cn`. Every candidate was rejected by the existing fetcher as
+  `UnsafeUrlError` before official validation because of the local proxy/DNS SSRF
+  boundary. No column, trial crawl, quality score, pending approval, activation, or
+  CrawlTask was fabricated. `BRAVE_SEARCH_PROVIDER=PASS-LIVE`; the end-to-end Source
+  Discovery gate is `BLOCKED-LOCAL-SSRF-PROXY-RESOLUTION`.
+- Core invariants after T/U: health healthy; documents `182`, approved `101`,
+  rejected `35`, pending manual `46`, chunks `821`, Qdrant exact points `821`.
+  Targeted regression remains green: rerank/search `29 passed`, source discovery
+  `19 passed`.
+
+## Phase S-V Provider Acceptance Attempt (2026-08-14)
+
+- Host `.env` now has only the required non-sensitive rerank switch changed:
+  `provider=remote`, model `rerank-v3.5`, base URL `https://api.cohere.com/v2`,
+  `failure_policy=open`; Remote Rerank and Brave credentials both evaluate as
+  `configured=true`. No credential value was printed or copied.
+- The requested minimal `backend/worker/scheduler` recreation did not execute:
+  the local approval service timed out once and rejected the single retry before
+  Docker access. The running backend therefore remains on the previous snapshot:
+  a real `hybrid_rerank` debug request returned provider `none`, model `disabled`,
+  `applied=false`, eight candidates, zero reranked results, and warning
+  `rerank_provider_disabled`.
+- A direct project-adapter Cohere call first failed inside the restricted network
+  with `transport_error`; both approved-network attempts were stopped by the same
+  approval-service failure before a provider response was received. Real Remote
+  Rerank API responses: `0`; `REMOTE_RERANK` remains
+  `BLOCKED-LOCAL-RUNTIME-RELOAD-AND-NETWORK`, not `PASS-LIVE`.
+- Brave was not charged or called after the shared reload/network blocker was
+  established. Real Brave searches: `0`; `BRAVE_SOURCE_DISCOVERY` remains
+  `BLOCKED-LOCAL-RUNTIME-RELOAD-AND-NETWORK`. No candidate, Source, SourceColumn,
+  trial crawl, approval, activation, or CrawlTask was fabricated.
+- Current regression evidence: Remote Rerank/search tests `29 passed`; Source
+  Discovery tests `19 passed`; `/api/system/health` is healthy; PostgreSQL metrics
+  remain documents `182`, approved `101`, rejected `35`, pending `46`, chunks
+  `821`; direct Qdrant exact count remains `821`.
+
+## Phase N-Q Closure (historical snapshot, superseded by Phase AD)
+
+- `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE` remains unchanged. Current
+  retained counts are `documents=182`, `approved=101`, `rejected=35`,
+  `pending_manual_review=46`, `chunks=821`; direct Qdrant remains at 821 points.
+  No CrawlTask, document, volume, or historical trust/region row was created,
+  deleted, or rewritten in this closure.
+- Phase N applied additive migration `0011_attachment_download_audit` to real
+  PostgreSQL and passed `alembic check`. Existing attachments are terminal:
+  `123 total / 0 pending / 0 parsed / 77 failed / 46 unsupported`. All 123 are
+  URL-only in this environment; 76 are `DOWNLOAD_SSRF_BLOCKED` and one is
+  `OCR_UNAVAILABLE`. `ATTACHMENT_PARSING=PASS-LOCAL` for terminal-state and
+  security accounting; `ATTACHMENT_OCR=PARTIAL` because approved egress bytes and a
+  real OCR provider are unavailable. See `ATTACHMENT_OCR_REPORT.md`.
+- Phase O executed three real benchmark runs over two fixed cases with one warm-up
+  per case. Six measured samples produced overall `P50=734.236 ms`,
+  `P95=5121.708 ms`, `P99=5121.708 ms`, `max=5121.708 ms`; the `<5000 ms` target
+  was not met. Stage P95 values were Direct LLM `4012.936 ms`, query embedding
+  `1042.8 ms`, and retrieval total `1076.773 ms`. The performance result is
+  `RAG_PERFORMANCE_P95=PARTIAL`; the quality guard remains blocked because
+  `human_verified_count=0`. Remote Rerank and Brave were not called.
+- Phase P generated `data/evaluation/eval_human_review.xlsx` with 100 traceable
+  real-corpus cases. Dry-run is `TOTAL=100, REVIEWED=0, UNREVIEWED=100, PASS=0,
+  FIX=0, REJECT=0, VERIFIED=0, TRACEABILITY_ERRORS=0,
+  PARTIAL_HUMAN_REVIEW`; no verified JSON was generated. Infrastructure is
+  `PASS-LOCAL`, while `HUMAN_EVALUATION=BLOCKED-HUMAN`.
+- Phase Q backend regression from the `backend` working directory is `399 passed`.
+  Application Ruff/format and mypy pass (164 files); the three closure scripts pass
+  Ruff and format. Strict Black 25.12.0 reports formatter differences on a subset
+  under the current Windows toolchain, so global Black is not claimed as a pass.
+  Frontend npm audit (full and production-only) reports zero vulnerabilities;
+  fresh Vite/esbuild and Docker named-pipe checks were blocked by the local
+  process/approval boundary and are not overstated as fresh passes.
+
+## Current Phase (historical roadmap snapshot; Phase AD is current)
+
+- Phase: Production strengthening Phases G-J complete; Phases K-Q locally executed with performance/OCR/human gates explicitly partial or blocked.
+- Status: **KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5, EVIDENCE_SUFFICIENCY=PASS-LIVE, POSTGRESQL_MIGRATION_0011=PASS-LIVE, and QUERY_TRACE_STAGE_TIMINGS=PASS-LIVE.** The 100-document official corpus and 821-point Qdrant index remain intact. Overall production release is **NOT ACCEPTED**: OCR bytes/provider, performance target, human evaluation, external providers, disaster recovery, TLS/secrets, resource/logging and release-provenance gates remain open.
+- Next Action: Human review of the 100-row workbook and approved external OCR/egress are the only next actions in this scope. Do not lower quality/grounding thresholds, count pending documents, rewrite historical rows, or extend the corpus.
 
 ## Latest Verification Checkpoint
 
-- 2026-08-13 Phase C C3 corpus checkpoint: C3 stopped at exactly 100 approved `government/official` documents with non-corrupt region metadata. All qualifying rows followed the authenticated Source/Column/CrawlTask API, real Coze `batch_crawl`, existing automatic quality decision, manual approval, remote `text-embedding-3-small`, and real Qdrant upsert path. No fixture, Local provider, direct SQL insertion, source-trust downgrade, historical rewrite or pending document was used to reach the count. Current persisted totals are `documents=182`, `approved=101` (100 qualifying official plus the retained historical association document), `rejected=34`, `pending_manual_review=47`, `chunks=821`, `sources=45`, `crawl_tasks=221`, `reviews=296`, `lineage=1053`, and `attachments=123`.
-- 2026-08-13 C3 Data Quality Gate: the 100-document qualifying set spans 31 source rows and 10 official domains. Canonical/source URL duplicates, content-hash duplicates, empty titles, empty content, corrupt/null regions, missing content hashes, unindexed documents and approved documents without chunks are all zero. Word counts range from 180 to 6,408. Direct Qdrant reports collection `odirag_chunks` green with exact points `821`, matching PostgreSQL chunks. Reindexing document 181 returned `cache_hits=4`, `embedded_count=0`, and left Qdrant at 821, proving idempotency. All 123 downloaded attachments remain `parse_status=pending`; one has `requires_ocr=true`, so attachment parsing/OCR is explicitly **NOT ACCEPTED**.
+- 2026-08-13 Phase M live trace checkpoint: real PostgreSQL is at `0010_query_trace_stage_timings` with no Alembic drift, and only the backend image was rebuilt/restarted. A supported official MIIT query produced five real retrieval hits, a real Direct LLM call (`gpt-4.1-mini`, 2,907 tokens), one traceable title/URL/chunk citation, and a non-empty stage map including retrieval, evidence, grounding, Direct LLM, citation validation and total. A no-evidence query retrieved candidates but failed Evidence Sufficiency, returned `refusal=true`, zero citations and zero answer-LLM tokens; its stage map correctly omits stages that were not executed. Both PostgreSQL rows contain only non-negative numeric timings. Query traces increased from 70 to 83 solely because this closure performed repeated real supported/refusal diagnostics; corpus counts did not change.
+- 2026-08-13 local toolchain closure: frontend lint/type-check pass; sandboxed Vite/esbuild/Playwright showed `spawn EPERM`, while the approved non-sandbox rerun passed Vitest `18/18`, production build (1,850 transformed modules), and Playwright `10 passed, 1 expected skip` at four workers. With an isolated workspace Black cache and the intended source scopes, Black 25.12.0 passes `backend/app`, `backend/tests`, `backend/alembic` (219 files) and the two changed scripts; `BLACK=PASS-LOCAL`. `.git/index.lock` is absent and no Git process is active, but inherited explicit deny ACLs prevent index writes; the single controlled `git add --all` attempt failed before staging, so `GIT_CHECKPOINT=BLOCKED-LOCAL-PERMISSION` and the complete diff is preserved.
+- 2026-08-13 Phase C C3 corpus checkpoint: C3 stopped at exactly 100 approved `government/official` documents with non-corrupt region metadata. All qualifying rows followed the authenticated Source/Column/CrawlTask API, real Coze `batch_crawl`, existing automatic quality decision, manual approval, remote `text-embedding-3-small`, and real Qdrant upsert path. No fixture, Local provider, direct SQL insertion, source-trust downgrade, historical rewrite or pending document was used to reach the count. The post-Phase-G current totals are `documents=182`, `approved=101` (100 qualifying official plus the retained historical association document), `rejected=35`, `pending_manual_review=46`, `chunks=821`, `sources=45`, `crawl_tasks=221`, `reviews=296`, `lineage=1053`, and `attachments=123`. The pre-cleanup C3 snapshot was `rejected=34`, `pending_manual_review=47`; it remains a historical checkpoint.
+- 2026-08-13 C3 Data Quality Gate: the 100-document qualifying set spans 31 source rows and 10 official domains. Canonical/source URL duplicates, content-hash duplicates, empty titles, empty content, corrupt/null regions, missing content hashes, unindexed documents and approved documents without chunks are all zero. Word counts range from 180 to 6,408. Direct Qdrant reports collection `odirag_chunks` green with exact points `821`, matching PostgreSQL chunks. Reindexing document 181 returned `cache_hits=4`, `embedded_count=0`, and left Qdrant at 821, proving idempotency. Phase G subsequently audited the 123 attachments: 77 are `failed`, 46 `unsupported`, and none are accepted as parsed text; attachment parsing/OCR is explicitly **NOT ACCEPTED**.
 - 2026-08-13 C3 provider/encoding evidence: tasks 129-221 comprise 93 bounded real Coze tasks with 86 discovered/fetched articles; persisted task decisions total 53 accepted, 15 rejected and 23 pending, with three remaining network failures. Tasks 210-221 initially timed out together after about 195 seconds with `COZE_NETWORK_ERROR`; serial retries recovered tasks 210-218, while 219-221 remain failed evidence. A PowerShell 5.1 request encoded Source 39's Chinese metadata as `??`; none of its documents were approved or counted, and no row was silently repaired. Later Sources 40-45 used explicit UTF-8 request bytes and PostgreSQL hex verification (`四川省` = `e59b9be5b79de79c81`) before tasks were created.
-- 2026-08-13 C3 regression: the real evidence-sufficiency script is `PASS-LIVE`: five Qdrant retrieval hits, Direct `gpt-4.1-mini`, one exact MIIT citation, and correct pre-LLM refusal for the no-evidence and three adversarial queries. Backend `356 passed`; Ruff passed; mypy reports no issues in 156 source files. Frontend lint/type-check, Vitest `18/18`, production build, and Playwright `10 passed, 1 skipped` passed. All eight Compose services are healthy; PostgreSQL accepts connections; Redis returns PONG; Qdrant, 8080 and `/api/system/health` return HTTP 200. D: has 106.86 GiB free. Black remains **UNVERIFIED-LOCAL** because the Windows executable and import hang; this is not reported as a pass.
+- 2026-08-13 C3 regression (historical checkpoint): the real evidence-sufficiency script was `PASS-LIVE`: five Qdrant retrieval hits, Direct `gpt-4.1-mini`, one exact MIIT citation, and correct pre-LLM refusal for the no-evidence and three adversarial queries. Backend `356 passed`; Ruff passed; mypy reported no issues in 156 source files. Frontend lint/type-check, Vitest `18/18`, production build, and Playwright `10 passed, 1 skipped` passed. All eight Compose services were healthy; PostgreSQL accepted connections; Redis returned PONG; Qdrant, 8080 and `/api/system/health` returned HTTP 200. D: had 106.86 GiB free. Black was unverified at that checkpoint; the later Phase M isolated-cache/source-scoped run supersedes it with `BLACK=PASS-LOCAL`.
 - 2026-08-12 Phase C formal endpoint canary: the deployed Coze HTTP workflow returned HTTP 200, `workflow_version=batch_crawl-v1`, `articles_discovered=5`, `articles_fetched=5`, and five distinct detail URLs for the bounded `https://www.scsia.org/newslist/1.html` request (`max_pages=1`, `max_articles=5`). This resolves the historical single-directory deployment mismatch and is **PASS-LIVE** transport evidence; it does not change the association trust classification.
 - 2026-08-12 Phase C C1/C2 corpus checkpoint: all new rows were created through the normal authenticated API with provider `coze`, contract `batch_crawl`, manual review and real reindexing. No fixture, Local provider, direct SQL insertion, source-trust downgrade or historical row rewrite was used. C1 passed with at least ten newly approved official documents from multiple domains. C2 now has exactly 50 approved `government/official` documents with non-corrupt region metadata across 14 source rows and 11 domains. Global persisted totals are `documents=98`, `approved=51` (50 government/official plus the retained historical association document), `rejected=21`, `pending_manual_review=26`, `chunks=393`, `sources=28`, `crawl_tasks=128`, `reviews=160`, `lineage=539`, and `attachments=52`; direct Qdrant exact count is 393 and matches PostgreSQL chunks.
 - 2026-08-12 Phase C Data Quality Gate: approved canonical URLs and content hashes each have zero duplicates. The approved government/official distribution spans `czt.sc.gov.cn` (12), `www.miit.gov.cn` (9), `fgw.sc.gov.cn` (5), `sthjt.sc.gov.cn` (5), `jst.sc.gov.cn` (4), `kjt.sc.gov.cn` (4), `dnr.sc.gov.cn` (3), `www.ndrc.gov.cn` (3), `wap.miit.gov.cn` (2), `zfxxgk.ndrc.gov.cn` (2), and `shxca.miit.gov.cn` (1). Reindexing document 98 was idempotent: document points stayed 4 and global Qdrant points stayed 393. Attachment text is not accepted at this checkpoint: all 52 downloads remain `parse_status=pending`, including one `requires_ocr=true` attachment.
-- 2026-08-12 Phase C regression: the live evidence-sufficiency script preserved `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`: five real retrieval hits, Direct `gpt-4.1-mini`, one exact MIIT citation, and safe refusal before LLM for the no-evidence and three adversarial queries. Backend `356 passed`; Ruff and mypy passed. Frontend lint/type-check, Vitest `18/18`, production build, and fixture Playwright `10 passed, 1 skipped` passed. All eight Compose services are healthy, Alembic reports no drift, Redis returns PONG, and 8080 plus `/api/system/health` return HTTP 200. Current `black --check` is **UNVERIFIED-LOCAL** because the installed Windows Black executable hangs even on `--version`; this is recorded as a tooling blocker, not reported as a formatting pass. The minimal runtime image intentionally omits pip; the previously verified builder-stage `pip check` remains the dependency-consistency evidence.
+- 2026-08-12 Phase C regression (historical checkpoint): the live evidence-sufficiency script preserved `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`; backend `356 passed`, Ruff/mypy and frontend checks passed, all eight Compose services were healthy, and runtime dependencies were reachable. Black was unverified in that older Windows session; the later Phase M isolated-cache/source-scoped run supersedes it with `BLACK=PASS-LOCAL`. The minimal runtime image intentionally omits pip; the verified builder-stage `pip check` remains the dependency-consistency evidence.
 
 - 2026-08-10 Phase B rerank and evaluation checkpoint: `RerankProvider` now returns validated ranking data plus safe usage/cost metadata; the engine has dedicated `ODIRAG_RERANK_TIMEOUT_SECONDS` and `ODIRAG_RERANK_FAILURE_POLICY=open|closed` settings. Default `open` preserves the exact fusion order on remote failures and exposes `rerank_applied=false`, stable redacted error codes, provider/model, candidate/reranked counts, latency, usage, and cost-measurement state. `closed` preserves the provider exception. Remote JSON, empty results, duplicate/out-of-range indices, non-finite/out-of-range scores, HTTP failures, transport timeouts, blank keys, and error redaction are covered by tests. No key, authorization header, provider response body, or secret is persisted.
 - 2026-08-10 Phase B evaluation checkpoint: `POST /api/evaluations/run` now executes the requested `bm25`, `vector`, `hybrid`, or `hybrid_rerank` mode and actual top-k rather than storing a label. `POST /api/evaluations/matrix` resolves one verified question snapshot once and executes all four modes against it. Reports retain requested/executed mode and top-k, citation precision/recall denominators, answer-grounding denominators, and unsupported-answer denominators. A zero-denominator vector fixture is reported as unassessed, never as a quality success.
 - 2026-08-10 Phase B PostgreSQL/container checkpoint: migration `0008_rerank_observability` non-destructively added `query_traces.rerank_metadata_json`; the real Compose PostgreSQL is at `0008_rerank_observability (head)` and `alembic check` reports no drift. Fresh backend image installed `alembic 1.18.5`; backend/worker/scheduler/frontend were recreated while PostgreSQL, Redis, Qdrant, and Nginx were preserved. All eight services are healthy; `/api/system/health` and `http://127.0.0.1:8080/` returned HTTP 200. A real authenticated `/api/search/debug` call returned 5 hits with `rerank_applied=false`, `provider=none`, and `rerank_provider_disabled` without reducing Hybrid availability.
 - 2026-08-10 Phase B remote-rerank acceptance: **BLOCKED-LIVE**. The running container reports `rerank_provider=none`, `configured=false`, model `rerank-v3.5`, timeout `30.0`, and failure policy `open`. Therefore no remote rerank quality claim, latency/cost claim, or four-mode quality improvement claim is made. The only required external item is a reachable remote endpoint plus `ODIRAG_RERANK_PROVIDER=remote` and `ODIRAG_RERANK_API_KEY`; Phase C-F work that does not need it continues.
 - 2026-08-09 Phase C bounded corpus checkpoint: the approved baseline remains 2 documents, 14 PostgreSQL chunks and 14 Qdrant points (8 documents total; 6 are rejected). Real Coze batch canaries were executed only through the normal authenticated API with `max_pages=1,max_articles=5`: task 24 (gov.cn JSON column) completed HTTP 200 with `0/0` discovered/fetched and `no_articles`; task 25 (JXT list) completed `1/1/1` but the sole directory page was rejected with quality `0.0`; task 26 (KJT list) likewise completed `1/1/1` and rejected the directory page; task 27 (existing KJT detail) failed with `COZE_CONTRACT_MISMATCH`. Raw and normalized invocation records remain persisted; no raw response or credential is copied here. The three list canaries plus the detail canary establish an external Coze contract blocker: the current deployment does not expand these official list pages and does not accept the KJT detail contract. Phase C therefore stops before creating a speculative corpus and before the 100-document cap; no fake/local provider or direct database insertion was used.
-- 2026-08-10 Phase C generalized-crawl implementation checkpoint (historical): the local provider now performs deterministic same-site anchor normalization, explainable article candidate scoring, exclusion of navigation/assets, bounded pagination with visited-page/no-new guards, direct-detail fallback, common government detail selectors, attachment/image discovery, OCR-required metadata, SPA/JSON API hints and configured `site_rules`. `CrawlDiagnostics` persists page classification, candidate/normalized links, pagination events, API discovery and stable per-URL failure codes (`DETAIL_SCHEMA_UNKNOWN`, `PAGINATION_FAILED`, `SPA_API_NOT_DISCOVERED`, `SPA_API_REQUEST_FAILED`, `SOURCE_BLOCKED`, `RATE_LIMITED`, `ARTICLE_FETCH_FAILED`). Gov.cn retains its adapter and exposes the same diagnostics surface. Coze response parsing now canonicalizes relative article image/attachment URLs in a validation copy only; strict `BatchCrawlResponse` validation remains fail-closed and raw provider JSON is preserved unchanged. The historical backend regression was `356 passed`; current Black is separately recorded as `UNVERIFIED-LOCAL`. This is VERIFIED-LOCAL/fixture-verified behavior only until a fresh authenticated live task returns real articles.
+- 2026-08-10 Phase C generalized-crawl implementation checkpoint (historical): the local provider now performs deterministic same-site anchor normalization, explainable article candidate scoring, exclusion of navigation/assets, bounded pagination with visited-page/no-new guards, direct-detail fallback, common government detail selectors, attachment/image discovery, OCR-required metadata, SPA/JSON API hints and configured `site_rules`. `CrawlDiagnostics` persists page classification, candidate/normalized links, pagination events, API discovery and stable per-URL failure codes (`DETAIL_SCHEMA_UNKNOWN`, `PAGINATION_FAILED`, `SPA_API_NOT_DISCOVERED`, `SPA_API_REQUEST_FAILED`, `SOURCE_BLOCKED`, `RATE_LIMITED`, `ARTICLE_FETCH_FAILED`). Gov.cn retains its adapter and exposes the same diagnostics surface. Coze response parsing now canonicalizes relative article image/attachment URLs in a validation copy only; strict `BatchCrawlResponse` validation remains fail-closed and raw provider JSON is preserved unchanged. The historical backend regression was `356 passed`; the later Phase M Black result is `PASS-LOCAL`. This is VERIFIED-LOCAL/fixture-verified behavior only until a fresh authenticated live task returns real articles.
 - 2026-08-10 Phase C live boundary (historical pre-generalization): task 24-27 evidence remains external workflow evidence. Task 27's exact contract error is six relative `image_urls` rejected by `HttpUrl`; no existing failed task was retroactively marked successful. At that time post-generalization C1 progress was `1/10`; the later 2026-08-12/13 canary and normal-path expansion superseded this historical gate.
 - 2026-08-10 Phase C live canary checkpoint (historical): after the generalized backend rollout, normal authenticated Coze tasks 28-34 were run with `max_pages=1,max_articles=5`. Task 28 (KJT detail) returned strict schema-valid `1/1/1`, was manually approved, and produced document 9 (`government/official`, region `四川省`, quality `0.85`, HTML, word count `1619`). Its two attachments downloaded successfully but remain `parse_status=pending` with zero parsed text; attachment parsing is not claimed. Reindex generated 9 real `text-embedding-3-small` chunks/points; the repeat reindex returned 9 cache hits and Qdrant stayed at 23 points. Tasks 29/30/32 (JXT/KJT/KJT policy list pages) each produced one directory-page document and were rejected; tasks 31/33/34 (gov.cn JSON, MIIT list, gov.cn HTML) produced `0/0/0`; all invocations were HTTP 200/completed. Totals at that time were documents=10, approved=3, rejected=7, chunks=23, reviews=20, crawl_tasks=34, lineage=78, attachments=3. The later C1/C2/C3 checkpoints supersede the then-blocked C1 result.
 - 2026-08-10 Phase C stop condition: independent list/API canaries across KJT, JXT, MIIT and gov.cn have now shown either directory-page misclassification or empty discovery. This is an external Coze deployment blocker, not a local crawler test failure. The minimum external action is to republish/deploy the batch workflow with list-to-detail expansion (or provide a compatible real detail-input contract); after that, rerun tasks through Source/CrawlTask, review, approve and index. C2/C3 remain pending and no speculative or fixture documents were added.
@@ -122,7 +424,7 @@ Last updated: 2026-08-13
 | 14 - Security, Reliability, Performance | Complete | Shared Redis fixed-window rate limiting with Lua-atomic counter/expiry and fail-closed 503; bounded Redis connect/read timeouts; IP-only identity with explicit trusted-proxy CIDRs; unified 429 responses; JWT token-version rotation/revocation; production configuration checks; SSRF-safe DNS and redirect validation; streamed response limits; atomic crawl task claims and stale recovery that excludes manual `waiting_review`; atomic local/Coze cancellation guards with CAS on both worker stages and cancel requests; Celery late-ack/recovery settings; crawl uniqueness migration; bounded route/DB latency metrics; authenticated load-test reports; frontend DB P95 and route latency views | Ruff; Black; mypy; 210-test full suite; rate-limit tests with fake Redis/proxy cases; migration smoke; frontend lint/type/test/build; authenticated async load test; mobile/desktop browser QA; local Compose Redis key/header check | 210-test full backend suite passed; Redis limiter contract, timeout propagation, forged-token resistance, trusted-proxy handling and fail-closed behavior passed; local and Coze cancellation race regressions passed, including stale-cancel CAS; waiting-review recovery and review convergence passed | Coverage baseline remains historical; live Redis ACL/failover and multi-instance fairness remain unverified | Production Redis ACL, failover, ingress policy and remote model providers remain unverified; generic distributed locks are still DB-based | Run target Redis failure/ACL/failover and multi-replica tests |
 | 15 - Docker, CI/CD, Handoff | Complete locally; external release gates pending | Auto-migration/non-root writable backend image; persistent Compose dependencies; shared Redis rate-limit configuration; worker/scheduler health and migration ordering; real API demo initializer; startup scripts; CI/deployment/docs handoff; honest demo seed; Python 3.12 Alpine/Nginx 1.30.4 base-image hardening; runtime pip removal; constrained builder; SBOM/CVE checklist | final backend/runtime and builder builds; `pip check`; `docker compose config --quiet`; eight health checks; PostgreSQL/Redis/Qdrant checks; worker ping; 8080/Nginx/API; npm audit; Docker Scout | final builder installs Alembic 1.18.5 and has no broken requirements; CSV/JSON config passes in container; all eight services healthy; npm audit 0; backend Scout 0 vulnerabilities and frontend Scout has 3 unresolved low libxml2 CVEs | Coverage baseline remains historical; GitHub Actions was not executed in this workstation checkpoint | Production secret/TLS, registry provenance/signing, CI green, target-host persistence and disaster recovery remain unverified | Production credentials, target host, registry/CI permissions | Execute target release pipeline and retain signed digest/provenance evidence |
 | 16 - Production Readiness and Autonomous Source Discovery | Complete in code/local/fixture verification; official-source live closed loop 5/5; Phase A hardened | Full Phase 16 chain plus Coze batch contract, raw/normalized audit, OCR, manual review, real embedding/Qdrant, Hybrid/Direct citation, independent evidence gate and safe refusal | 356-test regression; PostgreSQL/Compose; task 23; real OpenAI/Qdrant/Hybrid/Direct traces; non-empty-retrieval and adversarial relation/scope refusal traces | Eight services healthy; 101 approved docs/821 chunks/821 points; official citation and evidence sufficiency both PASS-LIVE | **PASS-LIVE 5/5 + Phase A** | Rerank, Brave, attachment parsing/OCR and production/release gates remain; association and historical `??` unchanged | Complete external gates | Overall release still not accepted |
-| Production C - staged official corpus (bounded to 100) | **C1/C2/C3 PASS-LIVE** | Normal Coze batch path, manual review and real reindex path; no speculative insertion | Formal 5/5 endpoint canary; authenticated tasks through 221; direct PostgreSQL/Qdrant audit; repeat reindex; 5/5 regression | Exactly 100 clean government/official approved documents; 821 indexed chunks/points; 0 approved URL/content duplicates; 10 domains | 47 documents still await manual review; 123 attachments are downloaded but not parsed; three Coze network failures remain; API/embedding cost telemetry is incomplete; Black hangs locally | Preserve checkpoint and address external gates | Preserve main-chain and Data Quality Gate |
+| Production C - staged official corpus (bounded to 100) | **C1/C2/C3 PASS-LIVE** | Normal Coze batch path, manual review and real reindex path; no speculative insertion | Formal 5/5 endpoint canary; authenticated tasks through 221; direct PostgreSQL/Qdrant audit; repeat reindex; 5/5 regression | Exactly 100 clean government/official approved documents; 821 indexed chunks/points; 0 approved URL/content duplicates; 10 domains | 46 documents still await manual review; 123 attachments are not accepted as parsed; three Coze network failures remain; API/embedding cost telemetry is incomplete | Preserve checkpoint and address external gates | Preserve main-chain and Data Quality Gate |
 | Production D - source discovery trust | VERIFIED-LOCAL / **BLOCKED-LIVE** search | Exact-host/2xx/HTTPS/suffix validation, disabled-source gap exclusion, approval before activation, UI evidence | 19 focused backend tests; fixture Playwright | Local contract passes; real Brave run was not fabricated | Brave key absent; manual Source API can still set `official_status` and remains a governance risk | `ODIRAG_SOURCE_DISCOVERY_API_KEY` plus approved live run | Retain manual approval and audit evidence |
 | Production E - deployment and supply chain | VERIFIED-LOCAL | Fresh builder `pip check`; Alembic head/check; npm audit; current Scout; Compose health | 350 backend tests; frontend lint/type/Vitest/Playwright; eight live local services | Backend `0C/0H/0M/0L`; frontend `0C/0H/0M/3L`; high RAG latency alert remains open | Target TLS/secrets/CI/registry/provenance and base-image low-CVE fix unavailable locally | Target environment and release credentials | Do not close the latency alert without measured remediation |
 | Production F - live evaluation matrix | PASS-LIVE plumbing / quality-limited | Formal four-mode matrix over two verified official-document questions | Runs 1-4 plus persisted traces, reports and lineage | Hybrid-rerank mode returned exact official citation and safe refusal; rerank provider was disabled | Three modes conservatively refused the support query; n=2 cannot establish quality or SLA | Human-reviewed representative corpus and remote rerank if required | Keep results as baseline, not a release-quality claim |
@@ -200,7 +502,7 @@ Last updated: 2026-08-13
 - 2026-08-05 supply-chain gate (historical): fresh frontend builder output reported 2 high vulnerabilities and external scans were deferred pending authorization. Authorization was subsequently granted; the 2026-08-06 final npm/Scout results are zero.
 - 2026-08-06 compatibility remediation: pydantic-settings 2.14.2 accepts JSON, CSV, empty, and whitespace-trimmed trusted-proxy values through `NoDecode` plus a redacting validator; targeted environment/dotenv/container tests passed and normal Compose recreation uses the historical CSV value successfully.
 - 2026-08-06 migration remediation established the 1.18.5 constraint and isolated round-trip through `0006`; on 2026-08-09 the existing database advanced to `0007_evidence_sufficiency (head)` and still has no generated operations.
-- 2026-08-09 final code regression (historical): backend 265 passed in 47.61 seconds; Ruff/Black/mypy passed (206 formatted files including migrations/154 typed source files). Frontend lint/type-check/Vitest 18/build passed and fixture Playwright 9 passed plus 1 explicit live skip. Coverage was not rerun; 81.33% remains the historical 257-test baseline. Historical reindex failures confirm fail-closed behavior; the corrected real reindex now passes. The current C3 Black result is separately recorded as `UNVERIFIED-LOCAL`.
+- 2026-08-09 final code regression (historical): backend 265 passed in 47.61 seconds; Ruff/Black/mypy passed (206 formatted files including migrations/154 typed source files). Frontend lint/type-check/Vitest 18/build passed and fixture Playwright 9 passed plus 1 explicit live skip. Coverage was not rerun; 81.33% remains the historical 257-test baseline. Historical reindex failures confirm fail-closed behavior; the corrected real reindex and current Phase M Black gate now pass.
 - 2026-08-06 supply-chain remediation: direct dev dependency `@playwright/test` and transitive `playwright` were pinned to 1.55.1, closing GHSA-7mvr-c777-76hp without a major upgrade. Both npm audit modes report zero. Final backend builder `pip check` passed with Alembic 1.18.5. Docker Scout reports 0C/0H/0M/0L for final backend digest `dd27a657d1bf` (133 packages) and frontend digest `2d41a3e3c971` (26 packages); builder digest is `cd7bcad2eceb`.
 - 2026-08-06 Docker data relocation: active WSL VHDs are on D through a verified NTFS junction; initial backup, rollback snapshot, and failed blank-disk quarantine are retained under ignored `D:\RAG\.docker`. Current active data survived Docker Desktop stop/start and eight-service recreation; no Docker data, project volume, or database was deleted.
 - Coze batch current evidence: task 14 completed with strict schema-valid 5 discovered/fetched/documents, 1 accepted and 4 rejected. The third document's refreshed OCR version changed from empty image/rejected to length 5,358 image_ocr/accepted and was then approved. Task 9 remains the historical first bounded persistence PASS-LIVE checkpoint; task 13 remains the historical HTTP-200-then-`TASK_STATE_CHANGED` race checkpoint.
@@ -211,6 +513,24 @@ Last updated: 2026-08-13
 
 ## Known Issues
 
+## Phase K checkpoint (2026-08-13)
+
+- Historical real RAG traces: 69; all-RAG P50/P95/P99-max = `1556/7184/8041 ms`; answered = `5873/7424/7424 ms`; refused = `1465/5099/8041 ms`. `RAG_P95_LT_5000MS=FAIL-LIVE`; no optimization was applied without a human-verified evaluation denominator.
+- Added non-invasive `query_traces.stage_timings_json` and migration `0010_query_trace_stage_timings`. New traces record routing, retrieval stages, Evidence Sufficiency, Grounding, Direct LLM, citation validation and total latency. SQLite upgrade/downgrade/upgrade/check and 12 targeted tests pass; Ruff, mypy (158 files) and source-scoped Black pass.
+- Real PostgreSQL migration, no-drift check, minimal backend rebuild and supported/refusal trace persistence are **PASS-LIVE**. Existing 5/5 data and all corpus/index counts remain unchanged.
+
+## Phase L checkpoint (2026-08-13)
+
+- Development Compose runtime is verified locally: 8 services healthy, 8080 HTTP 200, dependency health healthy, Redis PONG/AOF healthy, PostgreSQL/Qdrant counts preserved, D: approximately 106.7 GiB free.
+- Production engineering status is **PARTIAL / NOT PRODUCTION ACCEPTED**. Missing or unverified: automated encrypted PostgreSQL backups/PITR, Qdrant snapshots and restore, Redis recovery/HA, retention, resource limits, log rotation/central collection, external alert routing, production TLS/secret manager/network ACLs, and failure drills.
+- Details: [`PERFORMANCE_REPORT.md`](PERFORMANCE_REPORT.md), [`DISASTER_RECOVERY_REPORT.md`](DISASTER_RECOVERY_REPORT.md), [`SECURITY_READINESS_REPORT.md`](SECURITY_READINESS_REPORT.md).
+
+## Phase M checkpoint (2026-08-13)
+
+- Final verdict: **NOT PRODUCTION ACCEPTED**; `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE` remains intact.
+- Backend full regression is `370 passed`; Ruff, Ruff format, mypy and Black pass (158 typed source files; 227 Ruff-formatted files; Black checked 219 backend files plus the two changed scripts). SQLite and real PostgreSQL migration checks through `0010_query_trace_stage_timings` pass. Frontend lint/type-check, Vitest `18/18`, production build, Playwright `10 passed/1 expected skip`, and both npm audit modes pass/zero vulnerabilities. The local Git checkpoint is blocked by `.git` ACLs rather than an active lock.
+- Final acceptance blockers and exact evidence are in [`FINAL_ACCEPTANCE_REPORT.md`](FINAL_ACCEPTANCE_REPORT.md). No credentials or active data were exposed or modified.
+
 ## Phase G checkpoint (2026-08-13)
 
 - **Data Debt Cleanup: PASS-LOCAL.** Migration `0009_attachment_parsing_audit` is applied to the real PostgreSQL database and `alembic check` reports no drift.
@@ -219,10 +539,10 @@ Last updated: 2026-08-13
 - Attachment outcome: 123 terminal records, with 77 failed, 46 unsupported, 0 parsed, and 0 pending. The single OCR-required record is explicitly `OCR_UNAVAILABLE`; no text or OCR success was fabricated.
 - Historical metadata: 16 `region='??'` observations were written to immutable unresolved correction-audit rows; historical document values and the `scsia.org` association classification remain unchanged.
 - Verification: Phase G targeted tests 12 passed; full backend suite 364 passed; Ruff and mypy passed; eight Compose services are healthy; 8080 and dependency health returned 200/healthy.
-- Black remains **UNVERIFIED-LOCAL** because the Windows executable did not exit within a controlled 25-second check. D drive free space was 106.7 GiB, above the 50 GiB stop threshold.
+- Black was **UNVERIFIED-LOCAL** at this historical Phase G checkpoint; the later Phase M isolated-cache/source-scoped check is `PASS-LOCAL`. D drive free space was 106.7 GiB, above the 50 GiB stop threshold.
 - Detailed evidence: [`DATA_QUALITY_REPORT.md`](DATA_QUALITY_REPORT.md).
 
-- **Phase H configuration audit:** the real Compose backend selects `none` and has no remote rerank credential; the host development settings select deterministic without a credential. Until a real remote call succeeds, status is `BLOCKED-EXTERNAL-RERANK-KEY`; neither disabled nor deterministic results are PASS-LIVE. The existing provider, fail-open/fail-closed, redaction, timeout, HTTP error, invalid-response, metadata, and retrieval regressions passed 79 tests.
+- **Phase H configuration audit:** host Settings, Compose configuration and the running backend all select `none` with no remote rerank credential. Until a real remote call succeeds, status is `BLOCKED-EXTERNAL-RERANK-KEY`; neither disabled nor deterministic results are PASS-LIVE. Provider/failure-policy regressions include explicit 429/500/503 cases and pass 82 tests in the current checkpoint.
 - **Phase I configuration audit:** the real Compose backend selects Brave but its credential is absent. Status is `BLOCKED-EXTERNAL-BRAVE-KEY`; fixture contract tests are not PASS-LIVE. Provider normalization/errors, content-gap flow, official validation, redirect/HTTPS defenses, manual approval/activation gate, retry/scheduler behavior, and API contracts passed 25 tests.
 - **Phase J evaluation draft:** 100 real-corpus candidates across 18 required categories, 93 distinct persisted document/chunk IDs, and 11 official domains. The artifact is explicitly `DRAFT_EVAL_SET`, with `human_verified=0`; formal metrics remain null and status is `BLOCKED-HUMAN-EVAL-REVIEW`. Targeted evaluation regression passed 11 tests. See [`RAG_EVALUATION_REPORT.md`](RAG_EVALUATION_REPORT.md).
 

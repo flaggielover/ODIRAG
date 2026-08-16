@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     source_discovery_search_url: str = "https://api.search.brave.com/res/v1/web/search"
     source_discovery_api_key: SecretStr | None = None
     source_discovery_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    source_discovery_validation_dns_url: str | None = None
+    source_discovery_validation_dns_timeout_seconds: float = Field(default=5.0, gt=0, le=20)
     source_discovery_max_candidates: int = Field(default=10, ge=1, le=100)
     source_discovery_max_columns: int = Field(default=12, ge=1, le=100)
     source_discovery_trial_max_documents: int = Field(default=5, ge=1, le=50)
@@ -84,7 +86,19 @@ class Settings(BaseSettings):
     celery_task_time_limit_seconds: int = Field(default=30 * 60, ge=60, le=24 * 3600)
     max_download_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
     allowed_attachment_extensions: set[str] = Field(
-        default_factory=lambda: {".pdf", ".docx", ".xlsx", ".txt", ".zip"}
+        default_factory=lambda: {
+            ".docx",
+            ".htm",
+            ".html",
+            ".jpeg",
+            ".jpg",
+            ".pdf",
+            ".png",
+            ".txt",
+            ".webp",
+            ".xlsx",
+            ".zip",
+        }
     )
 
     llm_provider: Literal["direct", "coze"] = "direct"
@@ -341,6 +355,21 @@ class Settings(BaseSettings):
                 message = "trusted_proxy_ips contains an invalid IP address or CIDR"
                 raise ValueError(message) from exc
         return value
+
+    @field_validator("source_discovery_validation_dns_url")
+    @classmethod
+    def validate_source_discovery_validation_dns_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        endpoint = urlsplit(value.strip())
+        if (
+            endpoint.scheme != "https"
+            or endpoint.hostname is None
+            or endpoint.username is not None
+            or endpoint.password is not None
+        ):
+            raise ValueError("source discovery validation DNS requires an HTTPS endpoint")
+        return value.strip().rstrip("/")
 
     @model_validator(mode="after")
     def validate_security(self) -> Settings:

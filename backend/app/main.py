@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.api.routes import health, prometheus
 from app.config import Settings, get_settings
 from app.database.session import DatabaseManager
 from app.errors import register_error_handlers
@@ -41,31 +42,39 @@ def create_app(
         )
     else:
         rate_limiter = InMemoryFixedWindowRateLimiter()
-    application_runtime = build_application_runtime(app_settings)
+    application_runtime = build_application_runtime(
+        app_settings,
+        observability_recorder=metrics_registry,
+    )
     metrics_registry.attach_database_engine(database_manager.async_engine.sync_engine)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         logger = structlog.get_logger(__name__)
-        if app_settings.auto_create_schema:
-            await database_manager.create_schema()
         try:
-            async with database_manager.session_factory() as session:
-                await AuthService(UserRepository(session), app_settings).bootstrap_admin()
-        except Exception as exc:
-            logger.warning(
-                "admin_bootstrap_unavailable",
-                error_type=exc.__class__.__name__,
+            if app_settings.auto_create_schema:
+                await database_manager.create_schema()
+            try:
+                async with database_manager.session_factory() as session:
+                    await AuthService(UserRepository(session), app_settings).bootstrap_admin()
+            except Exception as exc:
+                logger.warning(
+                    "admin_bootstrap_unavailable",
+                    error_type=exc.__class__.__name__,
+                )
+            logger.info(
+                "application_started",
+                environment=app_settings.environment,
+                database_driver=database_manager.async_engine.url.drivername,
             )
-        logger.info(
-            "application_started",
-            environment=app_settings.environment,
-            database_driver=database_manager.async_engine.url.drivername,
-        )
-        yield
-        await rate_limiter.close()
-        await database_manager.dispose()
-        logger.info("application_stopped")
+            yield
+        finally:
+            await application_runtime.close()
+            try:
+                await rate_limiter.close()
+            finally:
+                await database_manager.dispose()
+            logger.info("application_stopped")
 
     app = FastAPI(
         title=app_settings.app_name,
@@ -101,6 +110,12 @@ def create_app(
         api_prefix=app_settings.api_prefix,
     )
     register_error_handlers(app)
+    # Root probes are deliberately outside the versioned API prefix so
+    # orchestrators can check process/dependency health without API auth.
+    app.include_router(health.router)
+    # Prometheus is an internal backend endpoint.  It is intentionally not
+    # added to the public Nginx configuration.
+    app.include_router(prometheus.router)
     app.include_router(api_router, prefix=app_settings.api_prefix)
     return app
 

@@ -172,6 +172,15 @@ class Attachment(IdMixin, TimestampMixin, Base):
         CheckConstraint("file_size IS NULL OR file_size >= 0", name="file_size_nonnegative"),
         CheckConstraint("page_count IS NULL OR page_count >= 0", name="page_count_nonnegative"),
         CheckConstraint("extracted_text_length >= 0", name="extracted_text_length_nonnegative"),
+        CheckConstraint(
+            "ocr_page_count IS NULL OR ocr_page_count >= 0", name="ocr_page_count_nonnegative"
+        ),
+        CheckConstraint(
+            "ocr_text_length IS NULL OR ocr_text_length >= 0", name="ocr_text_length_nonnegative"
+        ),
+        CheckConstraint(
+            "ocr_latency_ms IS NULL OR ocr_latency_ms >= 0", name="ocr_latency_ms_nonnegative"
+        ),
         Index("ix_attachments_document_download", "document_id", "download_status"),
         Index("ix_attachments_document_parse", "document_id", "parse_status"),
         Index("ix_attachments_ocr_status", "ocr_status"),
@@ -190,6 +199,12 @@ class Attachment(IdMixin, TimestampMixin, Base):
     )
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     file_hash: Mapped[str | None] = mapped_column(String(128), index=True)
+    download_http_status: Mapped[int | None] = mapped_column(Integer)
+    download_final_url: Mapped[str | None] = mapped_column(String(4096))
+    download_error_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    download_retryable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     download_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending", index=True
     )
@@ -201,6 +216,9 @@ class Attachment(IdMixin, TimestampMixin, Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     parser: Mapped[str | None] = mapped_column(String(64))
+    parser_version: Mapped[str | None] = mapped_column(String(64))
+    extraction_method: Mapped[str | None] = mapped_column(String(64))
+    type_detection_source: Mapped[str | None] = mapped_column(String(64))
     page_count: Mapped[int | None] = mapped_column(Integer)
     requires_ocr: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
@@ -209,11 +227,16 @@ class Attachment(IdMixin, TimestampMixin, Base):
         String(32), nullable=False, default="not_required", server_default="not_required"
     )
     ocr_provider: Mapped[str | None] = mapped_column(String(64))
+    ocr_version: Mapped[str | None] = mapped_column(String(64))
+    ocr_page_count: Mapped[int | None] = mapped_column(Integer)
+    ocr_text_length: Mapped[int | None] = mapped_column(Integer)
+    ocr_latency_ms: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(64), index=True)
     retryable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     parse_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     error_message: Mapped[str | None] = mapped_column(Text)
 
     document: Mapped[Document] = relationship(back_populates="attachments")

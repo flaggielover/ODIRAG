@@ -11,6 +11,7 @@ from app.models import (
     DocumentMetadataCorrection,
     DocumentReview,
 )
+from app.ocr import OcrResult
 from app.parsers import ParsedArtifact, ParserRegistry
 from app.repositories.documents import DocumentRepository
 from app.services.data_quality import DataDebtCleanupService
@@ -117,15 +118,14 @@ async def test_image_attachment_records_ocr_unavailable_before_download(app) -> 
         await session.commit()
         await session.refresh(attachment)
 
-        with pytest.raises(ValueError, match="requires OCR"):
+        with pytest.raises(ValueError, match="downloaded local path"):
             await ParsingService(DocumentRepository(session)).parse_attachment(attachment.id)
         await session.refresh(attachment)
 
         assert attachment.parse_status == "failed"
-        assert attachment.error_code == "OCR_UNAVAILABLE"
-        assert attachment.ocr_status == "failed"
-        assert attachment.requires_ocr is True
-        assert attachment.retryable is False
+        assert attachment.error_code == "ATTACHMENT_NOT_DOWNLOADED"
+        assert attachment.ocr_status == "not_required"
+        assert attachment.retryable is True
 
 
 async def test_bulk_audit_counts_ocr_failure(app) -> None:
@@ -146,15 +146,77 @@ async def test_bulk_audit_counts_ocr_failure(app) -> None:
 
         assert summary.attempted == 1
         assert summary.failed == 1
-        assert summary.ocr_failed == 1
+        assert summary.ocr_failed == 0
         assert summary.ocr_success == 0
         assert summary.ocr_partial == 0
 
 
 class _OcrRequiredParser:
+    version = "fixture-v1"
+
     def parse(self, content: bytes, *, filename: str | None = None) -> ParsedArtifact:
         del content, filename
         return ParsedArtifact(text="", pages=("",), requires_ocr=True)
+
+
+class _FailingOcrProvider:
+    name = "fixture-failing-ocr"
+    version = "fixture-v1"
+
+    async def recognize(self, content: bytes, *, file_type: str, filename: str) -> OcrResult:
+        del content, file_type, filename
+        raise RuntimeError("fixture provider failure")
+
+
+class _FixtureOcrProvider:
+    name = "fixture-ocr"
+    version = "fixture-v1"
+
+    async def recognize(
+        self,
+        content: bytes,
+        *,
+        file_type: str,
+        filename: str,
+    ) -> OcrResult:
+        assert content
+        assert file_type in {"jpg", "pdf"}
+        assert filename
+        return OcrResult(
+            text="OCR extracted policy text",
+            pages=("OCR extracted policy text",),
+            provider=self.name,
+        )
+
+
+async def test_image_attachment_uses_injected_ocr_and_records_provenance(app) -> None:
+    path = Path(__file__).parents[3] / "config" / "prompts" / "document_review_v1.txt"
+    async with app.state.database.session_factory() as session:
+        document = await _document(session, "image-ocr-success")
+        attachment = Attachment(
+            document_id=document.id,
+            attachment_name="notice.jpg",
+            source_url="https://example.gov/files/notice.jpg",
+            local_path=str(path),
+            mime_type="image/jpeg",
+            file_type="jpg",
+            download_status="completed",
+        )
+        session.add(attachment)
+        await session.commit()
+
+        result = await ParsingService(
+            DocumentRepository(session), ocr_provider=_FixtureOcrProvider()
+        ).parse_attachment(attachment.id)
+        await session.refresh(attachment)
+
+        assert result.text == "OCR extracted policy text"
+        assert attachment.parse_status == "parsed"
+        assert attachment.ocr_status == "success"
+        assert attachment.ocr_provider == "fixture-ocr"
+        assert attachment.extraction_method == "image_ocr"
+        assert attachment.requires_ocr is False
+        assert attachment.error_code is None
 
 
 async def test_ocr_required_attachment_is_honestly_failed_when_provider_missing(app) -> None:
@@ -182,8 +244,39 @@ async def test_ocr_required_attachment_is_honestly_failed_when_provider_missing(
         assert attachment.parse_status == "failed"
         assert attachment.requires_ocr is True
         assert attachment.ocr_status == "failed"
-        assert attachment.error_code == "OCR_UNAVAILABLE"
+        assert attachment.error_code == "OCR_PROVIDER_UNAVAILABLE"
         assert attachment.retryable is False
+
+
+async def test_ocr_provider_failure_has_explicit_retryable_terminal_state(app) -> None:
+    path = Path(__file__).parent / ".ocr-fixture-failure.jpg"
+    path.write_bytes(b"\xff\xd8\xfffixture")
+    try:
+        async with app.state.database.session_factory() as session:
+            document = await _document(session, "image-ocr-failure")
+            attachment = Attachment(
+                document_id=document.id,
+                attachment_name="scan.jpg",
+                source_url="https://example.gov/files/scan.jpg",
+                local_path=str(path),
+                mime_type="image/jpeg",
+                download_status="completed",
+            )
+            session.add(attachment)
+            await session.commit()
+
+            with pytest.raises(RuntimeError, match="fixture provider failure"):
+                await ParsingService(
+                    DocumentRepository(session), ocr_provider=_FailingOcrProvider()
+                ).parse_attachment(attachment.id)
+            await session.refresh(attachment)
+
+            assert attachment.parse_status == "failed"
+            assert attachment.error_code == "OCR_FAILED"
+            assert attachment.retryable is True
+            assert attachment.ocr_status == "failed"
+    finally:
+        path.unlink(missing_ok=True)
 
 
 async def test_data_debt_cleanup_is_idempotent_and_preserves_manual_gate(app) -> None:

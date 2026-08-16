@@ -8,6 +8,8 @@ from app.parsers.base import ParsedArtifact
 
 
 class ZipMetadataParser:
+    version = "1"
+
     def parse(self, content: bytes, *, filename: str | None = None) -> ParsedArtifact:
         del filename
         entries = []

@@ -316,8 +316,8 @@ def main(argv: list[str] | None = None) -> int:
     except AcceptanceApiError as exc:
         result = {"status": exc.code, "http_status": exc.status_code}
         exit_code = EXIT_TASK_FAILED
-    except Exception:
-        result = {"status": "unexpected_error"}
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        result = {"status": "unexpected_error", "error_type": type(exc).__name__}
         exit_code = EXIT_TASK_FAILED
     _print_result(result)
     return exit_code

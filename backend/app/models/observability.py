@@ -67,6 +67,9 @@ class QueryTrace(IdMixin, CreatedAtMixin, Base):
     final_context_json: Mapped[list[dict[str, object]]] = mapped_column(
         JSON_VALUE, nullable=False, default=list
     )
+    stage_timings_json: Mapped[JsonObject] = mapped_column(
+        JSON_VALUE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     prompt_version: Mapped[str | None] = mapped_column(String(64), index=True)
     prompt_snapshot_json: Mapped[JsonObject] = mapped_column(
         JSON_VALUE, nullable=False, default=dict, server_default=text("'{}'")

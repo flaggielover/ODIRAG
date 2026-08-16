@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Any
 
 from app.llm import LLMOrchestrator
+from app.metrics import MetricsRecorder, classify_error, provider_label
 from app.models import QueryTrace
 from app.providers import ProviderResponseError
 from app.rag import (
@@ -40,6 +41,11 @@ class ChatAnswer:
     evidence_sufficiency: EvidenceSufficiencyDecision | None
     evidence_gate_latency_ms: float
     answer_support_validated: bool | None
+    answer_validation_decision: EvidenceSufficiencyDecision | None
+    stage_timings_ms: dict[str, float]
+    generated_answer: str | None
+    generated_cited_chunk_ids: tuple[str, ...]
+    selected_context_chunk_ids: tuple[str, ...]
 
 
 class ChatService:
@@ -54,6 +60,7 @@ class ChatService:
         orchestrator: LLMOrchestrator | None = None,
         prompt: str = "",
         prompt_version: str = "v1",
+        recorder: MetricsRecorder | None = None,
     ) -> None:
         self.repository = repository
         self.router = router
@@ -63,6 +70,7 @@ class ChatService:
         self.orchestrator = orchestrator
         self.prompt = prompt
         self.prompt_version = prompt_version
+        self.recorder = recorder
 
     async def answer(
         self,
@@ -73,20 +81,78 @@ class ChatService:
         retrieval_top_k: int | None = None,
     ) -> ChatAnswer:
         started = perf_counter()
+        try:
+            result = await self._answer(
+                query,
+                explicit_filters=explicit_filters,
+                retrieval_mode=retrieval_mode,
+                retrieval_top_k=retrieval_top_k,
+            )
+        except Exception as exc:
+            duration = max(0.0, perf_counter() - started)
+            self._record_stage("end_to_end", "error", duration, exc)
+            self._record_stage("error", "error", duration, exc)
+            self._record_rag_request("error", duration)
+            raise
+        duration = max(0.0, perf_counter() - started)
+        outcome = "refusal" if result.refusal else "success"
+        self._record_stage("end_to_end", outcome, duration)
+        if result.refusal:
+            self._record_stage("refusal", "refusal", duration)
+        retrieval = result.retrieval_trace
+        self._record_rag_request(
+            outcome,
+            duration,
+            grounded=(
+                not result.refusal
+                and bool(result.citations)
+                and result.answer_support_validated is True
+            ),
+            refusal_reason=(result.refusal_reasons[0] if result.refusal_reasons else None),
+            candidate_counts=(
+                {
+                    "retrieved": len(retrieval.fusion_results),
+                    "reranked": len(retrieval.rerank_results),
+                    "final": len(retrieval.final_results),
+                }
+                if retrieval is not None
+                else None
+            ),
+        )
+        return result
+
+    async def _answer(
+        self,
+        query: str,
+        *,
+        explicit_filters: dict[str, Any] | None = None,
+        retrieval_mode: RetrievalMode = RetrievalMode.HYBRID_RERANK,
+        retrieval_top_k: int | None = None,
+    ) -> ChatAnswer:
+        started = perf_counter()
+        stage_timings_ms: dict[str, float] = {}
+        routing_started = perf_counter()
         route = self.router.analyze(query, explicit_filters)
+        stage_timings_ms["query_routing"] = _elapsed_ms(routing_started)
         structured_count: int | None = None
         retrieval_trace: RetrievalTrace | None = None
         decision = EvidenceDecision(True, (), (), (), ())
         evidence_sufficiency: EvidenceSufficiencyDecision | None = None
         evidence_gate_latency_ms = 0.0
         answer_support_validated: bool | None = None
+        answer_validation_decision: EvidenceSufficiencyDecision | None = None
+        generated_answer: str | None = None
+        generated_cited_chunk_ids: tuple[str, ...] = ()
+        selected_context_chunk_ids: tuple[str, ...] = ()
         token_usage_json: dict[str, Any] = {
             "measurement": "not_available",
             "cost_measurement": "not_available",
         }
         cost = Decimal("0")
         if route.query_type in {QueryType.SQL, QueryType.COMPOSITE}:
+            structured_started = perf_counter()
             structured_count = await self.repository.count_approved_documents(route.filters)
+            stage_timings_ms["structured_query"] = _elapsed_ms(structured_started)
         if route.query_type is QueryType.SQL:
             trace_id = str(uuid.uuid4())
             answer = f"数据库中符合条件且已审核通过的政策文档共 {structured_count} 份。"
@@ -100,6 +166,12 @@ class ChatService:
                 filters=route.filters,
                 top_k=retrieval_top_k,
             )
+            stage_timings_ms.update(
+                {
+                    f"retrieval_{stage}": latency
+                    for stage, latency in retrieval_trace.timings_ms.items()
+                }
+            )
             trace_id = retrieval_trace.trace_id
             gate_started = perf_counter()
             evidence_sufficiency = self.evidence_gate.assess(
@@ -107,6 +179,7 @@ class ChatService:
                 retrieval_trace.final_results,
             )
             evidence_gate_latency_ms = (perf_counter() - gate_started) * 1000
+            stage_timings_ms["evidence_gate"] = round(evidence_gate_latency_ms, 3)
             self._validate_evidence_decision(
                 evidence_sufficiency,
                 retrieval_trace.final_results,
@@ -121,7 +194,9 @@ class ChatService:
                 supported_hits = [
                     hit for hit in retrieval_trace.final_results if hit.chunk_id in supported_ids
                 ]
+                grounding_started = perf_counter()
                 decision = self.grounding.assess(query, supported_hits)
+                stage_timings_ms["grounding"] = _elapsed_ms(grounding_started)
                 if not decision.sufficient:
                     answer = self._refusal_text(decision.reasons)
                     refusal = True
@@ -136,11 +211,17 @@ class ChatService:
                         token_usage_json,
                         cost,
                         answer_support_validated,
+                        answer_validation_decision,
+                        answer_stage_timings,
+                        generated_answer,
+                        generated_cited_chunk_ids,
+                        selected_context_chunk_ids,
                     ) = await self._grounded_answer(
                         query,
                         retrieval_trace,
                         decision,
                     )
+                    stage_timings_ms.update(answer_stage_timings)
                     if route.query_type is QueryType.COMPOSITE and not refusal:
                         answer = f"在符合筛选条件的 {structured_count} 份文档中，{answer}"
         result = ChatAnswer(
@@ -160,6 +241,11 @@ class ChatService:
             evidence_sufficiency=evidence_sufficiency,
             evidence_gate_latency_ms=evidence_gate_latency_ms,
             answer_support_validated=answer_support_validated,
+            answer_validation_decision=answer_validation_decision,
+            stage_timings_ms=stage_timings_ms,
+            generated_answer=generated_answer,
+            generated_cited_chunk_ids=generated_cited_chunk_ids,
+            selected_context_chunk_ids=selected_context_chunk_ids,
         )
         await self._persist(result, query, started)
         return result
@@ -193,6 +279,11 @@ class ChatService:
         dict[str, Any],
         Decimal,
         bool | None,
+        EvidenceSufficiencyDecision | None,
+        dict[str, float],
+        str | None,
+        tuple[str, ...],
+        tuple[str, ...],
     ]:
         if self.orchestrator is None:
             selected = decision.citations[:3]
@@ -200,21 +291,83 @@ class ChatService:
                 f"{index}. {citation.quote}（来源：《{citation.title}》）"
                 for index, citation in enumerate(selected, start=1)
             ]
+            extracted_answer = "根据检索到的官方文件：" + " ".join(lines)
             return (
-                "根据检索到的官方文件：" + " ".join(lines),
+                extracted_answer,
                 selected,
                 False,
                 (),
                 {"measurement": "not_available", "cost_measurement": "not_applicable"},
                 Decimal("0"),
                 True,
+                None,
+                {},
+                extracted_answer,
+                tuple(citation.chunk_id for citation in selected),
+                tuple(citation.chunk_id for citation in selected),
             )
         citation_by_chunk = {citation.chunk_id: citation for citation in decision.citations}
         eligible_hits = [hit for hit in trace.final_results if hit.chunk_id in citation_by_chunk]
-        generated = await self.orchestrator.generate_answer(
-            query=query,
-            context=[_hit_payload(hit) for hit in eligible_hits],
-            prompt=self.prompt,
+        context_packing_started = perf_counter()
+        answer_context = [_hit_payload(hit) for hit in eligible_hits]
+        selected_context_chunk_ids = tuple(hit.chunk_id for hit in eligible_hits)
+        answer_stage_timings = {"context_packing": _elapsed_ms(context_packing_started)}
+        direct_llm_started = perf_counter()
+        try:
+            generated = await self.orchestrator.generate_answer(
+                query=query,
+                context=answer_context,
+                prompt=self.prompt,
+            )
+        except ProviderResponseError as exc:
+            duration = max(0.0, perf_counter() - direct_llm_started)
+            answer_stage_timings["direct_llm"] = round(duration * 1000, 3)
+            self._record_provider(
+                self.orchestrator,
+                "generate_answer",
+                "error",
+                duration,
+                exc,
+            )
+            self._record_stage("direct_llm", "error", duration, exc)
+            return (
+                self._refusal_text(("model_output_invalid",)),
+                (),
+                True,
+                ("model_output_invalid",),
+                {"measurement": "not_available", "cost_measurement": "not_available"},
+                Decimal("0"),
+                None,
+                None,
+                answer_stage_timings,
+                None,
+                (),
+                selected_context_chunk_ids,
+            )
+        except Exception as exc:
+            duration = max(0.0, perf_counter() - direct_llm_started)
+            answer_stage_timings["direct_llm"] = round(duration * 1000, 3)
+            self._record_provider(
+                self.orchestrator,
+                "generate_answer",
+                "error",
+                duration,
+                exc,
+            )
+            self._record_stage("direct_llm", "error", duration, exc)
+            raise
+        duration = max(0.0, perf_counter() - direct_llm_started)
+        answer_stage_timings["direct_llm"] = round(duration * 1000, 3)
+        self._record_provider(
+            self.orchestrator,
+            "generate_answer",
+            "success",
+            duration,
+        )
+        self._record_stage(
+            "direct_llm",
+            "refusal" if generated.refusal else "success",
+            duration,
         )
         if generated.refusal:
             reason = generated.refusal_reason or "model_refusal"
@@ -225,7 +378,13 @@ class ChatService:
                 (reason,),
                 *_result_usage(generated),
                 None,
+                None,
+                answer_stage_timings,
+                generated.answer,
+                tuple(generated.cited_chunk_ids),
+                selected_context_chunk_ids,
             )
+        citation_validation_started = perf_counter()
         cited_ids = tuple(dict.fromkeys(generated.cited_chunk_ids))
         if not cited_ids or any(chunk_id not in citation_by_chunk for chunk_id in cited_ids):
             raise ProviderResponseError("grounded_answer", "citations are missing or invalid")
@@ -242,6 +401,7 @@ class ChatService:
             answer=generated.answer,
             cited_hits=cited_hits,
         )
+        answer_stage_timings["citation_validation"] = _elapsed_ms(citation_validation_started)
         if not answer_support.sufficient:
             return (
                 self._refusal_text((answer_support.reason,)),
@@ -251,11 +411,97 @@ class ChatService:
                 usage,
                 cost,
                 False,
+                answer_support,
+                answer_stage_timings,
+                generated.answer,
+                cited_ids,
+                selected_context_chunk_ids,
             )
-        return generated.answer, citations, False, (), usage, cost, True
+        return (
+            generated.answer,
+            citations,
+            False,
+            (),
+            usage,
+            cost,
+            True,
+            answer_support,
+            answer_stage_timings,
+            generated.answer,
+            cited_ids,
+            selected_context_chunk_ids,
+        )
+
+    def _record_provider(
+        self,
+        provider: object,
+        operation: str,
+        outcome: str,
+        duration_seconds: float,
+        exc: BaseException | None = None,
+    ) -> None:
+        if self.recorder is None:
+            return
+        try:
+            self.recorder.record_provider(
+                provider_label(provider),
+                operation,
+                outcome,
+                duration_seconds,
+                error_category=classify_error(exc),
+            )
+        except Exception:
+            return
+
+    def _record_stage(
+        self,
+        stage: str,
+        outcome: str,
+        duration_seconds: float,
+        exc: BaseException | None = None,
+    ) -> None:
+        if self.recorder is None:
+            return
+        try:
+            self.recorder.record_rag_stage(
+                stage,
+                outcome,
+                duration_seconds,
+                error_category=classify_error(exc),
+            )
+        except Exception:
+            return
+
+    def _record_rag_request(
+        self,
+        status: str,
+        duration_seconds: float,
+        *,
+        grounded: bool = False,
+        refusal_reason: str | None = None,
+        candidate_counts: dict[str, int] | None = None,
+    ) -> None:
+        if self.recorder is None:
+            return
+        recorder = getattr(self.recorder, "record_rag_request", None)
+        if not callable(recorder):
+            return
+        try:
+            recorder(
+                status,
+                duration_seconds,
+                grounded=grounded,
+                refusal_reason=refusal_reason,
+                candidate_counts=candidate_counts,
+            )
+        except Exception:
+            return
 
     async def _persist(self, result: ChatAnswer, query: str, started: float) -> None:
         retrieval = result.retrieval_trace
+        total_latency_ms = round((perf_counter() - started) * 1000)
+        stage_timings = dict(result.stage_timings_ms)
+        stage_timings["total"] = float(total_latency_ms)
         await self.repository.add_trace(
             QueryTrace(
                 trace_id=result.trace_id,
@@ -268,6 +514,7 @@ class ChatService:
                 rerank_results_json=_hits_payload(retrieval.rerank_results if retrieval else ()),
                 rerank_metadata_json=(retrieval.rerank_metadata if retrieval else {}),
                 final_context_json=_hits_payload(retrieval.final_results if retrieval else ()),
+                stage_timings_json=stage_timings,
                 prompt_version=self.prompt_version,
                 prompt_snapshot_json={
                     "version": self.prompt_version,
@@ -283,7 +530,7 @@ class ChatService:
                 answer=result.answer,
                 citations_json=[_citation_payload(citation) for citation in result.citations],
                 refusal=result.refusal,
-                latency_ms=round((perf_counter() - started) * 1000),
+                latency_ms=total_latency_ms,
                 token_usage_json=result.token_usage_json,
                 cost=result.cost,
             )
@@ -328,7 +575,15 @@ class ChatService:
                 "provider": self.evidence_gate.provider_name,
                 "model": self.evidence_gate.model_name,
                 "answer_support_validated": result.answer_support_validated,
+                "answer_validation_decision": (
+                    result.answer_validation_decision.as_dict()
+                    if result.answer_validation_decision is not None
+                    else None
+                ),
                 "refusal_reasons": list(result.refusal_reasons),
+                "selected_context_chunk_ids": list(result.selected_context_chunk_ids),
+                "generated_answer": result.generated_answer,
+                "generated_cited_chunk_ids": list(result.generated_cited_chunk_ids),
             }
         )
         return payload
@@ -374,3 +629,7 @@ def _result_usage(result: Any) -> tuple[dict[str, Any], Decimal]:
         return usage, Decimal("0")
     usage.setdefault("cost_measurement", "provider_reported")
     return usage, Decimal(str(cost))
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((perf_counter() - started) * 1000, 3)

@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-rag",
+  "title": "RAG_PIPELINE",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"type":"timeseries","title":"RAG traffic and errors","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"sum(rate(odirag_rag_requests_total[5m]))","legendFormat":"requests/s"},{"expr":"sum(rate(odirag_rag_requests_total{status=\"error\"}[5m]))","legendFormat":"errors/s"}]},
+    {"type":"timeseries","title":"Pipeline latency","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_rag_duration_seconds_bucket[5m])))","legendFormat":"end-to-end P95"},{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_rag_stage_duration_seconds_bucket{stage=\"vector_retrieval\"}[5m])))","legendFormat":"vector P95"}]},
+    {"type":"timeseries","title":"Stage latency","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_rag_stage_duration_seconds_bucket{stage=\"embedding\"}[5m])))","legendFormat":"embedding"},{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_rag_stage_duration_seconds_bucket{stage=\"rerank\"}[5m])))","legendFormat":"rerank"},{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_rag_stage_duration_seconds_bucket{stage=\"direct_llm\"}[5m])))","legendFormat":"LLM"}]},
+    {"type":"timeseries","title":"Refusal rate","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"sum(rate(odirag_rag_requests_total{status=\"refusal\"}[5m])) / clamp_min(sum(rate(odirag_rag_requests_total[5m])), 0.001)","legendFormat":"refusal ratio"}]}
+  ]
+}

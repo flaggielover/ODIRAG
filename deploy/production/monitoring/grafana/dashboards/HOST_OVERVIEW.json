@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-host",
+  "title": "HOST_OVERVIEW",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"type":"timeseries","title":"CPU utilization","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100","legendFormat":"CPU %"}]},
+    {"type":"timeseries","title":"Memory utilization","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100","legendFormat":"Memory %"}]},
+    {"type":"timeseries","title":"Filesystem free","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay\"}","legendFormat":"{{mountpoint}}"}]},
+    {"type":"timeseries","title":"Load average","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"node_load1","legendFormat":"1m"},{"expr":"node_load5","legendFormat":"5m"},{"expr":"node_load15","legendFormat":"15m"}]}
+  ]
+}

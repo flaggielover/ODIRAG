@@ -1,0 +1,24 @@
+groups:
+  - name: odirag-backups
+    rules:
+      - alert: BackupStaleness
+        expr: time() - odirag_backup_last_success_timestamp_seconds > 86400
+        for: 30m
+        labels: {severity: warning, service: backup}
+        annotations:
+          summary: Production backup is stale
+          description: No successful backup has been recorded in the last 24 hours.
+      - alert: WALArchiveStaleness
+        expr: odirag_postgres_wal_archive_pending_files > 0 and (time() - odirag_wal_archive_last_success_timestamp_seconds > 1800)
+        for: 15m
+        labels: {severity: warning, service: postgresql}
+        annotations:
+          summary: PostgreSQL WAL archive is stale
+          description: PostgreSQL has pending WAL files and has not archived one in the last thirty minutes.
+      - alert: WALArchiveFailure
+        expr: increase(odirag_postgres_wal_archive_failed_total[15m]) > 0
+        for: 5m
+        labels: {severity: critical, service: postgresql}
+        annotations:
+          summary: PostgreSQL WAL archive failures are increasing
+          description: One or more new WAL archive failures occurred in the last fifteen minutes.

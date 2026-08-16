@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: ODIRAG production
+    orgId: 1
+    folder: ODIRAG Production
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

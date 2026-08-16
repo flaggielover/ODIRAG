@@ -43,18 +43,30 @@ class DocumentAttachmentResponse(BaseModel):
     file_type: str
     file_size: int | None
     file_hash: str | None
+    download_http_status: int | None
+    download_final_url: str | None
+    download_error_code: str | None
+    download_retryable: bool
     download_status: str
     parse_status: str
     parsed_text: str | None
     extracted_text_length: int
     parser: str | None
+    parser_version: str | None
+    extraction_method: str | None
+    type_detection_source: str | None
     page_count: int | None
     requires_ocr: bool
     ocr_status: str
     ocr_provider: str | None
+    ocr_version: str | None
+    ocr_page_count: int | None
+    ocr_text_length: int | None
+    ocr_latency_ms: int | None
     error_code: str | None
     retryable: bool
     parse_attempted_at: datetime | None
+    processed_at: datetime | None
     error_message: str | None
     created_at: datetime
     updated_at: datetime

@@ -60,6 +60,7 @@ class QueryTraceResponse(BaseModel):
     rerank_results_json: list[dict[str, Any]]
     rerank_metadata_json: dict[str, Any]
     final_context_json: list[dict[str, Any]]
+    stage_timings_json: dict[str, float]
     prompt_version: str | None
     prompt_snapshot_json: dict[str, Any]
     evidence_decision_json: dict[str, Any]

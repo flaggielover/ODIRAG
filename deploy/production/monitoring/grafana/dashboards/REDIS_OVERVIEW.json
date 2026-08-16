@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-redis",
+  "title": "REDIS_OVERVIEW",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"type":"timeseries","title":"Memory used","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"redis_memory_used_bytes","legendFormat":"used"},{"expr":"redis_config_maxmemory","legendFormat":"max"}]},
+    {"type":"timeseries","title":"Clients","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"redis_connected_clients","legendFormat":"clients"}]},
+    {"type":"timeseries","title":"Commands","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"rate(redis_commands_processed_total[5m])","legendFormat":"commands/s"}]},
+    {"type":"timeseries","title":"Evictions and expirations","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"rate(redis_evicted_keys_total[5m])","legendFormat":"evictions/s"},{"expr":"rate(redis_expired_keys_total[5m])","legendFormat":"expired/s"}]}
+  ]
+}

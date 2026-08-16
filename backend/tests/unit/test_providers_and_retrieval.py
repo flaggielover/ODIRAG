@@ -5,7 +5,12 @@ import pytest
 
 from app.bm25 import BM25Document, BM25Index
 from app.cache import InMemoryEmbeddingCache
-from app.embedding import DeterministicEmbeddingProvider, EmbeddingBatcher, RemoteEmbeddingProvider
+from app.embedding import (
+    CachedQueryEmbeddingProvider,
+    DeterministicEmbeddingProvider,
+    EmbeddingBatcher,
+    RemoteEmbeddingProvider,
+)
 from app.providers import ProviderUnavailableError
 from app.rerank import DeterministicRerankProvider
 from app.retrieval import RetrievalEngine, RetrievalMode
@@ -86,6 +91,109 @@ async def test_remote_embedding_validates_response_count() -> None:
         )
         with pytest.raises(Exception, match="embedding count"):
             await provider.embed_query("query")
+
+
+@pytest.mark.asyncio
+async def test_query_embedding_cache_is_versioned_and_reused() -> None:
+    class CountingProvider(DeterministicEmbeddingProvider):
+        def __init__(self) -> None:
+            super().__init__(dimensions=8)
+            self.query_calls = 0
+
+        async def embed_query(self, text: str) -> list[float]:
+            self.query_calls += 1
+            return await super().embed_query(text)
+
+    cache = InMemoryEmbeddingCache()
+    provider = CountingProvider()
+    cached = CachedQueryEmbeddingProvider(provider, cache, version="v-test")
+
+    first = await cached.embed_query("normalized query")
+    second = await cached.embed_query("normalized query")
+
+    assert first == second
+    assert provider.query_calls == 1
+    assert len(cache.values) == 1
+    assert next(iter(cache.values)).startswith(
+        "query-embedding:deterministic:deterministic-sha256-v1:"
+    )
+    assert ":v-test:" in next(iter(cache.values))
+
+
+@pytest.mark.asyncio
+async def test_concurrent_query_embedding_requests_are_coalesced() -> None:
+    class CountingProvider(DeterministicEmbeddingProvider):
+        def __init__(self) -> None:
+            super().__init__(dimensions=8)
+            self.query_calls = 0
+
+        async def embed_query(self, text: str) -> list[float]:
+            self.query_calls += 1
+            await __import__("asyncio").sleep(0)
+            return await super().embed_query(text)
+
+    provider = CountingProvider()
+    cached = CachedQueryEmbeddingProvider(
+        provider,
+        InMemoryEmbeddingCache(),
+        version="v-test",
+    )
+
+    first, second = await __import__("asyncio").gather(
+        cached.embed_query("same query"),
+        cached.embed_query("same query"),
+    )
+
+    assert first == second
+    assert provider.query_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_query_embedding_cache_separates_compatible_endpoints() -> None:
+    class EndpointProvider(DeterministicEmbeddingProvider):
+        provider_name = "remote"
+        model_name = "shared-model"
+
+        def __init__(self, base_url: str) -> None:
+            super().__init__(dimensions=8)
+            self.base_url = base_url
+            self.query_calls = 0
+
+        async def embed_query(self, text: str) -> list[float]:
+            self.query_calls += 1
+            return await super().embed_query(text)
+
+    cache = InMemoryEmbeddingCache()
+    first_provider = EndpointProvider("https://first.example/v1")
+    second_provider = EndpointProvider("https://second.example/v1")
+
+    await CachedQueryEmbeddingProvider(first_provider, cache, version="v1").embed_query(
+        "same query"
+    )
+    await CachedQueryEmbeddingProvider(second_provider, cache, version="v1").embed_query(
+        "same query"
+    )
+
+    assert first_provider.query_calls == 1
+    assert second_provider.query_calls == 1
+    assert len(cache.values) == 2
+
+
+@pytest.mark.asyncio
+async def test_query_embedding_cache_failure_falls_back_to_provider() -> None:
+    class UnavailableCache:
+        async def get(self, key: str) -> list[float] | None:
+            del key
+            raise RuntimeError("cache unavailable")
+
+        async def set(self, key: str, vector: list[float]) -> None:
+            del key, vector
+            raise RuntimeError("cache unavailable")
+
+    provider = DeterministicEmbeddingProvider(dimensions=8)
+    cached = CachedQueryEmbeddingProvider(provider, UnavailableCache(), version="v-test")
+
+    assert await cached.embed_query("query") == await provider.embed_query("query")
 
 
 @pytest.mark.asyncio

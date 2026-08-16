@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-slo",
+  "title": "PRODUCTION_SLO",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-24h", "to": "now"},
+  "panels": [
+    {"type":"stat","title":"API availability (observed)","gridPos":{"h":6,"w":8,"x":0,"y":0},"targets":[{"expr":"1 - (sum(rate(odirag_http_requests_total{job=\"backend\",status_class=\"5xx\"}[24h])) / clamp_min(sum(rate(odirag_http_requests_total{job=\"backend\"}[24h])), 0.001))"}]},
+    {"type":"timeseries","title":"Golden signals","gridPos":{"h":8,"w":16,"x":8,"y":0},"targets":[{"expr":"sum(rate(odirag_http_requests_total{job=\"backend\"}[5m]))","legendFormat":"traffic"},{"expr":"sum(rate(odirag_http_requests_total{job=\"backend\",status_class=\"5xx\"}[5m]))","legendFormat":"errors"},{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_http_request_duration_seconds_bucket{job=\"backend\"}[5m])))","legendFormat":"latency P95"}]},
+    {"type":"timeseries","title":"Host saturation","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100","legendFormat":"CPU %"},{"expr":"(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100","legendFormat":"memory %"}]},
+    {"type":"timeseries","title":"RAG success and refusal","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"sum(rate(odirag_rag_requests_total{status=\"success\"}[5m]))","legendFormat":"success/s"},{"expr":"sum(rate(odirag_rag_requests_total{status=\"refusal\"}[5m]))","legendFormat":"refused/s"}]}
+  ]
+}

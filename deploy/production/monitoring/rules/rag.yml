@@ -1,0 +1,38 @@
+groups:
+  - name: odirag-rag
+    rules:
+      - alert: RAGHighErrorRate
+        expr: sum(rate(odirag_rag_requests_total{status="error"}[5m])) / clamp_min(sum(rate(odirag_rag_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning, service: rag}
+        annotations:
+          summary: RAG error rate is elevated
+          description: RAG failures exceed five percent of requests.
+      - alert: RAGHighLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(odirag_rag_duration_seconds_bucket[5m]))) > 10
+        for: 10m
+        labels: {severity: warning, service: rag}
+        annotations:
+          summary: RAG P95 latency is elevated
+          description: End-to-end RAG P95 latency exceeds ten seconds.
+      - alert: EmbeddingProviderErrors
+        expr: sum(rate(odirag_provider_requests_total{provider="bailian",operation="embed_query",outcome="error"}[5m])) > 0
+        for: 5m
+        labels: {severity: warning, service: provider}
+        annotations:
+          summary: Bailian embedding errors detected
+          description: Bailian embedding requests are returning errors.
+      - alert: RerankProviderErrors
+        expr: sum(rate(odirag_provider_requests_total{provider="cohere",operation="rerank",outcome="error"}[5m])) > 0
+        for: 5m
+        labels: {severity: warning, service: provider}
+        annotations:
+          summary: Cohere rerank errors detected
+          description: Cohere rerank requests are returning errors.
+      - alert: LLMProviderErrors
+        expr: sum(rate(odirag_provider_requests_total{provider="deepseek",operation="generate_answer",outcome="error"}[5m])) > 0
+        for: 5m
+        labels: {severity: warning, service: provider}
+        annotations:
+          summary: DeepSeek LLM errors detected
+          description: DeepSeek LLM requests are returning errors.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: I001
+
 import argparse
 import asyncio
 import json
@@ -10,9 +12,20 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = REPOSITORY_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_ROOT))
 
+import anyio
+
+from app.config import Settings
+from app.database.session import DatabaseManager
+from app.evaluation.draft_dataset import (
+    build_draft_evaluation_dataset,
+    validate_draft_dataset,
+)
+
 
 def _arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a real-corpus Phase J draft evaluation set")
+    parser = argparse.ArgumentParser(
+        description="Build a real-corpus Phase J draft evaluation set"
+    )
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument(
         "--output",
@@ -28,15 +41,6 @@ def _arguments() -> argparse.Namespace:
 
 
 async def _run(limit: int, output: Path, result_output: Path) -> None:
-    import anyio
-
-    from app.config import Settings
-    from app.database.session import DatabaseManager
-    from app.evaluation.draft_dataset import (
-        build_draft_evaluation_dataset,
-        validate_draft_dataset,
-    )
-
     database = DatabaseManager(Settings())
     try:
         async with database.session_factory() as session:
@@ -47,7 +51,8 @@ async def _run(limit: int, output: Path, result_output: Path) -> None:
     await anyio.Path(output.parent).mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + ".tmp")
     await anyio.Path(temporary).write_text(
-        json.dumps(dataset.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(dataset.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
         encoding="utf-8",
     )
     await anyio.Path(temporary).replace(output)

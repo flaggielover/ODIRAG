@@ -50,6 +50,7 @@ def get_chat_service(
         orchestrator=runtime.llm_orchestrator,
         prompt=runtime.grounded_answer_prompt,
         prompt_version=runtime.grounded_answer_prompt_version,
+        recorder=runtime.observability_recorder,
     )
 
 

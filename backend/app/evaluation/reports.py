@@ -97,6 +97,7 @@ def _question_payload(result: EvaluationQuestionResult) -> dict[str, object]:
         "chat_metadata": _json_safe(chat.metadata) if chat is not None else None,
         "error_stage": result.error_stage,
         "error": result.error,
+        "evaluation_failed": result.sample.evaluation_failed,
     }
 
 
@@ -125,6 +126,8 @@ def _questions_csv(results: Sequence[EvaluationQuestionResult]) -> str:
         "answer_point_coverage",
         "citation_accuracy",
         "citation_completeness",
+        "document_citation_accuracy",
+        "document_citation_completeness",
         "should_refuse",
         "refused",
         "refusal_correct",
@@ -140,6 +143,7 @@ def _questions_csv(results: Sequence[EvaluationQuestionResult]) -> str:
         "expected_filters",
         "error_stage",
         "error",
+        "evaluation_failed",
     ]
     writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()
@@ -169,6 +173,8 @@ def _questions_csv(results: Sequence[EvaluationQuestionResult]) -> str:
                 "answer_point_coverage": metrics.answer_point_coverage,
                 "citation_accuracy": metrics.citation_accuracy,
                 "citation_completeness": metrics.citation_completeness,
+                "document_citation_accuracy": metrics.document_citation_accuracy,
+                "document_citation_completeness": metrics.document_citation_completeness,
                 "should_refuse": result.case.should_refuse,
                 "refused": result.sample.refused,
                 "refusal_correct": metrics.refusal_correct,
@@ -188,6 +194,7 @@ def _questions_csv(results: Sequence[EvaluationQuestionResult]) -> str:
                 ),
                 "error_stage": result.error_stage or "",
                 "error": result.error or "",
+                "evaluation_failed": result.sample.evaluation_failed,
             }
         )
     return output.getvalue()
@@ -246,14 +253,25 @@ def _chart_data(result: EvaluationRunResult) -> dict[str, object]:
         ("hallucination_rate", "ratio"),
         ("citation_precision", "ratio"),
         ("citation_recall", "ratio"),
+        ("emitted_citation_precision", "ratio"),
+        ("emitted_citation_recall", "ratio"),
+        ("document_citation_precision", "ratio"),
+        ("document_citation_recall", "ratio"),
+        ("emitted_document_citation_precision", "ratio"),
+        ("emitted_document_citation_recall", "ratio"),
         ("answer_grounding_rate", "ratio"),
         ("unsupported_answer_rate", "ratio"),
+        ("refusal_precision", "ratio"),
+        ("refusal_recall", "ratio"),
+        ("supported_answer_recall", "ratio"),
         ("p50_latency_ms", "ms"),
         ("p95_latency_ms", "ms"),
         ("average_tokens", "tokens"),
         ("average_cost", "cost"),
         ("hallucination_assessed_claims", "count"),
         ("hallucination_assessed_questions", "count"),
+        ("evaluation_error_count", "count"),
+        ("quality_assessed_questions", "count"),
     )
     return {
         "run_name": result.run_name,

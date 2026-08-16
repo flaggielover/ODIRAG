@@ -1,5 +1,11 @@
 """Configurable crawling primitives."""
 
+from app.crawler.dns import (
+    DnsResolutionError,
+    DohHostResolver,
+    PinnedAsyncHTTPTransport,
+    PinnedNetworkBackend,
+)
 from app.crawler.fetcher import (
     Fetcher,
     FetchResponse,
@@ -40,11 +46,15 @@ __all__ = [
     "CrawledAttachment",
     "CrawledDocument",
     "CrawlerAdapterRegistry",
+    "DnsResolutionError",
+    "DohHostResolver",
     "FetchResponse",
     "Fetcher",
     "GenericCrawler",
     "HttpFetcher",
     "LocalCrawlProvider",
+    "PinnedAsyncHTTPTransport",
+    "PinnedNetworkBackend",
     "RedirectLimitError",
     "ResponseTooLargeError",
     "SiteRules",

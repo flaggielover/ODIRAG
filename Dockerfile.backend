@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG PYTHON_IMAGE=python:3.12-alpine3.24
+ARG PYTHON_IMAGE=python:3.12-alpine3.24@sha256:78098ea6a3a9c6a7727a5d4674e4a44e57e01fac878ee9cb4d24a86bd93916ff
 
 FROM ${PYTHON_IMAGE} AS builder
 
@@ -20,6 +20,17 @@ RUN python -m pip install --upgrade pip \
 
 FROM ${PYTHON_IMAGE} AS runtime
 
+ARG ODIRAG_SOURCE_REVISION=unknown
+ARG ODIRAG_RELEASE=development
+ARG ODIRAG_BUILD_CREATED=unknown
+ARG ODIRAG_SOURCE_URL=https://github.com/flaggielover/ODIRAG
+
+LABEL org.opencontainers.image.source="${ODIRAG_SOURCE_URL}" \
+      org.opencontainers.image.revision="${ODIRAG_SOURCE_REVISION}" \
+      org.opencontainers.image.version="${ODIRAG_RELEASE}" \
+      org.opencontainers.image.created="${ODIRAG_BUILD_CREATED}" \
+      org.opencontainers.image.title="ODIRAG backend"
+
 ENV PATH="/opt/venv/bin:$PATH" \
     HOME=/home/odirag \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -27,7 +38,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /opt/venv /opt/venv
-RUN site_packages="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
+RUN apk add --no-cache libstdc++ \
+    && site_packages="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
     && rm -rf \
         /opt/venv/bin/pip* \
         "${site_packages}/pip" \
@@ -61,6 +73,6 @@ RUN mkdir -p \
 USER odirag:odirag
 EXPOSE 8000
 
-HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=20s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/system/health', timeout=3)" || exit 1
+HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=20s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)" || exit 1
 ENTRYPOINT ["/app/deployment/container-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from urllib.parse import urlsplit
 
+import httpx
 from bs4 import BeautifulSoup, Tag
 from sqlalchemy.exc import IntegrityError
 
 from app.config import Settings
-from app.crawler import FetchResponse, HttpFetcher, normalize_url
+from app.crawler import (
+    DohHostResolver,
+    FetchResponse,
+    HttpFetcher,
+    PinnedAsyncHTTPTransport,
+    normalize_url,
+)
 from app.errors import AppError, ConflictError, NotFoundError
 from app.models import (
     Source,
@@ -36,6 +44,8 @@ _COLUMN_TERMS = (
     "办事",
     "新闻",
     "动态",
+    "规划",
+    "解读",
     "policy",
     "notice",
     "announcement",
@@ -45,6 +55,77 @@ _COLUMN_TERMS = (
 )
 _DETAIL_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip"}
 _MARKERS = ("政府", "政务", "人民政府", "government", "official", "gov")
+_JXT_HOST = "jxt.sc.gov.cn"
+_JXT_DETAIL_PATH = re.compile(
+    r"^/scjxt/(?P<section>[^/]+)/\d{4}/\d{1,2}/\d{1,2}/[0-9a-f]{32}\.shtml$",
+    re.IGNORECASE,
+)
+_JXT_LIST_PATH = re.compile(
+    r"^/scjxt/[^/]+/(?:common_list(?:nb)?|[^/]*_list|news)\.shtml$",
+    re.IGNORECASE,
+)
+_JXT_COLUMN_PRIORITY = {
+    "xzgfxwj": 600,
+    "wjfb": 550,
+    "zcjdn": 525,
+    "ggtz": 500,
+    "jxtz": 450,
+    "xwzx": 100,
+}
+_JXT_CONTENT_SELECTORS = (
+    "#mainDetailContent, #NewsContent, #zoomcon, .articlebox, .con_con, .cont_T, .articleCt"
+)
+_SOFTWARE_STRONG_TERMS = (
+    "软件产业",
+    "软件业",
+    "软件和信息技术服务业",
+    "软件和信息服务业",
+    "工业软件",
+    "软件企业",
+    "软件服务",
+    "信息服务业",
+    "软件首版次",
+)
+_SOFTWARE_BROAD_TERMS = (
+    "信息化",
+    "数字经济",
+    "数字化转型",
+    "工业互联网",
+    "电子信息",
+    "信息产业",
+)
+_POLICY_DOCUMENT_CUES = (
+    "政策",
+    "规划",
+    "方案",
+    "办法",
+    "通知",
+    "公告",
+    "公示",
+    "意见",
+    "要点",
+    "目录",
+    "行动",
+    "申报",
+    "征集",
+    "解读",
+    "优惠",
+    "核查",
+    "管理",
+    "支持",
+    "项目",
+)
+_PROCUREMENT_CUES = (
+    "采购",
+    "招标",
+    "投标",
+    "磋商",
+    "成交",
+    "运维",
+    "预算评审",
+    "代理机构",
+)
+_NEWS_CUES = ("新闻", "新闻发布会", "会议", "调研", "活动", "工作动态")
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +135,23 @@ class TrialStats:
     success: int
     failed: int
     average_chars: int
+
+
+@dataclass(frozen=True, slots=True)
+class TopicRelevance:
+    level: str
+    matched_terms: tuple[str, ...]
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ColumnHit:
+    priority: int
+    url: str
+    label: str
+    matched_terms: tuple[str, ...]
+    discovery_method: str
+    list_selector: str
 
 
 class SourceDiscoveryService:
@@ -70,12 +168,7 @@ class SourceDiscoveryService:
         self.repository = repository
         self.settings = settings
         self.provider = provider or build_candidate_provider(settings)
-        self.fetcher = fetcher or HttpFetcher(
-            timeout_seconds=settings.crawler_timeout_seconds,
-            max_bytes=min(settings.max_download_bytes, 4 * 1024 * 1024),
-            max_redirects=settings.crawler_max_redirects,
-            user_agent="ODIRAG/0.1 source-discovery",
-        )
+        self.fetcher = fetcher or build_source_discovery_fetcher(settings)
 
     async def create(
         self, payload: SourceDiscoveryRunCreate, *, created_by: str
@@ -281,8 +374,14 @@ class SourceDiscoveryService:
                 )
                 await self.repository.commit()
                 return
+            seen_trial_urls: set[str] = set()
             for column in columns:
-                await self._trial_crawl_column(run, candidate, column)
+                await self._trial_crawl_column(
+                    run,
+                    candidate,
+                    column,
+                    seen_trial_urls=seen_trial_urls,
+                )
             await self._score_candidate(run, candidate, columns)
         except Exception as exc:
             await self.repository.rollback()
@@ -300,8 +399,7 @@ class SourceDiscoveryService:
                     from_status=previous_status,
                     to_status="failed",
                     message=(
-                        "Candidate processing failed; exception details are recorded "
-                        "by type only."
+                        "Candidate processing failed; exception details are recorded by type only."
                     ),
                     details_json={"error_type": exc.__class__.__name__},
                 )
@@ -402,7 +500,8 @@ class SourceDiscoveryService:
     ) -> list[SourceCandidateColumn]:
         soup = BeautifulSoup(response.text, "lxml")
         base_host = (urlsplit(response.url).hostname or "").lower().rstrip(".")
-        scored: list[tuple[int, str, str, list[str]]] = []
+        source_page = normalize_url(response.url)
+        scored: list[_ColumnHit] = []
         seen: set[str] = set()
         for element in soup.select("a[href]"):
             if not isinstance(element, Tag):
@@ -420,38 +519,91 @@ class SourceDiscoveryService:
                 continue
             if parsed.path.lower().endswith(tuple(_DETAIL_EXTENSIONS)):
                 continue
+            if base_host == _JXT_HOST:
+                detail_match = _JXT_DETAIL_PATH.fullmatch(parsed.path)
+                if detail_match:
+                    continue
+                if url == source_page or not _is_jxt_list_url(url):
+                    continue
             label = element.get_text(" ", strip=True)
             haystack = f"{label} {parsed.path}".lower()
             matches = [term for term in _COLUMN_TERMS if term.lower() in haystack]
             if not matches:
                 continue
             seen.add(url)
-            scored.append((len(matches), url, label or parsed.path.rsplit("/", 1)[-1], matches))
-        scored.sort(key=lambda item: (-item[0], item[1]))
+            scored.append(
+                _ColumnHit(
+                    priority=_column_priority(base_host, url, len(matches)),
+                    url=url,
+                    label=label or parsed.path.rsplit("/", 1)[-1],
+                    matched_terms=tuple(matches),
+                    discovery_method="anchor",
+                    list_selector="a[href]",
+                )
+            )
+        if base_host == _JXT_HOST:
+            panel_selector = "#panel-20002 a[href]"
+            panel_has_details = False
+            for element in soup.select(panel_selector):
+                if not isinstance(element, Tag) or not isinstance(element.get("href"), str):
+                    continue
+                try:
+                    panel_url = normalize_url(str(element.get("href")), base_url=response.url)
+                except ValueError:
+                    continue
+                if _is_jxt_detail_url(panel_url):
+                    panel_has_details = True
+                    break
+            if panel_has_details:
+                scored.append(
+                    _ColumnHit(
+                        priority=_JXT_COLUMN_PRIORITY["ggtz"],
+                        url=source_page,
+                        label="公告公示",
+                        matched_terms=("公告", "公示"),
+                        discovery_method="embedded_list_panel",
+                        list_selector=panel_selector,
+                    )
+                )
+        scored.sort(key=lambda item: (-item.priority, item.url))
         columns: list[SourceCandidateColumn] = []
-        for rank, (_score, url, label, matches) in enumerate(
-            scored[: self.settings.source_discovery_max_columns], start=1
-        ):
-            key = _column_key(label, url, rank)
+        for rank, hit in enumerate(scored[: self.settings.source_discovery_max_columns], start=1):
+            key = _column_key(hit.label, hit.url, rank)
+            content_selector = (
+                f"{_JXT_CONTENT_SELECTORS}, article, main, [role='main'], .article, "
+                ".detail, .content, #content, .article-content, .detail-content"
+                if base_host == _JXT_HOST
+                else (
+                    "article, main, [role='main'], .article, .detail, "
+                    ".content, #content, .article-content, .detail-content"
+                )
+            )
             column = SourceCandidateColumn(
                 candidate_id=candidate.id,
                 column_key=key,
-                column_name=label[:255] or key,
-                column_url=url,
+                column_name=hit.label[:255] or key,
+                column_url=hit.url,
                 parser_type="html",
                 selectors_json={
-                    "list_link": "a[href]",
-                    "title": "h1, title",
-                    "content": (
-                        "article, main, [role='main'], .article, .detail, "
-                        ".content, #content, .article-content, .detail-content"
+                    "list_link": hit.list_selector,
+                    "title": (
+                        "meta[name='ArticleTitle'], h1, .ArticleTitle, "
+                        ".article-title, .title, title"
                     ),
+                    "content": content_selector,
+                    "publish_date": "meta[name='PubDate'], time, .date, .time",
                 },
                 pagination_json={"next_selector": "a[rel='next']"},
                 discovery_evidence_json={
                     "source_page": response.url,
-                    "anchor_text": label,
-                    "matched_terms": matches,
+                    "anchor_text": hit.label,
+                    "matched_terms": list(hit.matched_terms),
+                    "discovery_method": hit.discovery_method,
+                    "page_type": (
+                        "embedded_list_panel"
+                        if hit.discovery_method == "embedded_list_panel"
+                        else "list"
+                    ),
                     "rank": rank,
                 },
             )
@@ -478,14 +630,20 @@ class SourceDiscoveryService:
         run: SourceDiscoveryRun,
         candidate: SourceCandidate,
         column: SourceCandidateColumn,
+        *,
+        seen_trial_urls: set[str] | None = None,
     ) -> TrialStats:
         try:
             listing = await self.fetcher.fetch(column.column_url)
             soup = BeautifulSoup(listing.text, "lxml")
             base_host = (urlsplit(listing.url).hostname or "").lower().rstrip(".")
-            detail_urls: list[str] = []
+            detail_hits: list[tuple[int, int, str]] = []
             seen: set[str] = set()
-            for element in soup.select("a[href]"):
+            shared_seen = seen_trial_urls if seen_trial_urls is not None else set()
+            list_selector = column.selectors_json.get("list_link")
+            if not isinstance(list_selector, str) or not list_selector.strip():
+                list_selector = "a[href]"
+            for order, element in enumerate(soup.select(list_selector)[:500]):
                 if not isinstance(element, Tag):
                     continue
                 href = element.get("href")
@@ -496,17 +654,24 @@ class SourceDiscoveryService:
                 except ValueError:
                     continue
                 host = (urlsplit(url).hostname or "").lower().rstrip(".")
-                if not host or not _same_site(base_host, host) or url in seen:
+                if not host or not _same_site(base_host, host) or url in seen or url in shared_seen:
                     continue
                 if url == normalize_url(column.column_url):
                     continue
                 path = urlsplit(url).path.lower()
                 if path.endswith(tuple(_DETAIL_EXTENSIONS)):
                     continue
+                if base_host == _JXT_HOST and not _is_jxt_detail_url(url):
+                    continue
                 seen.add(url)
-                detail_urls.append(url)
-                if len(detail_urls) >= self.settings.source_discovery_trial_max_documents:
-                    break
+                label = element.get_text(" ", strip=True)
+                detail_hits.append((_detail_priority(base_host, url, label, run.topic), order, url))
+            detail_hits.sort(key=lambda item: (-item[0], item[1]))
+            detail_urls = [
+                item[2]
+                for item in detail_hits[: self.settings.source_discovery_trial_max_documents]
+            ]
+            shared_seen.update(detail_urls)
             if not detail_urls:
                 stats = TrialStats(0, 0, 0, 1, 0)
                 column.trial_discovered_count = 0
@@ -540,13 +705,37 @@ class SourceDiscoveryService:
             success = 0
             failed = 0
             chars: list[int] = []
+            relevance_counts = {
+                "DIRECT": 0,
+                "RELATED": 0,
+                "WEAK": 0,
+                "UNRELATED": 0,
+            }
+            rejection_counts: dict[str, int] = {}
             content_selector = column.selectors_json.get("content")
             if not isinstance(content_selector, str) or not content_selector.strip():
                 content_selector = "article, main, [role='main'], .content, #content"
+            title_selector = column.selectors_json.get("title")
+            if not isinstance(title_selector, str) or not title_selector.strip():
+                title_selector = "h1, title"
             for detail_url in detail_urls:
                 try:
                     response = await self.fetcher.fetch(detail_url)
+                    requested_host = (urlsplit(detail_url).hostname or "").lower().rstrip(".")
+                    response_host = (urlsplit(response.url).hostname or "").lower().rstrip(".")
+                    if response_host != requested_host:
+                        rejection_counts["CROSS_HOST_REDIRECT"] = (
+                            rejection_counts.get("CROSS_HOST_REDIRECT", 0) + 1
+                        )
+                        failed += 1
+                        continue
                     parsed = BeautifulSoup(response.text, "lxml")
+                    title_nodes = parsed.select(title_selector)
+                    title = max(
+                        (_tag_text_value(node) for node in title_nodes),
+                        key=len,
+                        default="",
+                    )
                     for node in parsed.select(
                         "script, style, noscript, nav, header, footer, aside, form"
                     ):
@@ -554,16 +743,26 @@ class SourceDiscoveryService:
                     content_nodes = parsed.select(content_selector)
                     texts = [node.get_text(" ", strip=True) for node in content_nodes]
                     text = max(texts, key=len, default="")
-                    if len(
-                        text
-                    ) < self.settings.source_discovery_trial_min_chars or not _topic_matches(
-                        text, run.topic
-                    ):
+                    relevance = _classify_topic_relevance(title, text, run.topic)
+                    relevance_counts[relevance.level] += 1
+                    if len(text) < self.settings.source_discovery_trial_min_chars:
+                        rejection_counts["CONTENT_TOO_SHORT"] = (
+                            rejection_counts.get("CONTENT_TOO_SHORT", 0) + 1
+                        )
+                        failed += 1
+                        continue
+                    if relevance.level not in {"DIRECT", "RELATED"}:
+                        rejection_counts[relevance.level] = (
+                            rejection_counts.get(relevance.level, 0) + 1
+                        )
                         failed += 1
                         continue
                     success += 1
                     chars.append(len(text))
                 except Exception:
+                    rejection_counts["FETCH_OR_PARSE_ERROR"] = (
+                        rejection_counts.get("FETCH_OR_PARSE_ERROR", 0) + 1
+                    )
                     failed += 1
             stats = TrialStats(
                 discovered=len(detail_urls),
@@ -602,6 +801,14 @@ class SourceDiscoveryService:
                         "average_chars": stats.average_chars,
                         "content_selector": content_selector,
                         "topic_relevance_required": True,
+                        "accepted_relevance_levels": ["DIRECT", "RELATED"],
+                        "relevance_counts": relevance_counts,
+                        "rejection_counts": rejection_counts,
+                        "detail_selection": (
+                            "dated_jxt_detail_links_ranked_by_title_relevance"
+                            if base_host == _JXT_HOST
+                            else "same_site_links_in_document_order"
+                        ),
                     },
                 )
             )
@@ -681,8 +888,7 @@ class SourceDiscoveryService:
                 from_status="columns_discovered",
                 to_status=candidate.status,
                 message=(
-                    "Candidate quality was calculated from official evidence and "
-                    "trial-crawl data."
+                    "Candidate quality was calculated from official evidence and trial-crawl data."
                 ),
                 details_json={
                     "quality_score": quality,
@@ -959,18 +1165,161 @@ def build_source_discovery_service(
     return SourceDiscoveryService(repository, settings, provider=provider, fetcher=fetcher)
 
 
-def _topic_matches(text: str, topic: str) -> bool:
+def build_source_discovery_fetcher(
+    settings: Settings,
+    *,
+    user_agent: str = "ODIRAG/0.1 source-discovery",
+) -> HttpFetcher:
+    resolver = _validation_resolver(settings)
+    return HttpFetcher(
+        timeout_seconds=settings.crawler_timeout_seconds,
+        max_bytes=min(settings.max_download_bytes, 4 * 1024 * 1024),
+        max_redirects=settings.crawler_max_redirects,
+        user_agent=user_agent,
+        resolver=resolver,
+        client_factory=(
+            _pinned_client_factory(resolver, settings.crawler_timeout_seconds)
+            if resolver is not None
+            else None
+        ),
+    )
+
+
+def _validation_resolver(settings: Settings) -> DohHostResolver | None:
+    endpoint = settings.source_discovery_validation_dns_url
+    if endpoint is None:
+        return None
+    return DohHostResolver(
+        endpoint,
+        timeout_seconds=settings.source_discovery_validation_dns_timeout_seconds,
+    )
+
+
+def _pinned_client_factory(
+    resolver: DohHostResolver,
+    timeout_seconds: float,
+) -> Callable[[], httpx.AsyncClient]:
+    return lambda: httpx.AsyncClient(
+        timeout=timeout_seconds,
+        follow_redirects=False,
+        transport=PinnedAsyncHTTPTransport(resolver),
+    )
+
+
+def _is_jxt_detail_url(url: str) -> bool:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host == _JXT_HOST and bool(_JXT_DETAIL_PATH.fullmatch(parsed.path))
+
+
+def _is_jxt_list_url(url: str) -> bool:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host == _JXT_HOST and bool(_JXT_LIST_PATH.fullmatch(parsed.path))
+
+
+def _column_priority(host: str, url: str, matched_term_count: int) -> int:
+    if host != _JXT_HOST:
+        return matched_term_count
+    path_parts = [part for part in urlsplit(url).path.lower().split("/") if part]
+    section = path_parts[1] if len(path_parts) >= 2 and path_parts[0] == "scjxt" else ""
+    return _JXT_COLUMN_PRIORITY.get(section, 200) + matched_term_count
+
+
+def _detail_priority(host: str, url: str, title: str, topic: str) -> int:
+    if host != _JXT_HOST:
+        return 0
+    if not _is_jxt_detail_url(url):
+        return -1
+    relevance = _classify_topic_relevance(title, "", topic)
+    return {
+        "DIRECT": 400,
+        "RELATED": 0,
+        "WEAK": 0,
+        "UNRELATED": 0,
+    }[relevance.level]
+
+
+def _tag_text_value(node: Tag) -> str:
+    if node.name == "meta":
+        value = node.get("content")
+        return value.strip() if isinstance(value, str) else ""
+    return node.get_text(" ", strip=True)
+
+
+def _classify_topic_relevance(title: str, text: str, topic: str) -> TopicRelevance:
+    normalized_title = " ".join(title.lower().split())
     normalized_text = " ".join(text.lower().split())
     normalized_topic = " ".join(topic.lower().split())
     if not normalized_topic:
-        return False
-    if normalized_topic in normalized_text:
-        return True
+        return TopicRelevance("UNRELATED", (), "empty_topic")
+
+    combined = f"{normalized_title} {normalized_text}".strip()
+    compact_title = "".join(normalized_title.split())
+    compact_text = "".join(normalized_text.split())
+    compact_topic = "".join(normalized_topic.split())
+    compact_combined = f"{compact_title}{compact_text}"
+    signal_text = compact_combined.replace("四川省经济和信息化厅", "").replace("经济和信息化厅", "")
+
+    if "软件" in compact_topic:
+        title_strong = tuple(term for term in _SOFTWARE_STRONG_TERMS if term in compact_title)
+        body_strong = tuple(term for term in _SOFTWARE_STRONG_TERMS if term in compact_text)
+        strong = tuple(dict.fromkeys((*title_strong, *body_strong)))
+        policy_cues = tuple(cue for cue in _POLICY_DOCUMENT_CUES if cue in compact_combined)
+        broad = tuple(term for term in _SOFTWARE_BROAD_TERMS if term in signal_text)
+        procurement = tuple(cue for cue in _PROCUREMENT_CUES if cue in compact_title)
+        news = tuple(cue for cue in _NEWS_CUES if cue in compact_title)
+        if procurement:
+            return TopicRelevance(
+                "UNRELATED",
+                tuple(dict.fromkeys((*strong, *procurement))),
+                "procurement_document_not_software_industry_policy",
+            )
+        if news:
+            signals = tuple(dict.fromkeys((*strong, *broad, *news)))
+            return TopicRelevance(
+                "WEAK" if compact_topic in compact_combined or strong or broad else "UNRELATED",
+                signals,
+                "news_or_activity_document_not_policy_evidence",
+            )
+        if compact_topic in compact_title:
+            return TopicRelevance("DIRECT", (compact_topic,), "exact_topic_in_title")
+        if compact_topic in compact_text:
+            return TopicRelevance("RELATED", (compact_topic,), "exact_topic_in_body")
+        if title_strong and policy_cues:
+            return TopicRelevance(
+                "DIRECT",
+                tuple(dict.fromkeys((*title_strong, *policy_cues))),
+                "strong_software_signal_in_policy_title",
+            )
+        if body_strong and policy_cues:
+            return TopicRelevance(
+                "RELATED",
+                tuple(dict.fromkeys((*body_strong, *policy_cues))),
+                "strong_software_signal_in_policy_body",
+            )
+        if strong or broad:
+            return TopicRelevance(
+                "WEAK",
+                tuple(dict.fromkeys((*strong, *broad))),
+                "software_or_digital_signal_without_policy_document_evidence",
+            )
+        return TopicRelevance("UNRELATED", (), "no_software_policy_signal")
+
+    if normalized_topic in combined:
+        return TopicRelevance("DIRECT", (normalized_topic,), "exact_topic_match")
     tokens = [token for token in normalized_topic.split() if len(token) >= 2]
     if not tokens:
-        return False
+        return TopicRelevance("UNRELATED", (), "no_matchable_topic_tokens")
+    matched = tuple(token for token in tokens if token in combined)
     required = (len(tokens) + 1) // 2
-    return sum(token in normalized_text for token in tokens) >= required
+    if len(matched) >= required:
+        return TopicRelevance("RELATED", matched, "majority_topic_token_match")
+    return TopicRelevance("UNRELATED", matched, "insufficient_topic_token_match")
+
+
+def _topic_matches(text: str, topic: str, *, title: str = "") -> bool:
+    return _classify_topic_relevance(title, text, topic).level in {"DIRECT", "RELATED"}
 
 
 def _build_query(topic: str, region: str | None, organization_level: str | None) -> str:

@@ -60,8 +60,7 @@ async def test_phase_j_draft_is_real_corpus_traceable_and_not_human_verified(app
     assert dataset.human_review_required_count == 3
     assert all(case.expected_documents for case in dataset.cases)
     assert all(
-        case.expected_sources[0].endswith(f"/{index}")
-        for index, case in enumerate(dataset.cases)
+        case.expected_sources[0].endswith(f"/{index}") for index, case in enumerate(dataset.cases)
     )
     assert all(case.expected_chunk_ids for case in dataset.cases)
     assert all(case.expected_answer for case in dataset.cases)

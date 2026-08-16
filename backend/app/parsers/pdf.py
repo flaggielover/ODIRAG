@@ -8,6 +8,8 @@ from app.parsers.base import ParsedArtifact
 
 
 class PdfParser:
+    version = "1"
+
     def __init__(self, *, minimum_chars_per_page: int = 20) -> None:
         self.minimum_chars_per_page = minimum_chars_per_page
 

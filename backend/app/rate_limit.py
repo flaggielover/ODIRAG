@@ -157,6 +157,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        # Liveness/readiness probes and the internal Prometheus scrape target
+        # must remain reachable when Redis (the production limiter backend) is
+        # degraded. Their handlers still enforce their own semantics.
+        if request.url.path in {"/health/live", "/health/ready", "/metrics"}:
+            return await call_next(request)
         if not self.settings.rate_limit_enabled or request.method == "OPTIONS":
             return await call_next(request)
 

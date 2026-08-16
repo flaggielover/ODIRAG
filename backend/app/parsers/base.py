@@ -29,6 +29,8 @@ class ParsedArtifact:
 
 
 class Parser(Protocol):
+    version: str
+
     def parse(self, content: bytes, *, filename: str | None = None) -> ParsedArtifact: ...
 
 

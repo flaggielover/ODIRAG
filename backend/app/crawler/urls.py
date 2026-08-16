@@ -128,8 +128,20 @@ def _ensure_public_address(value: str | ipaddress.IPv4Address | ipaddress.IPv6Ad
         or address.is_loopback
         or address.is_private
         or address.is_link_local
+        or (isinstance(address, ipaddress.IPv6Address) and address.is_site_local)
         or address.is_multicast
         or address.is_reserved
         or address.is_unspecified
     ):
         raise UnsafeUrlError("URL target resolves to a non-public IP address")
+
+
+def ensure_public_addresses(values: Sequence[str]) -> tuple[str, ...]:
+    """Validate resolved addresses and return a stable, deduplicated tuple."""
+
+    addresses = tuple(dict.fromkeys(values))
+    if not addresses:
+        raise UnsafeUrlError("URL host did not resolve to an IP address")
+    for address in addresses:
+        _ensure_public_address(address)
+    return addresses

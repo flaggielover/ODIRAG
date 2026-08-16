@@ -19,6 +19,8 @@ _MAX_STORED_COST = Decimal("9999999999.99999999")
 class DirectLLMAdapter:
     """OpenAI-compatible chat completion adapter with strict JSON validation."""
 
+    provider_name = "direct_llm"
+
     def __init__(
         self,
         *,
@@ -101,6 +103,8 @@ class DirectLLMAdapter:
 
 
 class CozeAdapter:
+    provider_name = "coze"
+
     def __init__(
         self,
         *,

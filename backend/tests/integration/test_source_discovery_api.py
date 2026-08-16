@@ -180,6 +180,171 @@ async def test_source_discovery_requires_manual_approval_before_activation(
         assert metrics.json()["run_status_counts"]["activated"] == 1
 
 
+async def test_jxt_software_policy_reaches_manual_gate_without_activation(
+    app, client: httpx.AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    requested_paths: list[str] = []
+    redirected_detail = "/scjxt/ggtz/2026/8/6/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.shtml"
+    detail_pages = {
+        (
+            "/scjxt/ggtz/2026/8/10/fc4f8fb462504ef883ec09a03fba5916.shtml"
+        ): "软件企业税收优惠政策核查结果公示",
+        (
+            "/scjxt/ggtz/2026/8/7/db7f01e777274f9b9004f35f2b34df5a.shtml"
+        ): "软件首版次推广应用指导目录公示",
+        (
+            "/scjxt/wjfb/2026/1/6/8828cf46e72849dfa361dfae063c28fe.shtml"
+        ): "关于组织申报工业软件研发项目的通知",
+        (
+            "/scjxt/zcjdn/2021/7/20/bccd0576a4514f199129866c3813433f.shtml"
+        ): "软件首版次管理办法政策解读",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        requested_paths.append(path)
+        headers = {"content-type": "text/html; charset=utf-8"}
+        if path == "/scjxt/index.shtml":
+            return httpx.Response(
+                200,
+                request=request,
+                headers=headers,
+                text=(
+                    "<html><body><h1>四川省人民政府 四川省经济和信息化厅</h1>"
+                    '<a href="/scjxt/index.shtml">首页</a>'
+                    '<a href="/scjxt/wjfb/common_list.shtml">通知</a>'
+                    '<a href="/scjxt/zcjdn/common_listnb.shtml">政策解读</a>'
+                    '<a href="/scjxt/ggtz/2026/8/5/'
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.shtml">面板外软件政策新闻</a>'
+                    '<div id="panel-20002">'
+                    '<a href="/scjxt/ggtz/2026/8/10/'
+                    'fc4f8fb462504ef883ec09a03fba5916.shtml">软件企业税惠公示</a>'
+                    '<a href="/scjxt/ggtz/2026/8/7/'
+                    'db7f01e777274f9b9004f35f2b34df5a.shtml">软件首版次公示</a>'
+                    f'<a href="{redirected_detail}">工业软件政策通知</a>'
+                    "</div>"
+                    "</body></html>"
+                ),
+            )
+        if path == redirected_detail:
+            return httpx.Response(
+                302,
+                request=request,
+                headers={"location": "https://public.example/redirected-policy"},
+            )
+        if request.url.host == "public.example":
+            return httpx.Response(
+                200,
+                request=request,
+                headers=headers,
+                text=(
+                    '<html><head><meta name="ArticleTitle" content="工业软件政策通知">'
+                    '</head><body><div id="NewsContent">'
+                    f"{'工业软件产业支持政策。' * 20}"
+                    "</div></body></html>"
+                ),
+            )
+        listing_links = {
+            "/scjxt/wjfb/common_list.shtml": next(
+                path for path in detail_pages if "/wjfb/" in path
+            ),
+            "/scjxt/zcjdn/common_listnb.shtml": next(
+                path for path in detail_pages if "/zcjdn/" in path
+            ),
+        }
+        if path in listing_links:
+            detail_path = listing_links[path]
+            return httpx.Response(
+                200,
+                request=request,
+                headers=headers,
+                text=(
+                    "<html><body><nav>"
+                    '<a href="/scjxt/index.shtml">首页</a>'
+                    '<a href="/scjxt/xwzx/news.shtml">新闻中心</a>'
+                    "</nav>"
+                    f'<a href="{detail_path}">{detail_pages[detail_path]}</a>'
+                    "</body></html>"
+                ),
+            )
+        if path in detail_pages:
+            content = f"{detail_pages[path]}，支持四川省软件产业高质量发展。" * 12
+            return httpx.Response(
+                200,
+                request=request,
+                headers=headers,
+                text=(
+                    "<html><head><title>公告公示-四川省经济和信息化厅</title>"
+                    f'<meta name="ArticleTitle" content="{detail_pages[path]}">'
+                    '<meta name="PubDate" content="2026-08-10">'
+                    "</head>"
+                    f'<body><div id="NewsContent">{content}</div></body></html>'
+                ),
+            )
+        return httpx.Response(404, request=request)
+
+    provider = FixtureCandidateProvider(
+        url="https://jxt.sc.gov.cn/scjxt/index.shtml",
+        expected_query_term=None,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as site_client:
+        app.state.source_discovery_provider = provider
+        app.state.source_discovery_fetcher = HttpFetcher(
+            client=site_client,
+            resolver=_public_addresses,
+            timeout_seconds=1,
+            max_bytes=1024 * 1024,
+        )
+        created = await client.post(
+            "/api/source-discovery/runs",
+            headers=auth_headers,
+            json={
+                "topic": "四川省软件产业政策",
+                "required_source_count": 10,
+                "required_document_count": 10,
+                "max_candidates": 1,
+                "execution_mode": "inline",
+            },
+        )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "awaiting_approval"
+    candidates = await client.get(
+        f"/api/source-discovery/runs/{created.json()['id']}/candidates",
+        headers=auth_headers,
+    )
+    candidate = candidates.json()[0]
+    assert candidate["status"] == "pending_approval"
+    assert candidate["quality_score"] >= 0.65
+    assert candidate["trial_success_count"] >= 1
+    assert candidate["trial_failed_count"] >= 1
+    assert all("/2026/" not in column["column_url"] for column in candidate["columns"])
+    embedded = next(
+        column
+        for column in candidate["columns"]
+        if column["column_url"] == "https://jxt.sc.gov.cn/scjxt/index.shtml"
+    )
+    assert embedded["selectors_json"]["list_link"] == "#panel-20002 a[href]"
+    assert embedded["discovery_evidence_json"]["discovery_method"] == "embedded_list_panel"
+    assert "/scjxt/ggtz/2026/8/5/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.shtml" not in requested_paths
+    events = await client.get(
+        f"/api/source-discovery/runs/{created.json()['id']}/events",
+        headers=auth_headers,
+    )
+    trial_events = [event for event in events.json() if event["stage"] == "trial_crawl"]
+    assert any(
+        event["details_json"].get("rejection_counts", {}).get("CROSS_HOST_REDIRECT") == 1
+        for event in trial_events
+    )
+
+    blocked = await client.post(
+        f"/api/source-discovery/candidates/{candidate['id']}/activate",
+        headers=auth_headers,
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "INVALID_SOURCE_CANDIDATE_STATE"
+
+
 async def test_source_discovery_stops_when_database_coverage_has_no_gap(
     app, client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:

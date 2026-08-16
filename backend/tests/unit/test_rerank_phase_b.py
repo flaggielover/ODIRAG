@@ -131,6 +131,26 @@ async def test_remote_rerank_errors_are_stable_and_redacted(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 500, 503])
+async def test_remote_rerank_http_failure_codes_are_preserved(status_code: int) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(status_code, text="provider body must not escape")
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        provider = RemoteRerankProvider(
+            base_url="https://rerank.example/v2",
+            api_key="secret-token",
+            model_name="rerank-model",
+            client=client,
+        )
+        with pytest.raises(ProviderUnavailableError) as exc_info:
+            await provider.rerank("query", ["document"], 1)
+
+    assert exc_info.value.reason == f"http_status_{status_code}"
+    assert "provider body" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "results",
     [

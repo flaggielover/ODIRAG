@@ -1,0 +1,26 @@
+{
+  "dataset_status": "PERFORMANCE_ONLY_UNVERIFIED",
+  "source_dataset": "phase_j_draft.json",
+  "case_ids": [
+    "phase-j-draft-001",
+    "phase-j-draft-002",
+    "phase-j-draft-003",
+    "phase-j-draft-004",
+    "phase-j-draft-005",
+    "phase-j-draft-006",
+    "phase-j-draft-007",
+    "phase-j-draft-008",
+    "phase-j-draft-009",
+    "phase-j-draft-010",
+    "phase-j-draft-011",
+    "phase-j-draft-012",
+    "phase-j-draft-013",
+    "phase-j-draft-014",
+    "phase-j-draft-015",
+    "phase-j-draft-016",
+    "phase-j-draft-017",
+    "phase-j-draft-018",
+    "phase-j-draft-019",
+    "phase-j-draft-020"
+  ]
+}

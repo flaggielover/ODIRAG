@@ -124,7 +124,10 @@ async def run(args: argparse.Namespace) -> int:
         "scenarios": reports,
         "database": database,
         "errors": errors,
-        "note": "Thresholds are engineering goals; measurements are reported without rewriting results.",
+        "note": (
+            "Thresholds are engineering goals; measurements are reported "
+            "without rewriting results."
+        ),
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     stem = generated_at.strftime("%Y%m%dT%H%M%SZ")

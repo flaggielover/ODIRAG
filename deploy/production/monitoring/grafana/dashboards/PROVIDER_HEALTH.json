@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-providers",
+  "title": "PROVIDER_HEALTH",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"type":"timeseries","title":"Provider request rate","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"sum by (provider, operation) (rate(odirag_provider_requests_total[5m]))","legendFormat":"{{provider}} / {{operation}}"}]},
+    {"type":"timeseries","title":"Provider failures","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"sum by (provider, operation, error_category) (rate(odirag_provider_requests_total{outcome=\"error\"}[5m]))","legendFormat":"{{provider}} / {{operation}} / {{error_category}}"}]},
+    {"type":"timeseries","title":"Embedding latency","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (provider, le) (rate(odirag_provider_request_duration_seconds_bucket{operation=\"embed_query\"}[5m])))","legendFormat":"{{provider}} P95"}]},
+    {"type":"timeseries","title":"Rerank and LLM latency","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (provider, operation, le) (rate(odirag_provider_request_duration_seconds_bucket{operation=~\"rerank|generate_answer\"}[5m])))","legendFormat":"{{provider}} / {{operation}}"}]}
+  ]
+}

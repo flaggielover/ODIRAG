@@ -1,0 +1,24 @@
+groups:
+  - name: odirag-qdrant
+    rules:
+      - alert: QdrantDown
+        expr: up{job="qdrant"} == 0
+        for: 2m
+        labels: {severity: critical, service: qdrant}
+        annotations:
+          summary: Qdrant metrics endpoint is down
+          description: Qdrant metrics have been unavailable for more than two minutes.
+      - alert: QdrantCollectionUnhealthy
+        expr: odirag_qdrant_collection_green{collection="odirag_chunks_bailian_v4"} != 1
+        for: 10m
+        labels: {severity: critical, service: qdrant}
+        annotations:
+          summary: Active Qdrant collection is below expected size
+          description: The active collection odirag_chunks_bailian_v4 reports fewer than 821 vectors.
+      - alert: QdrantPointCountMismatch
+        expr: odirag_qdrant_collection_points{collection="odirag_chunks_bailian_v4"} != 821
+        for: 10m
+        labels: {severity: warning, service: qdrant}
+        annotations:
+          summary: Active Qdrant point count differs from baseline
+          description: Compare the active collection count with PostgreSQL chunks before remediation.

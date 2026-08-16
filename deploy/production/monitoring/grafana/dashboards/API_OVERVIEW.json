@@ -1,0 +1,14 @@
+{
+  "uid": "odirag-api",
+  "title": "API_OVERVIEW",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"type":"timeseries","title":"Request rate","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"sum(rate(odirag_http_requests_total{job=\"backend\"}[5m]))","legendFormat":"requests/s"}]},
+    {"type":"timeseries","title":"5xx error rate","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"sum(rate(odirag_http_requests_total{job=\"backend\",status_class=\"5xx\"}[5m]))","legendFormat":"5xx/s"}]},
+    {"type":"timeseries","title":"P95 request latency","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (le) (rate(odirag_http_request_duration_seconds_bucket{job=\"backend\"}[5m])))","legendFormat":"P95"}]},
+    {"type":"timeseries","title":"In-flight requests","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"sum(odirag_http_requests_in_flight{job=\"backend\"})","legendFormat":"in flight"}]}
+  ]
+}

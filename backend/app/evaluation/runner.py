@@ -159,6 +159,7 @@ class EvaluationRunner:
             retrieval,
             chat,
             latency_ms=retrieval_latency + chat_latency,
+            evaluation_failed=error is not None,
         )
         return EvaluationQuestionResult(
             case=case,
@@ -182,6 +183,7 @@ class EvaluationRunner:
         chat: ChatResult | None,
         *,
         latency_ms: float,
+        evaluation_failed: bool = False,
     ) -> EvaluationSample:
         items = retrieval.items if retrieval is not None else ()
         retrieved_chunks = tuple(item.chunk_id for item in items if item.chunk_id)
@@ -209,4 +211,5 @@ class EvaluationRunner:
             relevant_document_ids=case.expected_document_ids,
             cited_document_ids=(chat.cited_document_ids if chat is not None else frozenset()),
             grounding_validated=(chat.grounding_validated if chat is not None else None),
+            evaluation_failed=evaluation_failed,
         )

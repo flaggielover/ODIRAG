@@ -1,0 +1,45 @@
+groups:
+  - name: odirag-databases
+    rules:
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels: {severity: critical, service: postgresql}
+        annotations:
+          summary: PostgreSQL exporter is down
+          description: PostgreSQL metrics have been unavailable for more than two minutes.
+      - alert: PostgreSQLConnectionPressure
+        expr: pg_stat_database_numbackends / clamp_min(pg_settings_max_connections, 1) > 0.8
+        for: 10m
+        labels: {severity: warning, service: postgresql}
+        annotations:
+          summary: PostgreSQL connection pressure is high
+          description: Active connections exceed 80 percent of configured capacity.
+      - alert: PostgreSQLDeadlocks
+        expr: increase(pg_stat_database_deadlocks[15m]) > 0
+        for: 5m
+        labels: {severity: warning, service: postgresql}
+        annotations:
+          summary: PostgreSQL deadlocks detected
+          description: One or more database deadlocks were recorded in the last fifteen minutes.
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels: {severity: critical, service: redis}
+        annotations:
+          summary: Redis exporter is down
+          description: Redis metrics have been unavailable for more than two minutes.
+      - alert: RedisMemoryPressure
+        expr: redis_memory_used_bytes / clamp_min(redis_config_maxmemory, 1) > 0.85
+        for: 10m
+        labels: {severity: warning, service: redis}
+        annotations:
+          summary: Redis memory pressure is high
+          description: Redis memory usage exceeds 85 percent of its configured limit.
+      - alert: RedisPersistenceFailure
+        expr: redis_rdb_last_bgsave_status == 0 or redis_aof_last_bgrewrite_status == 0
+        for: 5m
+        labels: {severity: critical, service: redis}
+        annotations:
+          summary: Redis persistence reports a failure
+          description: RDB or AOF persistence status indicates the last persistence operation failed.

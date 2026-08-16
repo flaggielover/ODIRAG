@@ -1,0 +1,24 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: internal-audit
+  group_by: [alertname, service, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: internal-audit
+      matchers:
+        - severity=~"warning|critical"
+
+# No external notification credentials are present in this phase. The empty
+# receiver keeps the internal Prometheus -> Alertmanager pipeline available;
+# an authorized receiver can be added later without changing alert rules.
+receivers:
+  - name: internal-audit
+
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [alertname, service]

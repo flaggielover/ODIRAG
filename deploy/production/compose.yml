@@ -1,0 +1,357 @@
+name: "${COMPOSE_PROJECT_NAME:-odirag-prod}"
+
+x-common: &common
+  init: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+
+x-app-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-service-logging: &service-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "5"
+
+x-app-environment: &app-environment
+  ODIRAG_APP_NAME: "${ODIRAG_APP_NAME:-ODIRAG API}"
+  ODIRAG_ENVIRONMENT: "${ODIRAG_ENVIRONMENT:-production}"
+  ODIRAG_DEBUG: "${ODIRAG_DEBUG:-false}"
+  ODIRAG_API_PREFIX: "${ODIRAG_API_PREFIX:-/api}"
+  ODIRAG_LOG_LEVEL: "${ODIRAG_LOG_LEVEL:-INFO}"
+  ODIRAG_LOG_JSON: "${ODIRAG_LOG_JSON:-true}"
+  ODIRAG_DEPENDENCY_TIMEOUT_SECONDS: "${ODIRAG_DEPENDENCY_TIMEOUT_SECONDS:-3}"
+  ODIRAG_CORS_ORIGINS: '${ODIRAG_CORS_ORIGINS:-["https://localhost"]}'
+  ODIRAG_DATABASE_URL: "${ODIRAG_DATABASE_URL:?ODIRAG_DATABASE_URL is required}"
+  ODIRAG_DATABASE_POOL_SIZE: "${ODIRAG_DATABASE_POOL_SIZE:-5}"
+  ODIRAG_DATABASE_MAX_OVERFLOW: "${ODIRAG_DATABASE_MAX_OVERFLOW:-5}"
+  ODIRAG_REDIS_URL: "${ODIRAG_REDIS_URL:?ODIRAG_REDIS_URL is required}"
+  ODIRAG_CELERY_BROKER_URL: "${ODIRAG_CELERY_BROKER_URL:?ODIRAG_CELERY_BROKER_URL is required}"
+  ODIRAG_CELERY_RESULT_BACKEND: "${ODIRAG_CELERY_RESULT_BACKEND:?ODIRAG_CELERY_RESULT_BACKEND is required}"
+  ODIRAG_QDRANT_URL: "${ODIRAG_QDRANT_URL:-http://qdrant:6333}"
+  ODIRAG_QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
+  ODIRAG_HEALTH_CHECK_QDRANT: "${ODIRAG_HEALTH_CHECK_QDRANT:-true}"
+  ODIRAG_RATE_LIMIT_BACKEND: "${ODIRAG_RATE_LIMIT_BACKEND:-redis}"
+  ODIRAG_RATE_LIMIT_ENABLED: "${ODIRAG_RATE_LIMIT_ENABLED:-true}"
+  ODIRAG_TRUSTED_PROXY_IPS: "${ODIRAG_TRUSTED_PROXY_IPS:-172.30.0.10}"
+  ODIRAG_JWT_SECRET_KEY: "${ODIRAG_JWT_SECRET_KEY:?ODIRAG_JWT_SECRET_KEY is required}"
+  ODIRAG_JWT_ALGORITHM: "${ODIRAG_JWT_ALGORITHM:-HS256}"
+  ODIRAG_ACCESS_TOKEN_EXPIRE_MINUTES: "${ODIRAG_ACCESS_TOKEN_EXPIRE_MINUTES:-30}"
+  ODIRAG_REFRESH_TOKEN_EXPIRE_DAYS: "${ODIRAG_REFRESH_TOKEN_EXPIRE_DAYS:-7}"
+  ODIRAG_ADMIN_USERNAME: "${ODIRAG_ADMIN_USERNAME:-admin}"
+  ODIRAG_ADMIN_PASSWORD: ""
+  ODIRAG_ADMIN_PASSWORD_HASH: "${ODIRAG_ADMIN_PASSWORD_HASH:-}"
+  ODIRAG_BOOTSTRAP_ADMIN: "${ODIRAG_BOOTSTRAP_ADMIN:-false}"
+  ODIRAG_AUTO_CREATE_SCHEMA: "${ODIRAG_AUTO_CREATE_SCHEMA:-false}"
+  ODIRAG_DATA_DIR: "/app/data"
+  ODIRAG_MAX_DOWNLOAD_BYTES: "${ODIRAG_MAX_DOWNLOAD_BYTES:-52428800}"
+  ODIRAG_ALLOWED_ATTACHMENT_EXTENSIONS: '${ODIRAG_ALLOWED_ATTACHMENT_EXTENSIONS:-[".docx",".htm",".html",".jpeg",".jpg",".pdf",".png",".txt",".webp",".xlsx",".zip"]}'
+  ODIRAG_BM25_SNAPSHOT_PATH: "/app/data/indexes/bm25.json"
+  ODIRAG_EVALUATION_ARTIFACT_DIR: "/app/data/evaluation/runs"
+  ODIRAG_EXPERIMENT_ARTIFACT_DIR: "/app/data/experiments/runs"
+  ODIRAG_EMBEDDING_PROVIDER: "${ODIRAG_EMBEDDING_PROVIDER:-remote}"
+  ODIRAG_EMBEDDING_CACHE_PROVIDER: "${ODIRAG_EMBEDDING_CACHE_PROVIDER:-redis}"
+  ODIRAG_EMBEDDING_BASE_URL: "${ODIRAG_EMBEDDING_BASE_URL:-https://api.openai.com/v1}"
+  ODIRAG_EMBEDDING_API_KEY: "${ODIRAG_EMBEDDING_API_KEY:-}"
+  ODIRAG_EMBEDDING_MODEL: "${ODIRAG_EMBEDDING_MODEL:-text-embedding-3-small}"
+  ODIRAG_EMBEDDING_DIMENSIONS: "${ODIRAG_EMBEDDING_DIMENSIONS:-1536}"
+  ODIRAG_EMBEDDING_BATCH_SIZE: "${ODIRAG_EMBEDDING_BATCH_SIZE:-32}"
+  ODIRAG_EMBEDDING_VERSION: "${ODIRAG_EMBEDDING_VERSION:-v1}"
+  ODIRAG_EMBEDDING_MINIMUM_INTERVAL_SECONDS: "${ODIRAG_EMBEDDING_MINIMUM_INTERVAL_SECONDS:-0}"
+  ODIRAG_EMBEDDING_CACHE_TTL_SECONDS: "${ODIRAG_EMBEDDING_CACHE_TTL_SECONDS:-2592000}"
+  ODIRAG_EMBEDDING_COST_PER_1K_CHARS: "${ODIRAG_EMBEDDING_COST_PER_1K_CHARS:-0}"
+  ODIRAG_VECTOR_STORE_PROVIDER: "${ODIRAG_VECTOR_STORE_PROVIDER:-qdrant}"
+  ODIRAG_QDRANT_COLLECTION: "${ODIRAG_QDRANT_COLLECTION:-odirag_chunks}"
+  ODIRAG_RERANK_PROVIDER: "${ODIRAG_RERANK_PROVIDER:-none}"
+  ODIRAG_RERANK_BASE_URL: "${ODIRAG_RERANK_BASE_URL:-https://api.cohere.com/v2}"
+  ODIRAG_RERANK_API_KEY: "${ODIRAG_RERANK_API_KEY:-}"
+  ODIRAG_RERANK_MODEL: "${ODIRAG_RERANK_MODEL:-rerank-v3.5}"
+  ODIRAG_RERANK_TIMEOUT_SECONDS: "${ODIRAG_RERANK_TIMEOUT_SECONDS:-30}"
+  ODIRAG_RERANK_FAILURE_POLICY: "${ODIRAG_RERANK_FAILURE_POLICY:-open}"
+  ODIRAG_LLM_PROVIDER: "${ODIRAG_LLM_PROVIDER:-direct}"
+  ODIRAG_DIRECT_LLM_BASE_URL: "${ODIRAG_DIRECT_LLM_BASE_URL:-https://api.openai.com/v1}"
+  ODIRAG_DIRECT_LLM_API_KEY: "${ODIRAG_DIRECT_LLM_API_KEY:-}"
+  ODIRAG_DIRECT_LLM_MODEL: "${ODIRAG_DIRECT_LLM_MODEL:-gpt-4.1-mini}"
+  ODIRAG_ANSWER_PROVIDER: "${ODIRAG_ANSWER_PROVIDER:-extractive}"
+  ODIRAG_COZE_BASE_URL: "${ODIRAG_COZE_BASE_URL:-https://api.coze.com}"
+  ODIRAG_COZE_API_TOKEN: "${COZE_API_TOKEN:-}"
+  ODIRAG_COZE_BOT_ID: "${ODIRAG_COZE_BOT_ID:-}"
+  COZE_API_TOKEN: "${COZE_API_TOKEN:-}"
+  COZE_ENABLED: "${COZE_ENABLED:-false}"
+  COZE_LEGACY_API_URL: "${COZE_LEGACY_API_URL:-}"
+  COZE_BATCH_API_URL: "${COZE_BATCH_API_URL:-}"
+  COZE_DEFAULT_CONTRACT: "${COZE_DEFAULT_CONTRACT:-batch_crawl}"
+  COZE_TIMEOUT_SECONDS: "${COZE_TIMEOUT_SECONDS:-90}"
+  COZE_MAX_RETRIES: "${COZE_MAX_RETRIES:-2}"
+  ODIRAG_SOURCE_DISCOVERY_PROVIDER: "${ODIRAG_SOURCE_DISCOVERY_PROVIDER:-disabled}"
+  ODIRAG_SOURCE_DISCOVERY_SEARCH_URL: "${ODIRAG_SOURCE_DISCOVERY_SEARCH_URL:-https://api.search.brave.com/res/v1/web/search}"
+  ODIRAG_SOURCE_DISCOVERY_API_KEY: "${ODIRAG_SOURCE_DISCOVERY_API_KEY:-}"
+  ODIRAG_SOURCE_DISCOVERY_TIMEOUT_SECONDS: "${ODIRAG_SOURCE_DISCOVERY_TIMEOUT_SECONDS:-20}"
+  ODIRAG_SOURCE_DISCOVERY_VALIDATION_DNS_URL: "${ODIRAG_SOURCE_DISCOVERY_VALIDATION_DNS_URL:-}"
+  ODIRAG_SOURCE_DISCOVERY_VALIDATION_DNS_TIMEOUT_SECONDS: "${ODIRAG_SOURCE_DISCOVERY_VALIDATION_DNS_TIMEOUT_SECONDS:-5}"
+  ODIRAG_SOURCE_DISCOVERY_MAX_CANDIDATES: "${ODIRAG_SOURCE_DISCOVERY_MAX_CANDIDATES:-10}"
+  ODIRAG_SOURCE_DISCOVERY_MAX_COLUMNS: "${ODIRAG_SOURCE_DISCOVERY_MAX_COLUMNS:-12}"
+  ODIRAG_SOURCE_DISCOVERY_TRIAL_MAX_DOCUMENTS: "${ODIRAG_SOURCE_DISCOVERY_TRIAL_MAX_DOCUMENTS:-5}"
+  ODIRAG_SOURCE_DISCOVERY_TRIAL_MIN_CHARS: "${ODIRAG_SOURCE_DISCOVERY_TRIAL_MIN_CHARS:-160}"
+  ODIRAG_SOURCE_DISCOVERY_QUALITY_THRESHOLD: "${ODIRAG_SOURCE_DISCOVERY_QUALITY_THRESHOLD:-0.65}"
+  ODIRAG_SOURCE_DISCOVERY_OFFICIAL_SUFFIXES: '${ODIRAG_SOURCE_DISCOVERY_OFFICIAL_SUFFIXES:-[".gov.cn",".gov",".edu.cn"]}'
+  ODIRAG_SOURCE_DISCOVERY_AUTO_ENABLED: "${ODIRAG_SOURCE_DISCOVERY_AUTO_ENABLED:-false}"
+  ODIRAG_SOURCE_DISCOVERY_AUTO_TOPICS: '${ODIRAG_SOURCE_DISCOVERY_AUTO_TOPICS:-[]}'
+  ODIRAG_SOURCE_DISCOVERY_AUTO_INTERVAL_SECONDS: "${ODIRAG_SOURCE_DISCOVERY_AUTO_INTERVAL_SECONDS:-3600}"
+  ODIRAG_SOURCE_DISCOVERY_AUTO_REGION: "${ODIRAG_SOURCE_DISCOVERY_AUTO_REGION:-}"
+  ODIRAG_SOURCE_DISCOVERY_AUTO_ORGANIZATION_LEVEL: "${ODIRAG_SOURCE_DISCOVERY_AUTO_ORGANIZATION_LEVEL:-}"
+  ODIRAG_SOURCE_DISCOVERY_AUTO_REQUIRED_SOURCE_COUNT: "${ODIRAG_SOURCE_DISCOVERY_AUTO_REQUIRED_SOURCE_COUNT:-1}"
+  ODIRAG_SOURCE_DISCOVERY_AUTO_REQUIRED_DOCUMENT_COUNT: "${ODIRAG_SOURCE_DISCOVERY_AUTO_REQUIRED_DOCUMENT_COUNT:-3}"
+
+x-runtime-env-file: &runtime-env-file
+  - path: "${ODIRAG_RUNTIME_ENV_FILE:-./secrets/runtime.env}"
+    required: false
+
+x-private-depends: &private-depends
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  qdrant:
+    condition: service_healthy
+
+x-app-service: &app-service
+  <<: *common
+  env_file: *runtime-env-file
+  working_dir: /app/backend
+  volumes:
+    - odirag-prod-app:/app/data
+  networks:
+    edge: {}
+    private: {}
+  logging: *app-logging
+  stop_grace_period: 30s
+
+services:
+  postgres:
+    <<: *common
+    image: "${POSTGRES_IMAGE:-postgres:16-alpine}"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-odirag}"
+      POSTGRES_USER: "${POSTGRES_USER:-odirag}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - "archive_timeout=${POSTGRES_ARCHIVE_TIMEOUT:-900s}"
+      - -c
+      - "archive_command=/usr/local/bin/odirag-archive-wal %p %f"
+    expose:
+      - "5432"
+    volumes:
+      - odirag-prod-postgres:/var/lib/postgresql/data
+      - /var/backups/odirag:/var/backups/odirag
+      - ./scripts/archive-postgres-wal.sh:/usr/local/bin/odirag-archive-wal:ro
+    networks:
+      private: {}
+    shm_size: 256m
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    cpus: 1.25
+    pids_limit: 200
+    logging: *service-logging
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    <<: *common
+    image: "${REDIS_IMAGE:-redis:7-alpine}"
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\" --maxmemory 384mb --maxmemory-policy allkeys-lru"]
+    expose:
+      - "6379"
+    volumes:
+      - odirag-prod-redis:/data
+    networks:
+      private: {}
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.50
+    pids_limit: 100
+    logging: *service-logging
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  qdrant:
+    <<: *common
+    image: "${QDRANT_IMAGE:-qdrant/qdrant:v1.14.1}"
+    expose:
+      - "6333"
+      - "6334"
+    volumes:
+      - odirag-prod-qdrant:/qdrant/storage
+    networks:
+      private: {}
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 1.50
+    pids_limit: 200
+    logging: *service-logging
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  backend:
+    <<: *app-service
+    image: "${ODIRAG_BACKEND_IMAGE_REF:?ODIRAG_BACKEND_IMAGE_REF must be an immutable registry digest reference}"
+    environment:
+      <<: *app-environment
+      ODIRAG_RUN_MIGRATIONS: "true"
+    depends_on: *private-depends
+    expose:
+      - "8000"
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    cpus: 1.25
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 10s
+      timeout: 8s
+      retries: 18
+      start_period: 90s
+
+  worker:
+    <<: *app-service
+    image: "${ODIRAG_BACKEND_IMAGE_REF:?ODIRAG_BACKEND_IMAGE_REF must be an immutable registry digest reference}"
+    environment:
+      <<: *app-environment
+      ODIRAG_RUN_MIGRATIONS: "false"
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=INFO", "--hostname=worker@%h", "--concurrency=2", "--max-tasks-per-child=100"]
+    depends_on:
+      <<: *private-depends
+      backend:
+        condition: service_healthy
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 1.75
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping --destination worker@$${HOSTNAME} --timeout 5 | grep -q pong"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 45s
+
+  scheduler:
+    <<: *app-service
+    image: "${ODIRAG_BACKEND_IMAGE_REF:?ODIRAG_BACKEND_IMAGE_REF must be an immutable registry digest reference}"
+    environment:
+      <<: *app-environment
+      ODIRAG_RUN_MIGRATIONS: "false"
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "beat", "--loglevel=INFO", "--pidfile=/tmp/celerybeat.pid", "--schedule=/app/data/celerybeat-schedule"]
+    depends_on:
+      <<: *private-depends
+      backend:
+        condition: service_healthy
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.25
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, pathlib; path = pathlib.Path('/tmp/celerybeat.pid'); assert path.is_file(); os.kill(int(path.read_text().strip()), 0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
+
+  frontend:
+    <<: *common
+    image: "${ODIRAG_FRONTEND_IMAGE_REF:?ODIRAG_FRONTEND_IMAGE_REF must be an immutable registry digest reference}"
+    expose:
+      - "80"
+    networks:
+      edge: {}
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *service-logging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  nginx:
+    <<: *common
+    image: "${NGINX_IMAGE:-nginx:1.30.4-alpine-slim}"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${NGINX_BIND_ADDRESS:-127.0.0.1}:${NGINX_PORT:-8080}:80"
+    networks:
+      edge:
+        ipv4_address: "${ODIRAG_NGINX_PROXY_IP:-172.30.0.10}"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.25
+    pids_limit: 128
+    logging: *service-logging
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  odirag-prod-app:
+    name: odirag-prod-app
+  odirag-prod-postgres:
+    name: odirag-prod-postgres
+  odirag-prod-redis:
+    name: odirag-prod-redis
+  odirag-prod-qdrant:
+    name: odirag-prod-qdrant
+
+networks:
+  edge:
+    name: odirag-prod-edge
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "${ODIRAG_EDGE_SUBNET:-172.30.0.0/24}"
+  private:
+    name: odirag-prod-private
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: "${ODIRAG_PRIVATE_SUBNET:-172.31.0.0/24}"

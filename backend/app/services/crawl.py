@@ -465,7 +465,8 @@ class CrawlService:
                 )
             await self.repository.session.refresh(task)
             normalized, batch = self.crawl_provider.normalize_result(
-                result.raw_response, contract=contract  # type: ignore[arg-type]
+                result.raw_response,
+                contract=contract,  # type: ignore[arg-type]
             )
             invocation.normalized_response_json = normalized
             invocation.status = "completed"
@@ -537,11 +538,12 @@ class CrawlService:
                 and (batch.success or "NO_ARTICLES" in batch.warnings)
             )
             partial_failed = not no_articles and bool(task.failed_count or not batch.success)
-            column.source.last_coze_status = (
-                "partial_failed"
-                if partial_failed
-                else "no_articles" if no_articles else "completed"
-            )
+            if partial_failed:
+                column.source.last_coze_status = "partial_failed"
+            elif no_articles:
+                column.source.last_coze_status = "no_articles"
+            else:
+                column.source.last_coze_status = "completed"
             column.source.last_coze_article_count = len(batch.articles)
             task.pending_review_count = await self.repository.count_pending_task_documents(task.id)
             task.provider_error_code = None
@@ -733,11 +735,17 @@ class CrawlService:
                     source_url=str(attachment.url),
                     download_status=(
                         "completed"
-                        if attachment.download_status == "success"
-                        else attachment.download_status
+                        if attachment.download_status == "completed"
+                        and bool(attachment.extracted_text and attachment.extracted_text.strip())
+                        else ("failed" if attachment.download_status == "failed" else "pending")
                     ),
                     parse_status="pending",
                     parsed_text=attachment.extracted_text,
+                    extraction_method=(
+                        "upstream_extracted_text"
+                        if attachment.extracted_text and attachment.extracted_text.strip()
+                        else None
+                    ),
                     requires_ocr=article.needs_ocr,
                     error_message=attachment.error_message,
                 )

@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh ODIRAG production textfile metrics every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=true
+Unit=odirag-monitoring-textfile.service
+
+[Install]
+WantedBy=timers.target

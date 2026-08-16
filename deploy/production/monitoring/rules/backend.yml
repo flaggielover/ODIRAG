@@ -1,0 +1,24 @@
+groups:
+  - name: odirag-backend
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 2m
+        labels: {severity: critical, service: backend}
+        annotations:
+          summary: Backend metrics endpoint is down
+          description: The backend has not been scrapeable for more than two minutes.
+      - alert: BackendHigh5xx
+        expr: sum(rate(odirag_http_requests_total{job="backend",status_class="5xx"}[5m])) / clamp_min(sum(rate(odirag_http_requests_total{job="backend"}[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning, service: backend}
+        annotations:
+          summary: Backend 5xx rate is elevated
+          description: Backend server errors exceed five percent of requests.
+      - alert: BackendHighLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(odirag_http_request_duration_seconds_bucket{job="backend"}[5m]))) > 2
+        for: 10m
+        labels: {severity: warning, service: backend}
+        annotations:
+          summary: Backend P95 latency is elevated
+          description: Backend request P95 latency exceeds two seconds.

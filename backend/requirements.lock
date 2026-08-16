@@ -6,3 +6,4 @@
 # fresh image cannot silently select Alembic 1.19's constraint comparison
 # behavior.
 alembic==1.18.5
+prometheus-client==0.26.0

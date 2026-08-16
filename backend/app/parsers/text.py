@@ -4,6 +4,8 @@ from app.parsers.base import ParsedArtifact
 
 
 class TextParser:
+    version = "1"
+
     def parse(self, content: bytes, *, filename: str | None = None) -> ParsedArtifact:
         del filename
         for encoding in ("utf-8-sig", "gb18030", "utf-16"):

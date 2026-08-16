@@ -47,6 +47,7 @@ def test_document_business_identifiers_are_unique() -> None:
     assert trace.c.trace_id.unique is True
     assert trace.c.evidence_decision_json.nullable is False
     assert trace.c.rerank_metadata_json.nullable is False
+    assert trace.c.stage_timings_json.nullable is False
 
 
 def test_document_version_has_composite_unique_constraint() -> None:

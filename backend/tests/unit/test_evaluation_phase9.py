@@ -38,6 +38,7 @@ def test_extended_metrics_keep_the_original_sample_api() -> None:
                 cost=0.1,
                 retrieved_document_ids=("d2", "d1"),
                 relevant_document_ids=frozenset({"d1"}),
+                cited_document_ids=frozenset({"d1", "unexpected"}),
             ),
             EvaluationSample(
                 retrieved_ids=("c9",),
@@ -64,7 +65,16 @@ def test_extended_metrics_keep_the_original_sample_api() -> None:
     assert aggregate.citation_completeness == 0.5
     assert aggregate.citation_precision == 0.5
     assert aggregate.citation_recall == 0.5
+    assert aggregate.emitted_citation_precision == 0.5
+    assert aggregate.emitted_citation_recall == 0.5
+    assert aggregate.document_citation_precision == 0.5
+    assert aggregate.document_citation_recall == 1.0
+    assert aggregate.emitted_document_citation_precision == 0.5
+    assert aggregate.emitted_document_citation_recall == 1.0
     assert aggregate.refusal_accuracy == 1.0
+    assert aggregate.refusal_precision == 1.0
+    assert aggregate.refusal_recall == 1.0
+    assert aggregate.supported_answer_recall == 1.0
     assert aggregate.hallucination_rate == 0.25
     assert aggregate.answer_grounding_rate == 0.0
     assert aggregate.unsupported_answer_rate == 0.0
@@ -301,3 +311,7 @@ async def test_runner_records_callback_failure_and_continues() -> None:
     assert question.metrics.document_hit == 0.0
     assert question.metrics.chunk_hit == 0.0
     assert result.aggregate.question_count == 1
+    assert result.aggregate.evaluation_error_count == 1
+    assert result.aggregate.quality_assessed_questions == 0
+    assert result.aggregate.refusal_accuracy == 0.0
+    assert result.aggregate.unsupported_answer_assessed_questions == 0

@@ -38,7 +38,7 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
             final_status="approved",
             index_status="pending",
             version=1,
-            region="四川",
+            region="四川省",
             document_type="产业政策",
         )
         crawl_task = CrawlTask(
@@ -147,6 +147,10 @@ async def test_reindex_and_search_debug_use_real_shared_indexes(
     assert trace.json()["prompt_snapshot_json"]["content"]
     assert trace.json()["evidence_decision_json"]["status"] == "passed"
     assert trace.json()["rerank_metadata_json"]["applied"] is True
+    assert trace.json()["stage_timings_json"]["retrieval_total"] >= 0
+    assert trace.json()["stage_timings_json"]["evidence_gate"] >= 0
+    assert trace.json()["stage_timings_json"]["grounding"] >= 0
+    assert trace.json()["stage_timings_json"]["total"] >= 0
     assert trace.json()["citations_json"][0]["chunk_id"] == chat_body["citations"][0]["chunk_id"]
 
     lineage = await client.get(
