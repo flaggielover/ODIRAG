@@ -7,6 +7,14 @@ on:
         description: Installed immutable release identifier
         required: true
         type: string
+      operation:
+        description: Release transaction operation
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - rollback
 
 permissions:
   contents: read
@@ -25,22 +33,48 @@ jobs:
       - name: Validate release identity and privilege
         shell: bash
         env:
+          OPERATION: ${{ inputs.operation }}
           RELEASE_ID: ${{ inputs.release_id }}
         run: |
           set -Eeuo pipefail
           [[ "$RELEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
+          [[ "$OPERATION" == "deploy" || "$OPERATION" == "rollback" ]]
           target="/opt/odirag/releases/$RELEASE_ID"
           [[ -d "$target" && ! -L "$target" ]]
           sudo -n true
           manifest_id="$(sudo sed -nE 's/^ODIRAG_RELEASE_ID=//p' "$target/manifest.env")"
           [[ "$manifest_id" == "$RELEASE_ID" ]]
-          printf 'production_release_preflight=PASS-CONFIG release=%s\n' "$RELEASE_ID"
+          if [[ "$OPERATION" == "rollback" ]]; then
+            current="$(sudo realpath -e /opt/odirag/current)"
+            previous="$(sudo realpath -e /opt/odirag/previous)"
+            [[ "$current" == /opt/odirag/releases/* && "$current" != "$target" ]]
+            [[ "$previous" == "$target" ]]
+            [[ -x "$current/deploy/production/scripts/deploy-release.sh" ]]
+            [[ "$(sudo stat -c '%u:%a:%F' "$target/deployment-state.json")" \
+                == '0:444:regular file' ]]
+            sudo python3 - "$target/deployment-state.json" "$RELEASE_ID" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              state = json.load(handle)
+          if state.get("release_id") != sys.argv[2]:
+              raise SystemExit("rollback target state release mismatch")
+          if state.get("data_integrity_verified") is not True:
+              raise SystemExit("rollback target data integrity was not verified")
+          if state.get("providers_verified") is not True:
+              raise SystemExit("rollback target providers were not verified")
+          PY
+          fi
+          printf 'production_release_preflight=PASS-CONFIG release=%s operation=%s\n' \
+            "$RELEASE_ID" "$OPERATION"
 
       - name: Pull, deploy, and verify immutable release
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.repository_owner }}
+          OPERATION: ${{ inputs.operation }}
           RELEASE_ID: ${{ inputs.release_id }}
         run: |
           set -Eeuo pipefail
@@ -64,8 +98,14 @@ jobs:
                 docker login ghcr.io --username "$GHCR_USER" --password-stdin
           unset GHCR_TOKEN
 
+          transaction_script="$target/deploy/production/scripts/deploy-release.sh"
+          if [[ "$OPERATION" == "rollback" ]]; then
+            current="$(sudo realpath -e /opt/odirag/current)"
+            transaction_script="$current/deploy/production/scripts/deploy-release.sh"
+          fi
           sudo env DOCKER_CONFIG="$auth_root" \
-            "$target/deploy/production/scripts/deploy-release.sh" "$target" deploy
+            "$transaction_script" "$target" "$OPERATION"
           sudo "$target/deploy/production/scripts/verify-release.sh" \
             "$target" --providers
-          printf 'production_release_deployment=PASS-LIVE release=%s\n' "$RELEASE_ID"
+          printf 'production_release_deployment=PASS-LIVE release=%s operation=%s\n' \
+            "$RELEASE_ID" "$OPERATION"
