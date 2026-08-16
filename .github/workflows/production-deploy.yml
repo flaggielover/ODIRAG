@@ -1,0 +1,71 @@
+name: Production Release Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Installed immutable release identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: odirag-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy immutable production release
+    runs-on: [self-hosted, linux, x64, odirag-production-deploy]
+    timeout-minutes: 30
+    steps:
+      - name: Validate release identity and privilege
+        shell: bash
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]
+          target="/opt/odirag/releases/$RELEASE_ID"
+          [[ -d "$target" && ! -L "$target" ]]
+          sudo -n true
+          manifest_id="$(sudo sed -nE 's/^ODIRAG_RELEASE_ID=//p' "$target/manifest.env")"
+          [[ "$manifest_id" == "$RELEASE_ID" ]]
+          printf 'production_release_preflight=PASS-CONFIG release=%s\n' "$RELEASE_ID"
+
+      - name: Pull, deploy, and verify immutable release
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          set -Eeuo pipefail
+          auth_root="/run/odirag-ghcr-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          target="/opt/odirag/releases/$RELEASE_ID"
+          cleanup() {
+            sudo env DOCKER_CONFIG="$auth_root" docker logout ghcr.io >/dev/null 2>&1 || true
+            sudo rm -f -- "$auth_root/config.json"
+            sudo rmdir -- "$auth_root" 2>/dev/null || true
+          }
+          if sudo test -e "$auth_root" || sudo test -L "$auth_root"; then
+            printf 'temporary auth directory already exists\n' >&2
+            exit 1
+          fi
+          sudo install -d -o root -g root -m 0700 "$auth_root"
+          [[ "$(sudo stat -c '%u:%a:%F' "$auth_root")" == '0:700:directory' ]]
+          trap cleanup EXIT
+
+          printf '%s' "$GHCR_TOKEN" \
+            | sudo env DOCKER_CONFIG="$auth_root" \
+                docker login ghcr.io --username "$GHCR_USER" --password-stdin
+          unset GHCR_TOKEN
+
+          sudo env DOCKER_CONFIG="$auth_root" \
+            "$target/deploy/production/scripts/deploy-release.sh" "$target" deploy
+          sudo "$target/deploy/production/scripts/verify-release.sh" \
+            "$target" --providers
+          printf 'production_release_deployment=PASS-LIVE release=%s\n' "$RELEASE_ID"
