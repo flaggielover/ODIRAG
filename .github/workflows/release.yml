@@ -84,6 +84,7 @@ jobs:
             --file deploy/production/compose.yml config --quiet
           docker compose --env-file deploy/production/monitoring/.env.example \
             --file deploy/production/monitoring/compose.yml config --quiet
+          bash deploy/production/tests/validate-nginx-configs.sh
 
   publish:
     name: Publish ${{ matrix.component }}
