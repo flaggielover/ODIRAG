@@ -157,9 +157,14 @@ jobs:
         run: |
           docker run --rm \
             --mount "type=bind,source=$PWD,target=/src,readonly" \
-            --workdir /src \
             debian:bookworm-slim \
-            bash deploy/production/tests/test-release-lifecycle.sh
+            bash -c '
+              set -Eeuo pipefail
+              mkdir -p /tmp/odirag-source
+              cp -R /src/deploy /tmp/odirag-source/
+              cd /tmp/odirag-source
+              bash deploy/production/tests/test-release-lifecycle.sh
+            '
 
       - name: Validate Compose model
         run: |
