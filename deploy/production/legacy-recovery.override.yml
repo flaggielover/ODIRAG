@@ -1,0 +1,9 @@
+services:
+  backend:
+    image: "${ODIRAG_BACKEND_IMAGE_REF:?missing immutable legacy backend image}"
+  worker:
+    image: "${ODIRAG_BACKEND_IMAGE_REF:?missing immutable legacy backend image}"
+  scheduler:
+    image: "${ODIRAG_BACKEND_IMAGE_REF:?missing immutable legacy backend image}"
+  frontend:
+    image: "${ODIRAG_FRONTEND_IMAGE_REF:?missing immutable legacy frontend image}"

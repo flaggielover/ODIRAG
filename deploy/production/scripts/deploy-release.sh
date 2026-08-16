@@ -7,14 +7,21 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/release-common.sh"
 
 usage() {
-  printf 'usage: %s RELEASE_DIRECTORY [deploy|rollback]\n' "$0" >&2
+  printf 'usage: %s {recovery-only | RELEASE_DIRECTORY [deploy|rollback]}\n' "$0" >&2
   exit 64
 }
 
-[[ "$#" -ge 1 && "$#" -le 2 ]] || usage
-requested="$1"
-operation="${2:-deploy}"
-[[ "$operation" == "deploy" || "$operation" == "rollback" ]] || usage
+requested=""
+operation=""
+if [[ "$#" -eq 1 && "$1" == "recovery-only" ]]; then
+  operation="recovery-only"
+elif [[ "$#" -ge 1 && "$#" -le 2 ]]; then
+  requested="$1"
+  operation="${2:-deploy}"
+  [[ "$operation" == "deploy" || "$operation" == "rollback" ]] || usage
+else
+  usage
+fi
 
 pending_state=""
 recovery_mode=""
@@ -75,6 +82,15 @@ recover_unfinished_transaction() {
   restore_original_from_loaded_journal || return 1
   clear_release_journal || return 1
   release_log "unfinished_release_recovery=PASS-LIVE"
+}
+
+run_recovery_only() {
+  if [[ ! -e "$ODIRAG_RELEASE_JOURNAL" && ! -L "$ODIRAG_RELEASE_JOURNAL" ]]; then
+    release_log "release_recovery_only=PASS-CONFIG recovered=false reason=no-journal"
+    return 0
+  fi
+  recover_unfinished_transaction || return 1
+  release_log "release_recovery_only=PASS-LIVE recovered=true"
 }
 
 prepare_recovery_path() {
@@ -216,6 +232,10 @@ trap release_exit_handler EXIT
 
 release_preflight
 acquire_release_lock
+if [[ "$operation" == "recovery-only" ]]; then
+  run_recovery_only
+  exit 0
+fi
 recover_unfinished_transaction
 target="$(resolve_release_dir "$requested")"
 old="$(resolve_optional_release_link "$ODIRAG_CURRENT_LINK")"

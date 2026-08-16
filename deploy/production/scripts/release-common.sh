@@ -7,6 +7,9 @@ readonly ODIRAG_PREVIOUS_LINK="${ODIRAG_PREVIOUS_LINK:-/opt/odirag/previous}"
 readonly ODIRAG_RUNTIME_ENV_FILE="${ODIRAG_RUNTIME_ENV_FILE:-/etc/odirag/production.env}"
 readonly ODIRAG_RELEASE_LOCK="${ODIRAG_RELEASE_LOCK:-/run/lock/odirag-release.lock}"
 readonly ODIRAG_RELEASE_JOURNAL="${ODIRAG_RELEASE_JOURNAL:-/opt/odirag/.release-transaction.env}"
+readonly ODIRAG_RELEASE_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly ODIRAG_LEGACY_COMPOSE_OVERRIDE="$ODIRAG_RELEASE_SCRIPT_DIR/../legacy-recovery.override.yml"
+readonly ODIRAG_LEGACY_COMPOSE_OVERRIDE_SHA256="3c9ea1dd05a035eb7e676222246ae754ce1aee6930ba9f58f7bb5da458f28c94"
 
 release_log() {
   printf '[odirag-release] %s\n' "$*"
@@ -133,11 +136,41 @@ load_release_manifest() {
 }
 
 compose_for_release() {
+  if [[ "${RELEASE_ID:-}" == legacy-bootstrap-* ]]; then
+    local status=0
+    ODIRAG_RELEASE_ID="$RELEASE_ID" \
+    ODIRAG_SOURCE_COMMIT="$RELEASE_COMMIT" \
+    ODIRAG_BACKEND_IMAGE_REF="$RELEASE_BACKEND_REF" \
+    ODIRAG_FRONTEND_IMAGE_REF="$RELEASE_FRONTEND_REF" \
+      docker compose --project-directory "$(dirname -- "$RELEASE_COMPOSE")" \
+        --env-file "$ODIRAG_RUNTIME_ENV_FILE" -f "$RELEASE_COMPOSE" \
+        -f "$ODIRAG_LEGACY_COMPOSE_OVERRIDE" "$@" || status=$?
+    return "$status"
+  fi
   ODIRAG_RELEASE_ID="$RELEASE_ID" \
   ODIRAG_SOURCE_COMMIT="$RELEASE_COMMIT" \
   ODIRAG_BACKEND_IMAGE_REF="$RELEASE_BACKEND_REF" \
   ODIRAG_FRONTEND_IMAGE_REF="$RELEASE_FRONTEND_REF" \
     docker compose --env-file "$ODIRAG_RUNTIME_ENV_FILE" -f "$RELEASE_COMPOSE" "$@"
+}
+
+validate_legacy_compose_resolution() {
+  compose_for_release config --format json \
+    | python3 -c '
+import json
+import sys
+
+config = json.load(sys.stdin)
+services = config.get("services", {})
+expected = {
+    "backend": sys.argv[1],
+    "worker": sys.argv[1],
+    "scheduler": sys.argv[1],
+    "frontend": sys.argv[2],
+}
+if any(services.get(name, {}).get("image") != image for name, image in expected.items()):
+    raise SystemExit("legacy Compose image resolution mismatch")
+' "$LEGACY_BACKEND_REF" "$LEGACY_FRONTEND_REF"
 }
 
 release_project_name() {
@@ -248,6 +281,23 @@ validate_running_release_images() {
   validate_running_service_image frontend "$RELEASE_FRONTEND_IMAGE_ID" "$RELEASE_FRONTEND_REF"
 }
 
+validate_running_legacy_images() {
+  local service container actual_id
+  for service in backend worker scheduler frontend; do
+    container="$(release_container_id "$service")" || return 1
+    [[ -n "$container" ]] \
+      || { release_die "running legacy service is missing: $service"; return 1; }
+    actual_id="$(docker inspect --format '{{.Image}}' "$container")" || return 1
+    if [[ "$service" == "frontend" ]]; then
+      [[ "$actual_id" == "$LEGACY_FRONTEND_IMAGE_ID" ]] \
+        || { release_die "running legacy image ID mismatch: $service"; return 1; }
+    else
+      [[ "$actual_id" == "$LEGACY_BACKEND_IMAGE_ID" ]] \
+        || { release_die "running legacy image ID mismatch: $service"; return 1; }
+    fi
+  done
+}
+
 legacy_image_digest() {
   local image_id="$1" repository="$2"
   local -a digests
@@ -332,6 +382,9 @@ validate_legacy_recovery_images() {
 activate_legacy_recovery() {
   [[ "${LEGACY_RECOVERY_AVAILABLE:-false}" == "true" ]] \
     || { release_die "legacy recovery state was not captured"; return 1; }
+  validate_runtime_environment || return 1
+  validate_sha256_file "$ODIRAG_LEGACY_COMPOSE_OVERRIDE" \
+    "$ODIRAG_LEGACY_COMPOSE_OVERRIDE_SHA256" || return 1
   validate_sha256_file "$LEGACY_COMPOSE" "$LEGACY_COMPOSE_SHA" || return 1
   validate_sha256_file "$LEGACY_NGINX" "$LEGACY_NGINX_SHA" || return 1
   validate_legacy_recovery_images || return 1
@@ -347,16 +400,23 @@ activate_legacy_recovery() {
   RELEASE_FRONTEND_IMAGE_ID="$LEGACY_FRONTEND_IMAGE_ID"
   RELEASE_ALEMBIC_HEAD="$LEGACY_ALEMBIC_HEAD"
 
-  compose_for_release config --quiet || return 1
-  validate_release_migration || return 1
-  compose_for_release up -d --no-deps --no-build --pull never backend || return 1
+  compose_for_release config --quiet \
+    || { release_die "legacy recovery Compose validation failed"; return 1; }
+  validate_legacy_compose_resolution \
+    || { release_die "legacy recovery Compose image binding failed"; return 1; }
+  validate_release_migration \
+    || { release_die "legacy recovery migration compatibility failed"; return 1; }
+  compose_for_release up -d --no-deps --no-build --pull never backend \
+    || { release_die "legacy backend recovery activation failed"; return 1; }
   wait_release_service backend $((SECONDS + 300)) || return 1
-  compose_for_release up -d --no-deps --no-build --pull never worker scheduler frontend || return 1
+  compose_for_release up -d --no-deps --no-build --pull never worker scheduler frontend \
+    || { release_die "legacy worker/scheduler/frontend recovery activation failed"; return 1; }
   if release_nginx_needs_recreate; then
-    compose_for_release up -d --no-deps --no-build --pull never nginx || return 1
+    compose_for_release up -d --no-deps --no-build --pull never nginx \
+      || { release_die "legacy Nginx recovery activation failed"; return 1; }
   fi
   wait_release_stack 360 || return 1
-  validate_running_release_images || return 1
+  validate_running_legacy_images || return 1
   validate_running_nginx_config || return 1
   run_release_integrity_check || return 1
 }

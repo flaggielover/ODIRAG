@@ -200,6 +200,8 @@ jobs:
             --env ODIRAG_EMBEDDING_DIMENSIONS=8 \
             --env ODIRAG_VECTOR_STORE_PROVIDER=memory \
             --env ODIRAG_RERANK_PROVIDER=deterministic \
+            --env ODIRAG_CHUNKING_CONFIG_PATH=/app/config/chunking.yaml \
+            --env ODIRAG_GROUNDED_ANSWER_PROMPT_PATH=/app/config/prompts/grounded_answer_v1.txt \
             odirag/backend:ci
 
           for attempt in $(seq 1 60); do
@@ -216,6 +218,20 @@ jobs:
           test "$(docker exec odirag-backend-ci id -u)" = "10001"
           docker exec odirag-backend-ci test -w /app/data
           docker exec odirag-backend-ci test -s /app/data/ci-smoke.db
+
+          docker exec --interactive --workdir /tmp odirag-backend-ci python - <<'PY'
+          import asyncio
+          from pathlib import Path
+
+          import app
+          from app.config import get_settings
+          from app.runtime import build_application_runtime
+
+          assert Path(app.__file__).is_relative_to("/opt/venv")
+          runtime = build_application_runtime(get_settings())
+          assert runtime.grounded_answer_prompt
+          asyncio.run(runtime.close())
+          PY
 
           docker exec --interactive odirag-backend-ci python - <<'PY'
           import json

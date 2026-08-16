@@ -49,6 +49,8 @@ x-app-environment: &app-environment
   ODIRAG_BOOTSTRAP_ADMIN: "${ODIRAG_BOOTSTRAP_ADMIN:-false}"
   ODIRAG_AUTO_CREATE_SCHEMA: "${ODIRAG_AUTO_CREATE_SCHEMA:-false}"
   ODIRAG_DATA_DIR: "/app/data"
+  ODIRAG_CHUNKING_CONFIG_PATH: "/app/config/chunking.yaml"
+  ODIRAG_GROUNDED_ANSWER_PROMPT_PATH: "/app/config/prompts/grounded_answer_v1.txt"
   ODIRAG_MAX_DOWNLOAD_BYTES: "${ODIRAG_MAX_DOWNLOAD_BYTES:-52428800}"
   ODIRAG_ALLOWED_ATTACHMENT_EXTENSIONS: '${ODIRAG_ALLOWED_ATTACHMENT_EXTENSIONS:-[".docx",".htm",".html",".jpeg",".jpg",".pdf",".png",".txt",".webp",".xlsx",".zip"]}'
   ODIRAG_BM25_SNAPSHOT_PATH: "/app/data/indexes/bm25.json"

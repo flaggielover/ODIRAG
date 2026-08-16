@@ -107,6 +107,16 @@ if [[ "${1:-}" == "-" ]]; then
   fi
   exit 0
 fi
+if [[ "${1:-}" == "-c" && "${2:-}" == *"legacy Compose image resolution mismatch"* ]]; then
+  config="$(cat)"
+  expected="$(printf '{"services":{"backend":{"image":"%s"},"worker":{"image":"%s"},"scheduler":{"image":"%s"},"frontend":{"image":"%s"}}}' \
+    "$3" "$3" "$3" "$4")"
+  if [[ "$config" != "$expected" ]]; then
+    printf 'legacy Compose image resolution mismatch\n' >&2
+    exit 1
+  fi
+  exit 0
+fi
 exec python "$@"
 SH
 
@@ -194,10 +204,29 @@ if [[ "${1:-}" == "compose" ]]; then
   for ((index=1; index <= $#; index++)); do
     if [[ "${!index}" == "-f" ]]; then
       next=$((index + 1))
-      compose_file="${!next}"
+      candidate="${!next}"
+      if [[ -z "$compose_file" && "$candidate" != "-" ]]; then
+        compose_file="$candidate"
+      fi
     fi
   done
+  if [[ " $* " == *" config "* && " $* " == *" --format json "* ]]; then
+    backend_image="$ODIRAG_BACKEND_IMAGE_REF"
+    frontend_image="$ODIRAG_FRONTEND_IMAGE_REF"
+    if [[ "${MOCK_LEGACY_RESOLUTION_DRIFT:-0}" == "1" \
+          && "$ODIRAG_BACKEND_IMAGE_REF" == "$MOCK_LEGACY_BACKEND_REF" ]]; then
+      backend_image="odirag/backend:drifted"
+    fi
+    printf '{"services":{"backend":{"image":"%s"},"worker":{"image":"%s"},"scheduler":{"image":"%s"},"frontend":{"image":"%s"}}}\n' \
+      "$backend_image" "$backend_image" "$backend_image" "$frontend_image"
+    exit 0
+  fi
   if [[ " $* " == *" up "* ]]; then
+    printf 'up\n' >>"$MOCK_STATE_DIR/compose-up-calls"
+    if [[ "${MOCK_CORRUPT_LEGACY_WORKER_ON_RECOVERY:-0}" == "1" \
+          && "$ODIRAG_BACKEND_IMAGE_REF" == "$MOCK_TARGET_BACKEND_REF" ]]; then
+      : >"$MOCK_STATE_DIR/candidate-activated"
+    fi
     [[ " $* " == *" backend "* ]] && printf '%s\n' "$ODIRAG_BACKEND_IMAGE_REF" >"$MOCK_STATE_DIR/backend-ref"
     [[ " $* " == *" frontend "* ]] && printf '%s\n' "$ODIRAG_FRONTEND_IMAGE_REF" >"$MOCK_STATE_DIR/frontend-ref"
     if [[ " $* " == *" nginx "* ]]; then
@@ -254,7 +283,16 @@ case "${1:-}" in
           printf 'healthy\n'
         fi
         ;;
-      '{{.Image}}') image_id "$(active_ref "$service")" ;;
+      '{{.Image}}')
+        if [[ "${MOCK_CORRUPT_LEGACY_WORKER_ON_RECOVERY:-0}" == "1" \
+              && "$service" == "worker" \
+              && "$(active_ref "$service")" == "$MOCK_LEGACY_BACKEND_REF" \
+              && -f "$MOCK_STATE_DIR/candidate-activated" ]]; then
+          printf 'sha256:%064d\n' 0
+        else
+          image_id "$(active_ref "$service")"
+        fi
+        ;;
       '{{.Config.Image}}') active_ref "$service" ;;
       *Mounts*) cat "$MOCK_STATE_DIR/nginx-source" ;;
       *) exit 1 ;;
@@ -342,6 +380,7 @@ reset_old_state() {
   printf '%s\n' "$MOCK_OLD_BACKEND_REF" >"$MOCK_STATE_DIR/backend-ref"
   printf '%s\n' "$MOCK_OLD_FRONTEND_REF" >"$MOCK_STATE_DIR/frontend-ref"
   printf '%s\n' "$OLD_RELEASE/deploy/production/nginx.conf" >"$MOCK_STATE_DIR/nginx-source"
+  rm -f -- "$MOCK_STATE_DIR/candidate-activated" "$MOCK_STATE_DIR/compose-up-calls"
   rm -f -- "$TARGET_RELEASE/deployment-state.json" "$TARGET_RELEASE"/.deployment-state.json.pending.*
 }
 
@@ -368,6 +407,32 @@ EOF
   chmod 0600 "$JOURNAL_FILE"
 }
 
+write_stale_legacy_journal() {
+  local compose_sha nginx_sha
+  compose_sha="$(sha256sum "$OLD_RELEASE/deploy/production/compose.yml" | awk '{print $1}')"
+  nginx_sha="$(sha256sum "$OLD_RELEASE/deploy/production/nginx.conf" | awk '{print $1}')"
+  cat >"$JOURNAL_FILE" <<EOF
+ODIRAG_JOURNAL_VERSION=1
+ODIRAG_JOURNAL_MODE=legacy-bootstrap
+ODIRAG_JOURNAL_TARGET_DIR=$TARGET_RELEASE
+ODIRAG_JOURNAL_ORIGINAL_CURRENT=$OLD_RELEASE
+ODIRAG_JOURNAL_ORIGINAL_PREVIOUS=NONE
+ODIRAG_JOURNAL_BACKEND_REF=$MOCK_LEGACY_BACKEND_REF
+ODIRAG_JOURNAL_FRONTEND_REF=$MOCK_LEGACY_FRONTEND_REF
+ODIRAG_JOURNAL_BACKEND_IMAGE_ID=$MOCK_OLD_BACKEND_IMAGE_ID
+ODIRAG_JOURNAL_FRONTEND_IMAGE_ID=$MOCK_OLD_FRONTEND_IMAGE_ID
+ODIRAG_JOURNAL_LEGACY_COMPOSE=$OLD_RELEASE/deploy/production/compose.yml
+ODIRAG_JOURNAL_LEGACY_NGINX=$OLD_RELEASE/deploy/production/nginx.conf
+ODIRAG_JOURNAL_LEGACY_COMPOSE_SHA256=$compose_sha
+ODIRAG_JOURNAL_LEGACY_NGINX_SHA256=$nginx_sha
+ODIRAG_JOURNAL_LEGACY_ALEMBIC_HEAD=$MOCK_ALEMBIC_HEAD
+ODIRAG_JOURNAL_TARGET_STATE_EXISTED=false
+ODIRAG_JOURNAL_TARGET_STATE_BACKUP=NONE
+ODIRAG_JOURNAL_TARGET_STATE_SHA256=NONE
+EOF
+  chmod 0600 "$JOURNAL_FILE"
+}
+
 run_deploy() {
   ODIRAG_RELEASE_ROOT="$RELEASE_ROOT" \
   ODIRAG_CURRENT_LINK="$CURRENT_LINK" \
@@ -387,6 +452,114 @@ run_verify() {
   ODIRAG_RELEASE_JOURNAL="$JOURNAL_FILE" \
     "$REPOSITORY_ROOT/deploy/production/scripts/verify-release.sh" "$@"
 }
+
+reset_old_state
+assert_absent "$JOURNAL_FILE"
+if ! run_deploy recovery-only >"$TEST_ROOT/recovery-only-empty.log" 2>&1; then
+  fail "recovery-only without a journal did not exit safely"
+fi
+grep -q 'release_recovery_only=PASS-CONFIG recovered=false reason=no-journal' \
+  "$TEST_ROOT/recovery-only-empty.log" \
+  || fail "recovery-only no-journal marker missing"
+assert_equal "$OLD_RELEASE" "$(realpath -e "$CURRENT_LINK")" "empty recovery-only changed current"
+assert_equal "$MOCK_OLD_BACKEND_REF" "$(cat "$MOCK_STATE_DIR/backend-ref")" \
+  "empty recovery-only changed backend"
+assert_absent "$PREVIOUS_LINK"
+assert_absent "$TARGET_RELEASE/deployment-state.json"
+
+reset_old_state
+export MOCK_FLOCK_FAIL=1
+if run_deploy recovery-only >"$TEST_ROOT/recovery-only-lock-failure.log" 2>&1; then
+  fail "recovery-only ignored the release lock"
+fi
+unset MOCK_FLOCK_FAIL
+grep -q 'another release operation holds the deployment lock' \
+  "$TEST_ROOT/recovery-only-lock-failure.log" \
+  || fail "recovery-only lock rejection evidence missing"
+if grep -q 'release_recovery_only=PASS-' "$TEST_ROOT/recovery-only-lock-failure.log"; then
+  fail "recovery-only emitted a success marker without acquiring the release lock"
+fi
+assert_absent "$JOURNAL_FILE"
+
+reset_old_state
+unlink "$CURRENT_LINK"
+ln -s "$TARGET_RELEASE" "$CURRENT_LINK"
+printf '%s\n' "$MOCK_TARGET_BACKEND_REF" >"$MOCK_STATE_DIR/backend-ref"
+printf '%s\n' "$MOCK_TARGET_FRONTEND_REF" >"$MOCK_STATE_DIR/frontend-ref"
+printf '%s\n' "$TARGET_RELEASE/deploy/production/nginx.conf" >"$MOCK_STATE_DIR/nginx-source"
+write_stale_legacy_journal
+if ! run_deploy recovery-only >"$TEST_ROOT/recovery-only-legacy-success.log" 2>&1; then
+  fail "recovery-only did not restore the recorded legacy release"
+fi
+grep -q 'unfinished_release_recovery=PASS-LIVE' "$TEST_ROOT/recovery-only-legacy-success.log" \
+  || fail "recovery-only recovery evidence missing"
+grep -q 'release_recovery_only=PASS-LIVE recovered=true' \
+  "$TEST_ROOT/recovery-only-legacy-success.log" \
+  || fail "recovery-only completion marker missing"
+assert_absent "$JOURNAL_FILE"
+assert_equal "$OLD_RELEASE" "$(realpath -e "$CURRENT_LINK")" "recovery-only current mismatch"
+assert_equal "$MOCK_LEGACY_BACKEND_REF" "$(cat "$MOCK_STATE_DIR/backend-ref")" \
+  "recovery-only backend mismatch"
+assert_equal "$MOCK_LEGACY_FRONTEND_REF" "$(cat "$MOCK_STATE_DIR/frontend-ref")" \
+  "recovery-only frontend mismatch"
+assert_absent "$PREVIOUS_LINK"
+assert_absent "$TARGET_RELEASE/deployment-state.json"
+
+reset_old_state
+unlink "$CURRENT_LINK"
+ln -s "$TARGET_RELEASE" "$CURRENT_LINK"
+printf '%s\n' "$MOCK_TARGET_BACKEND_REF" >"$MOCK_STATE_DIR/backend-ref"
+printf '%s\n' "$MOCK_TARGET_FRONTEND_REF" >"$MOCK_STATE_DIR/frontend-ref"
+printf '%s\n' "$TARGET_RELEASE/deploy/production/nginx.conf" >"$MOCK_STATE_DIR/nginx-source"
+write_stale_legacy_journal
+export MOCK_LEGACY_RESOLUTION_DRIFT=1
+if run_deploy recovery-only >"$TEST_ROOT/recovery-only-drifted-image.log" 2>&1; then
+  fail "recovery-only accepted a drifted legacy Compose image"
+fi
+unset MOCK_LEGACY_RESOLUTION_DRIFT
+grep -q 'legacy Compose image resolution mismatch' "$TEST_ROOT/recovery-only-drifted-image.log" \
+  || fail "legacy Compose image drift rejection evidence missing"
+assert_absent "$MOCK_STATE_DIR/compose-up-calls"
+[[ -f "$JOURNAL_FILE" ]] || fail "legacy image drift failure did not retain its journal"
+rm -f -- "$JOURNAL_FILE"
+
+reset_old_state
+unlink "$CURRENT_LINK"
+ln -s "$TARGET_RELEASE" "$CURRENT_LINK"
+printf '%s\n' "$MOCK_TARGET_BACKEND_REF" >"$MOCK_STATE_DIR/backend-ref"
+printf '%s\n' "$MOCK_TARGET_FRONTEND_REF" >"$MOCK_STATE_DIR/frontend-ref"
+printf '%s\n' "$TARGET_RELEASE/deploy/production/nginx.conf" >"$MOCK_STATE_DIR/nginx-source"
+write_stale_legacy_journal
+chmod 0644 "$RUNTIME_ENV"
+if run_deploy recovery-only >"$TEST_ROOT/recovery-only-unsafe-runtime-env.log" 2>&1; then
+  fail "recovery-only accepted an unsafe runtime environment mode"
+fi
+chmod 0600 "$RUNTIME_ENV"
+grep -q 'runtime environment mode must be 0600 or 0640' \
+  "$TEST_ROOT/recovery-only-unsafe-runtime-env.log" \
+  || fail "unsafe runtime environment rejection evidence missing"
+assert_absent "$MOCK_STATE_DIR/compose-up-calls"
+[[ -f "$JOURNAL_FILE" ]] || fail "unsafe runtime environment failure did not retain its journal"
+rm -f -- "$JOURNAL_FILE"
+
+reset_old_state
+unlink "$CURRENT_LINK"
+ln -s "$TARGET_RELEASE" "$CURRENT_LINK"
+printf '%s\n' "$MOCK_TARGET_BACKEND_REF" >"$MOCK_STATE_DIR/backend-ref"
+printf '%s\n' "$MOCK_TARGET_FRONTEND_REF" >"$MOCK_STATE_DIR/frontend-ref"
+printf '%s\n' "$TARGET_RELEASE/deploy/production/nginx.conf" >"$MOCK_STATE_DIR/nginx-source"
+write_stale_legacy_journal
+export MOCK_CORRUPT_LEGACY_WORKER_ON_RECOVERY=1
+: >"$MOCK_STATE_DIR/candidate-activated"
+if run_deploy recovery-only >"$TEST_ROOT/recovery-only-failure.log" 2>&1; then
+  fail "recovery-only accepted a failed recovery validation"
+fi
+unset MOCK_CORRUPT_LEGACY_WORKER_ON_RECOVERY
+rm -f -- "$MOCK_STATE_DIR/candidate-activated"
+grep -q 'running legacy image ID mismatch: worker' "$TEST_ROOT/recovery-only-failure.log" \
+  || fail "recovery-only failure evidence missing"
+[[ -f "$JOURNAL_FILE" ]] || fail "failed recovery-only did not retain its journal"
+rm -f -- "$JOURNAL_FILE"
 
 reset_old_state
 export MOCK_PROVIDER_FAIL_RELEASE="$MOCK_OLD_ID"
@@ -487,10 +660,35 @@ assert_equal "$OLD_RELEASE" "$(realpath -e "$CURRENT_LINK")" "legacy recovery di
 assert_absent "$PREVIOUS_LINK"
 assert_equal "$MOCK_LEGACY_BACKEND_REF" "$(cat "$MOCK_STATE_DIR/backend-ref")" "legacy recovery did not restore backend"
 assert_equal "$MOCK_LEGACY_FRONTEND_REF" "$(cat "$MOCK_STATE_DIR/frontend-ref")" "legacy recovery did not restore frontend"
+for service in backend worker scheduler; do
+  assert_equal "$MOCK_LEGACY_BACKEND_REF" \
+    "$(docker inspect --format '{{.Config.Image}}' "$service-cid")" \
+    "legacy recovery did not pin the backend-family Compose digest: $service"
+done
+assert_equal "$MOCK_LEGACY_FRONTEND_REF" \
+  "$(docker inspect --format '{{.Config.Image}}' frontend-cid)" \
+  "legacy recovery did not pin the frontend Compose digest"
 assert_equal "$OLD_RELEASE/deploy/production/nginx.conf" "$(cat "$MOCK_STATE_DIR/nginx-source")" "legacy recovery did not restore Nginx"
 assert_absent "$TARGET_RELEASE/deployment-state.json"
 grep -q 'mode=legacy-bootstrap' "$TEST_ROOT/legacy-provider-failure.log" || fail "legacy recovery evidence missing"
 assert_absent "$JOURNAL_FILE"
+
+reset_old_state
+mv "$OLD_RELEASE/manifest.env" "$OLD_RELEASE/manifest.env.saved"
+printf '%s\n' "$MOCK_LEGACY_BACKEND_REF" >"$MOCK_STATE_DIR/backend-ref"
+printf '%s\n' "$MOCK_LEGACY_FRONTEND_REF" >"$MOCK_STATE_DIR/frontend-ref"
+export MOCK_PROVIDER_FAIL_RELEASE="$MOCK_TARGET_ID"
+export MOCK_CORRUPT_LEGACY_WORKER_ON_RECOVERY=1
+if run_deploy "$TARGET_RELEASE" >"$TEST_ROOT/legacy-worker-image-mismatch.log" 2>&1; then
+  fail "legacy recovery accepted a mismatched worker image ID"
+fi
+unset MOCK_PROVIDER_FAIL_RELEASE
+unset MOCK_CORRUPT_LEGACY_WORKER_ON_RECOVERY
+mv "$OLD_RELEASE/manifest.env.saved" "$OLD_RELEASE/manifest.env"
+grep -q 'running legacy image ID mismatch: worker' "$TEST_ROOT/legacy-worker-image-mismatch.log" \
+  || fail "legacy worker image mismatch rejection evidence missing"
+[[ -f "$JOURNAL_FILE" ]] || fail "failed legacy recovery did not retain its transaction journal"
+rm -f -- "$JOURNAL_FILE" "$MOCK_STATE_DIR/candidate-activated"
 
 reset_old_state
 export MOCK_FAIL_CURRENT_PROMOTION_ONCE_FILE="$TEST_ROOT/current-promotion-failed"
@@ -590,4 +788,4 @@ assert_absent "$TARGET_RELEASE/.deployment-state.json.pretransaction"
 assert_absent "$TARGET_RELEASE/.deployment-state.json.pretransaction.tmp"
 assert_absent "$JOURNAL_FILE"
 
-printf 'release_lifecycle_fault_injection=PASS scenarios=19\n'
+printf 'release_lifecycle_fault_injection=PASS scenarios=26\n'
