@@ -1,8 +1,11 @@
 * text=auto
+.gitattributes text eol=lf
 
 # Container entrypoints and operator scripts must remain executable by POSIX shells
 # after a Windows checkout with core.autocrlf enabled.
 deployment/*.sh text eol=lf
+deploy/production/** text eol=lf
+runbooks/*.md text eol=lf
 scripts/*.sh text eol=lf
 Dockerfile* text eol=lf
 .github/workflows/*.yml text eol=lf

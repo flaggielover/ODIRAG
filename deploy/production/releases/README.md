@@ -11,15 +11,19 @@ ODIRAG_BACKEND_IMAGE_REF=ghcr.io/owner/image@sha256:<64 lowercase hexadecimal ch
 ODIRAG_FRONTEND_IMAGE_REF=ghcr.io/owner/image@sha256:<64 lowercase hexadecimal characters>
 ODIRAG_ALEMBIC_HEAD=0012_attachment_processing_audit
 ODIRAG_COMPOSE_SHA256=<sha256 of deploy/production/compose.yml>
+ODIRAG_NGINX_SHA256=<sha256 of deploy/production/nginx.conf>
+ODIRAG_INTEGRITY_CHECK_SHA256=<sha256 of verify-production-integrity.py>
+ODIRAG_PROVIDER_CHECK_SHA256=<sha256 of verify-production-rag.py>
 ODIRAG_BUILD_CREATED=<UTC RFC3339 timestamp>
 ```
 
 The manifest never contains passwords, provider keys, registry credentials, or
 the runtime environment. Runtime secrets remain in
 `/etc/odirag/production.env`. A deployment only promotes `/opt/odirag/current`
-after image-label, migration, container-health, HTTP-health, and image-ID gates
-pass. The prior current directory becomes `/opt/odirag/previous` and is not
-deleted.
+after image-label, migration, container-health, exact HTTP 200, data-integrity,
+real-provider, and image-ID gates pass. A root-only transaction journal makes
+interrupted activation recoverable on exit or the next release command. The
+prior current directory becomes `/opt/odirag/previous` and is not deleted.
 
 Run release operations as root:
 

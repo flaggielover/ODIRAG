@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import sys
 from decimal import Decimal
+from time import perf_counter
+from urllib.parse import urlsplit
 
 from app.api.routes.chat import get_chat_service
 from app.config import get_settings
@@ -54,18 +56,48 @@ def _token_count(payload: dict[str, object]) -> int:
 
 async def main() -> None:
     settings = get_settings()
-    if settings.embedding_model != "text-embedding-v4":
-        raise VerificationError("unexpected_embedding_model")
-    if settings.rerank_model != "rerank-v3.5":
-        raise VerificationError("unexpected_rerank_model")
-    if settings.llm_provider != "direct" or settings.answer_provider != "llm":
-        raise VerificationError("unexpected_llm_configuration")
+    embedding_endpoint = urlsplit(settings.embedding_base_url)
+    rerank_endpoint = urlsplit(settings.rerank_base_url)
+    llm_endpoint = urlsplit(settings.direct_llm_base_url)
+    if (
+        settings.embedding_provider != "remote"
+        or embedding_endpoint.scheme != "https"
+        or embedding_endpoint.hostname != "dashscope.aliyuncs.com"
+        or settings.embedding_model != "text-embedding-v4"
+        or settings.embedding_dimensions != 1536
+    ):
+        raise VerificationError("unexpected_bailian_configuration")
+    if (
+        settings.vector_store_provider != "qdrant"
+        or settings.qdrant_collection != "odirag_chunks_bailian_v4"
+    ):
+        raise VerificationError("unexpected_vector_configuration")
+    if (
+        settings.rerank_provider != "remote"
+        or rerank_endpoint.scheme != "https"
+        or rerank_endpoint.hostname != "api.cohere.com"
+        or settings.rerank_model != "rerank-v3.5"
+    ):
+        raise VerificationError("unexpected_cohere_configuration")
+    if (
+        settings.llm_provider != "direct"
+        or settings.answer_provider != "llm"
+        or llm_endpoint.scheme != "https"
+        or llm_endpoint.hostname != "api.deepseek.com"
+        or settings.direct_llm_model != "deepseek-v4-flash"
+    ):
+        raise VerificationError("unexpected_deepseek_configuration")
 
     runtime = build_application_runtime(settings)
     database = DatabaseManager(settings)
     try:
         if runtime.llm_orchestrator is None:
             raise VerificationError("direct_llm_runtime_missing")
+        embedding_started = perf_counter()
+        query_vector = await runtime.embedding_provider.embed_query(SUPPORTED_QUERY)
+        embedding_latency_ms = (perf_counter() - embedding_started) * 1000
+        if len(query_vector) != 1536 or embedding_latency_ms <= 0:
+            raise VerificationError("bailian_embedding_shape_failed")
         async with database.session_factory() as session:
             await session.execute(text("SET TRANSACTION READ ONLY"))
             before_traces = int(
@@ -118,10 +150,13 @@ async def main() -> None:
 
             print(
                 "production_grounded_rag=PASS-LIVE "
+                "embedding_provider=bailian "
                 f"embedding_model={settings.embedding_model} "
+                f"embedding_latency_ms={embedding_latency_ms:.3f} vector_length=1536 "
                 f"bm25_hits={len(trace.bm25_results)} vector_hits={len(trace.vector_results)} "
                 f"fusion_hits={len(trace.fusion_results)} rerank_hits={len(trace.rerank_results)} "
-                f"final_hits={len(trace.final_results)} rerank_model={settings.rerank_model} "
+                f"final_hits={len(trace.final_results)} rerank_provider=cohere "
+                f"rerank_model={settings.rerank_model} llm_provider=deepseek "
                 f"llm_model={runtime.llm_orchestrator.model_name} "
                 f"direct_llm_latency_ms={llm_latency_ms:.3f} citations={len(supported.citations)} "
                 f"tokens_positive=true answer_support_validated=true"
@@ -144,6 +179,6 @@ async def main() -> None:
 
 try:
     asyncio.run(main())
-except Exception as exc:  # noqa: BLE001 - suppress provider response details.
+except Exception as exc:  # noqa: BLE001 - expose only the safe exception type.
     print(f"production_rag_verify=FAIL error_type={type(exc).__name__}", file=sys.stderr)
     raise SystemExit(1) from None

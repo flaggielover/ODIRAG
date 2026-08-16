@@ -14,7 +14,7 @@ Every release must bind these values:
 - backend and frontend `ghcr.io/...@sha256:...` references;
 - the Docker platform image IDs resolved after pull;
 - the Alembic head;
-- the production Compose SHA-256;
+- the production Compose, Nginx, integrity-check, and provider-check SHA-256 values;
 - the deterministic commit timestamp used as the OCI created label.
 
 Generate the non-secret manifest only from a committed tree:
@@ -41,21 +41,30 @@ sudo -n deploy/production/scripts/verify-release.sh \
   "/opt/odirag/releases/$RELEASE_ID"
 ```
 
-The deployment tool validates the manifest and Compose checksum, verifies the
-external runtime file without displaying it, pulls both digest references,
+The deployment tool validates every manifest-bound file, verifies the
+root-owned runtime file without displaying it, pulls both digest references,
 checks OCI revision/version labels, proves migration-head compatibility, and
 recreates only backend, worker, scheduler, and frontend. PostgreSQL, Redis,
 Qdrant, monitoring, and named volumes are not recreated. `/opt/odirag/current`
-is promoted only after all eight application services and three HTTP health
-checks pass. The old current release becomes `/opt/odirag/previous`.
+is promoted only after all eight application services, three exact HTTP 200
+health checks, frozen data invariants, and real provider/RAG checks pass. The
+old current release becomes `/opt/odirag/previous`.
 
-Run the optional real-provider gate only after the base release is healthy:
+Before the first service change, the tool writes a root-only transaction
+journal at `/opt/odirag/.release-transaction.env`. EXIT, HUP, INT, and TERM
+recover the recorded original digest and pointers. A later release command
+also consumes an unfinished journal, covering abrupt process termination or a
+host restart. Recovery uses the already verified local image IDs with
+`--pull never`; it does not depend on registry availability.
+
+Repeat the real-provider gate when collecting independent post-deploy evidence:
 
 ```sh
 sudo -n deploy/production/scripts/verify-release.sh --providers
 ```
 
-This bounded check runs Bailian embedding, vector/BM25 hybrid retrieval,
+The same bounded check is mandatory inside deployment and rollback. It runs
+Bailian embedding, vector/BM25 hybrid retrieval,
 Cohere rerank, DeepSeek grounded generation, and fail-closed refusal in a
 read-only database transaction. It does not write a production query trace.
 
