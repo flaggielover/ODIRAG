@@ -32,10 +32,13 @@ jobs:
           cache: pip
           cache-dependency-path: |
             backend/pyproject.toml
-            backend/requirements.lock
+            backend/requirements-dev.lock
 
       - name: Install backend and development tools
-        run: python -m pip install --constraint requirements.lock -e ".[dev]"
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes --requirement requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+          python -m pip check
 
       - name: Verify migration toolchain constraint
         run: |

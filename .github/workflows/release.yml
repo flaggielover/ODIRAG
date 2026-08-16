@@ -33,12 +33,14 @@ jobs:
           cache: pip
           cache-dependency-path: |
             backend/pyproject.toml
-            backend/requirements.lock
+            backend/requirements-dev.lock
 
       - name: Install and validate backend
         working-directory: backend
         run: |
-          python -m pip install --constraint requirements.lock -e ".[dev]"
+          python -m pip install --only-binary=:all: --require-hashes --requirement requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+          python -m pip check
           python -m ruff check .
           python -m black --check .
           python -m mypy app

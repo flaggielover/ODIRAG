@@ -13,10 +13,18 @@ WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY backend /build/backend
 COPY backend/requirements.lock /build/backend/requirements.lock
-RUN python -m pip install --upgrade pip \
-    && python -m pip install --constraint /build/backend/requirements.lock /build/backend
+RUN python -m pip install \
+        --only-binary=:all: \
+        --require-hashes \
+        --requirement /build/backend/requirements.lock
+
+COPY backend /build/backend
+RUN python -m pip install \
+        --no-build-isolation \
+        --no-deps \
+        /build/backend
+RUN python -m pip check
 
 FROM ${PYTHON_IMAGE} AS runtime
 
@@ -38,7 +46,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /opt/venv /opt/venv
-RUN apk add --no-cache libstdc++ \
+RUN apk add --no-cache libstdc++=15.2.0-r5 \
     && site_packages="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
     && rm -rf \
         /opt/venv/bin/pip* \
