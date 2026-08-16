@@ -803,7 +803,7 @@ prepare_release_state() {
 import json
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 (
     path,
@@ -836,7 +836,7 @@ payload = {
     "duration_seconds": float(duration),
     "data_integrity_verified": True,
     "providers_verified": True,
-    "verified_at": datetime.now(UTC).isoformat(),
+    "verified_at": datetime.now(timezone.utc).isoformat(),
 }
 with open(path, "x", encoding="utf-8") as handle:
     json.dump(payload, handle, indent=2, sort_keys=True)
