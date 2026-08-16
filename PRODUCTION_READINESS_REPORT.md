@@ -1,860 +1,115 @@
 # ODIRAG Production Readiness Report
 
-## Attachment / OCR readiness (2026-08-15, latest authoritative)
+Authoritative status: 2026-08-17 (Asia/Shanghai)
 
-This checkpoint supersedes older attachment, backend-regression, backend-image,
-and Alembic statements below while preserving the frozen Gold/provider evidence.
+## Final Verdict
 
-| Gate | Current evidence | Status |
-|---|---|---|
-| Attachment download | 123/123 attempted; 115 status-completed; 70 byte-verified; 8 HTTP 404 | `PARTIAL` |
-| Attachment parsing | 60/67 end-to-end; 60/60 reached-parser success | `PASS-LIVE` with 89.55% chain coverage |
-| Attachment OCR | Provider absent; one image source is 404; 0 real OCR attempts/success | `PARTIAL` |
-| Attachment provenance | Hash/parser version/timestamp/source audit complete 60/60 | `PASS-LIVE` |
-| Terminal-state contract | 60 parsed, 8 failed, 55 unsupported, 0 pending | `PASS-LIVE` |
-| Security | Trusted DNS, pinned sockets, redirect/rebinding/private-IP and size guards retained | `PASS` |
-| Idempotency | Real text cache hit; timestamps/hash unchanged; no chunks/points added | `PASS-LIVE` |
-| Quality sample | 10/10 parsed text/provenance samples passed | `PASS-LIVE` |
-| Backend engineering | 518/518; Ruff/format/mypy/compile/Alembic pass | `PASS-LOCAL` |
-| Black | Bounded `--version` timed out at 30 seconds; no residual process | `UNVERIFIED-WINDOWS-TIMEOUT` |
-| Runtime/core | 8/8 healthy; migration 0012; 182 docs; chunks/Qdrant 821/821 | `PASS-LIVE` |
+`PHASE_1_OVERALL=PASS-LIVE`
 
-The attachment worker processes only existing rows at concurrency 1 and does not
-create CrawlTasks or trigger indexing. Historical Fake-IP SSRF outcomes were safely
-revalidated through the same trusted DNS and pinned-connection infrastructure: 69
-were downloaded and seven returned real HTTP 404. Nine MIME-labeled DOCX responses
-were OLE legacy bytes and are explicitly unsupported. No OCR or parser success was
-fabricated.
+`PHASE_2_OVERALL=PASS-LIVE`
 
-Attachment parsing/provenance and terminal-state engineering are closed. Remaining
-attachment limitations are external HTTP 404 sources, 45 historical unsupported
-rows without verifiable bytes, and the absent OCR provider. Overall production
-acceptance remains gated by the previously documented P95 and Production Engineering
-work; this closure did not enter those scopes.
+`PHASE_3_OVERALL=PASS-LIVE`
 
-## Final Gold readiness - run 16 (2026-08-15, latest authoritative)
+`PHASE_4_OVERALL=PASS-LIVE`
 
-This table supersedes older Gold, guard, backend, image, and migration checkpoints
-below where they differ.
+`PHASE_5_OVERALL=PASS-LIVE`
 
-| Gate | Current evidence | Status |
-|---|---|---|
-| Checkpoint/image | Final manifest `sha256:70b8e21a...`; backend/worker/scheduler same image | `PASS-LOCAL` |
-| Human evaluation | 100 reviewed, PASS, verified; canonical Gold unchanged | `PASS-HUMAN` |
-| Final Gold execution | Run 16, 100/100, zero execution errors | `COMPLETE` |
-| Gold retrieval | R@5/10 0.885; MRR 0.840667; nDCG@5/10 0.806227 | measured live |
-| Gold answer quality | Supported 58/90; grounded 55/58; QA14 5/8 | `PARTIAL` |
-| Gold refusal safety | 10/10 refused; zero citation; zero unsupported answer | `PASS-LIVE` |
-| Evidence Sufficiency | 0.96 | measured live |
-| Remote Rerank provider boundary | Historical provider/full-RAG acceptance retained | `PASS-LIVE` |
-| Remote Rerank run-wide coverage | Run 16: 67 applied, 33 HTTP 429 fail-open | `PARTIAL-LIVE` |
-| Backend engineering | 501 passed; Ruff/format/mypy/compile/Alembic pass | `PASS-LOCAL` |
-| Black | Production-source check timed out at 120 seconds | `UNVERIFIED-WINDOWS-TIMEOUT` |
-| Runtime/core | 8/8 healthy; 182 docs; 821 chunks; Qdrant green/821 | `PASS-LIVE` |
-| Overall production acceptance | Quality, capacity, performance and production gates remain | `NOT PRODUCTION ACCEPTED` |
+`PRODUCTION_READINESS=PASS-LIVE`
 
-Run 16 metrics are exact citation P/R `0.288069/0.433333`, grounded-answer rate
-`0.948276`, refusal accuracy `0.68`, unsupported-answer rate `0`, Evidence
-Sufficiency Accuracy `0.96`, and Supported Answer Recall `0.644444`. Confusion is
-Gold supported `58 answer / 32 refuse` and Gold refusal `0 answer / 10 refuse`.
-The strict quality result is `GOLD_EVALUATION_QUALITY=PARTIAL`; this closure did
-not lower any safety rule or start a second final run.
+Public production URL: <https://rag.suzheodirag.top/>
 
-Current production blockers are the remaining supported false-refusals and claim
-grounding failures, run-wide Remote Rerank HTTP 429 capacity/reliability, the
-existing P95 target, attachment/OCR, backup/PITR and recovery drills, TLS/secret
-management, monitoring/release provenance, and cloud deployment. Brave and the
-Remote Rerank provider boundary are completed gates, not credential blockers.
+This report supersedes the historical readiness checkpoints that previously lived
+in this file. Detailed evidence remains in the phase reports and Git history:
 
-## Phase AD Gold readiness checkpoint (2026-08-14, authoritative)
+- `PRODUCTION_PHASE_1_REPORT.md`
+- `PRODUCTION_PHASE_2_REPORT.md`
+- `PRODUCTION_PHASE_3_REPORT.md`
+- `PRODUCTION_PHASE_4_REPORT.md`
+- `PRODUCTION_PHASE_5_REPORT.md`
 
-This checkpoint supersedes older Human Evaluation, Gold, performance, and
-backend-test counts below. It leaves the completed provider and governance gates
-unchanged.
+## Current Production Identity
 
-| Gate | Current evidence | Status |
-|---|---|---|
-| Human-review infrastructure | Workbook/importer traceability 100/100, no errors | `PASS-LOCAL` |
-| Human evaluation | 100 reviewed, 100 PASS, 100 verified, final JSON written | `PASS-HUMAN` |
-| Gold evaluation | Run 6, 100 real-chain questions, zero execution errors | `COMPLETE-WITH-QUALITY-FAILURE` |
-| Gold retrieval | Recall@5/10 0.885; MRR 0.809; nDCG@5/10 0.789022 | measured live |
-| Gold answer quality | Run 7 supported guard 0/2; refusal guard 2/2 | `FAIL-LIVE-QUALITY` |
-| RAG performance | 20 cases x 3 runs; P50 1,638 ms, P95 6,774 ms, P99 9,129 ms | `PARTIAL` |
-| Performance improvement | P95 8,763 -> 6,774 ms (-22.7%); best run P95 6,056 ms | measured live |
-| Remote Rerank | Existing provider and full-RAG live acceptance retained | `PASS-LIVE` |
-| Brave Source Discovery | Existing governed activation retained; no new Brave calls | `PASS-LIVE` |
-| Backend engineering | Prior full baseline 450 passed; current Gold/importer targeted checks pass | `PASS-LOCAL` |
-| Runtime/core | 8/8 healthy; 182 docs, 821 chunks, Qdrant green/821 | `PASS-LIVE` |
+```text
+release=v0.1.0-r6
+source_commit=31694f725cbe7f1ee9efcb4291175e734de1d3c9
+current=/opt/odirag/releases/v0.1.0-r6
+previous=/opt/odirag/releases/v0.1.0-r4
+transaction_journal=absent
+backend_digest=sha256:144d2107497ed338ca7d18d7cd4354ff79eed7285dd8e870c4b0771431bd5ae8
+frontend_digest=sha256:db49c94c0effd455a07a9670c620b312905f561e63370aa3e9e41e524de010a2
+application_services=8/8 healthy
+```
 
-The only performance changes were a fail-open, versioned query-embedding cache and
-shared Remote Embedding/Direct LLM HTTP pools. Evidence, Grounding, Answer
-Validation, Citation, refusal behavior, Remote Rerank, and context evidence were
-not weakened. Warm embedding P95 is below 3 ms, but Direct LLM P95 remains
-6,737.128 ms and Remote Rerank P95 1,580.243 ms. The `<5000 ms` SLA is therefore
-not accepted.
+## Acceptance Summary
 
-Run 5 is excluded from Gold metrics because it failed preflight on unsupported
-metadata filters. Run 6 produced 100 remote-provider traces, 68 applied reranks,
-and 31 fail-open traces; the provider gate remains complete, but the full 100-case
-application coverage is recorded as `PARTIAL-LIVE`. The independent quality guard
-is `FAIL-LIVE-QUALITY`: both refusal cases passed, while both intended-supported
-cases refused despite sufficient evidence. No threshold or safety rule was relaxed.
-
-Overall production readiness remains **NOT PRODUCTION ACCEPTED**. Current true
-blockers are supported-answer quality, the P95 performance target, real attachment/
-OCR coverage, production backup/PITR and Qdrant snapshots, Redis recovery/HA,
-retention/resource/logging/alert routing, TLS and secret management, and release
-registry/provenance. Human Evaluation is complete; Remote Rerank and Brave Source
-Discovery are completed gates, not blockers.
-
-## Phase Z Source Governance closure (2026-08-14, latest authoritative checkpoint)
-
-This section supersedes older Brave Source Discovery results where they differ.
-It does not change the separate overall production-readiness verdict.
-
-| Gate | Final live evidence | Status |
-|---|---|---|
-| Brave provider | One bounded real Brave run, run 4/candidate 7 | `PASS-LIVE` |
-| Source-discovery SSRF | Fail-closed DoH, vetted-IP pinning, Host/SNI preservation, redirect validation | `PASS-LIVE` |
-| Official validation | JXT exact HTTPS host, HTTP 200, `.gov.cn`, score 1.0 | `PASS-LIVE` |
-| Column discovery | Six real bounded columns, including the verified homepage announcement panel | `PASS-LIVE` |
-| Trial crawl / quality | 30 fetched, 2 DIRECT accepted, 28 rejected; 0.7667 >= 0.65 | `PASS-LIVE` |
-| Manual governance | Pre-approval activate returned HTTP 409; explicit API approval recorded | `PASS-LIVE` |
-| Source activation | Source 46 enabled/official; only qualified Column 191 activated | `PASS-LIVE` |
-| Final Source Discovery | End-to-end provider through governed activation | `PASS-LIVE` |
-
-Candidate 7 moved through discovered, official validation, column discovery, trial
-crawl, quality scoring, pending approval, manual approval, and source activation.
-Approval was recorded for `admin` at `2026-08-14T06:01:58.993737Z`; activation
-created Source `46` and SourceColumn `191` (`公告公示`, selector
-`#panel-20002 a[href]`). Five `0/5` columns remain in the immutable candidate audit
-record and were not materialized as active SourceColumns. Automatic discovery is
-disabled, its topic list is empty, and no CrawlTask was created.
-
-The run summary's legacy `approved_count` and `activated_count` fields remain zero;
-the candidate status, approval event, Source, and SourceColumn records are the
-authoritative state and show the completed transition.
-
-The post-activation read-only gate remains healthy at documents `182`, approved
-`101`, rejected `35`, pending manual review `46`, chunks `821`, and Qdrant green
-with `821` points. `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE` is unchanged.
-Remote Rerank remains `REMOTE_RERANK_PROVIDER=PASS-LIVE` and
-`REMOTE_RERANK_FULL_RAG=PASS-LIVE`; no Cohere request was made in Phase Z.
-
-## Phase W-X-Y closure (2026-08-14, latest authoritative checkpoint)
-
-This section supersedes the older Phase T-U provider conclusions where they differ.
-Those sections remain below as historical evidence. Overall production acceptance
-is still separate from these two provider-path results.
-
-| Gate | Current live evidence | Status |
-|---|---|---|
-| Remote Rerank provider | Real remote provider remained applied in the verified Chat traces | `PASS-LIVE` |
-| Remote Rerank full RAG | Two supported grounded answers, two safe refusals, real citations | `PASS-LIVE` |
-| Brave provider | Real Brave run 3 and candidate 6 persisted | `PASS-LIVE` |
-| Source-discovery SSRF | Fail-closed DoH, connect-time vetted-IP pinning, original Host/SNI, redirect revalidation, IPv6 site-local rejection | `PASS-LIVE` |
-| Official validation | `https://jxt.sc.gov.cn/scjxt/index.shtml`, HTTP 200, exact HTTPS host, `.gov.cn`, score 1.0 | `PASS-LIVE` |
-| Column discovery | 12 real columns | `PASS-LIVE` |
-| Trial crawl / quality | 60 fetched, 0 accepted; all `NO_RELEVANT_DETAIL_DOCUMENTS`; 0.5 < 0.65 | `FAIL-LIVE` |
-| Manual approval | Candidate rejected before the approval gate; no approval or activation | `MANUAL_SOURCE_APPROVAL_REQUIRED=NO` |
-
-Phase W established that trace `f9a44597-a18e-46ae-8aa5-5d36632cddc1` had a
-caller-side encoding failure: its persisted query contained 40 literal ASCII `?`
-characters. This was not a backend Answer Validation defect, so no validator,
-relation, evidence, citation, or grounding rule was relaxed. With correctly encoded
-UTF-8 input, trace `70906f7f-648f-4356-a0ee-47829afae7c1` returned a supported
-official answer and trace `e0e57258-4d19-44a9-94d4-ea8430a6f2c4` returned the supported September
-2023-March 2024 / April-June 2024 stage answer. Both cited real chunk
-`0bf55b37-7bf1-5ce9-834a-f46754e84fec` with traceable title and source URL. Broad
-multi-fact trace `b48ca4d8-1f40-49c8-b98e-f4c057851963` safely refused with
-`insufficient_evidence_relevance`; no-evidence trace
-`47570efd-6352-4213-8abf-ce0fbc3408c7` safely refused before the answer LLM.
-
-Phase X traced the prior `198.18.0.0/15` result to local fake-IP DNS. The secure
-change validates through fail-closed DoH and enforces the vetted address again at
-the actual socket connection while preserving the original Host and TLS SNI.
-Redirects are revalidated, and private, fake, mixed, rebinding, link-local, reserved,
-loopback, and IPv6 site-local destinations remain blocked. Only `backend`, `worker`,
-and `scheduler` were rebuilt/recreated and returned healthy; stateful services,
-frontend/nginx, and all volumes were untouched.
-
-Real Brave run 3/candidate 6 passed official validation and discovered 12 columns,
-but its bounded trial fetched 60 pages without a relevant detail document. Quality
-was 0.5 against the required 0.65, so the candidate was rejected and the run failed.
-No Source, CrawlTask, approval, activation, or manual-gate result was fabricated.
-
-The final read-only audit confirmed HTTP 8080 and `/api/system/health` at 200,
-healthy PostgreSQL/Redis/Qdrant dependencies, `documents=182`, `approved=101`,
-`rejected=35`, `pending_manual_review=46`, `chunks=821`, and a green
-`odirag_chunks` collection with exact points `821`. Targeted Phase W-X-Y regression
-is `127 passed`; scoped Ruff lint/format, Black, strict mypy, and
-`git diff --check` pass. The retained core status is therefore confirmed as
-`KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE`.
-
-审计日期：2026-08-13
-审计基准：ODIRAG_CODEX_MASTER_EXECUTION_GUIDE.md（Phase 0-15；新增 Phase 16）  
-结论：**NOT PRODUCTION ACCEPTED / 需要外部验收**
-
-代码层面的 Phase 0-15 主流程和新增 Phase 16 已形成可运行实现。八个 Compose 服务当前 healthy。Task 23 的真实工信部 government/official 主链保持 `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Production-strengthening Phase A 也已 PASS-LIVE；Phase C 的正式多文章 canary、C1=10、C2=50 和 C3=100 均已 PASS-LIVE。Phase G-J 已完成审计/实现边界，Phase K 已补齐新 trace 阶段计时但历史 P95 目标未达，Phase L 已完成只读生产工程审计。真实 remote rerank/Brave、生产 TLS/secret、容灾、代表性人工评测集、附件解析/OCR 覆盖和发布 provenance 仍未完成，整体仍 **NOT PRODUCTION ACCEPTED**。
-
-## Phase N-Q historical checkpoint (superseded by Phase AD, 2026-08-14)
-
-### Phase T-U latest live provider results
-
-Remote Rerank is live at the provider boundary: five real Cohere requests, five
-validated/applied results, zero provider errors. The two persisted Chat rerank
-latencies are 1282.509 ms and 1109.401 ms (observed average 1195.955 ms; no P95 is
-claimed from this sample). The supported Chat reached real Direct LLM but failed the
-unchanged Answer Validation rule `answer_contains_unsupported_relation`; the
-no-evidence Chat correctly refused with no citations and no answer-LLM tokens.
-Status is `REMOTE_RERANK_PROVIDER=PASS-LIVE / FULL_RAG_GATE=PARTIAL`.
-
-Brave Search also crossed its external provider boundary. Two real searches were
-made; the second returned five real Sichuan government candidates. All five failed
-the next official-validation fetch with `UnsafeUrlError` under the existing local
-proxy/DNS SSRF boundary. Status is
-`BRAVE_SEARCH_PROVIDER=PASS-LIVE / SOURCE_DISCOVERY=BLOCKED-LOCAL-SSRF-PROXY-RESOLUTION`.
-No manual approval gate was reached and no source was activated.
-
-### Phase S-V provider acceptance attempt
-
-The ignored local `.env` now resolves Remote Rerank as `remote/rerank-v3.5` and
-Brave as `brave`; both credential-presence checks are true. The current running
-backend was not recreated because the local approval service rejected Docker
-named-pipe execution before the command ran. Its observed rerank state therefore
-remains `provider=none`, `applied=false`, `rerank_provider_disabled`.
-
-No external provider returned a live response. The Cohere adapter reported a
-restricted-network `transport_error`, and the approved-network attempts were stopped
-by the approval service before execution. Brave was not called after that shared
-blocker was established. Consequently the prior credential-missing labels are
-superseded by the more precise current statuses:
-
-- `REMOTE_RERANK=BLOCKED-LOCAL-RUNTIME-RELOAD-AND-NETWORK`
-- `BRAVE_SOURCE_DISCOVERY=BLOCKED-LOCAL-RUNTIME-RELOAD-AND-NETWORK`
-
-They are not `PASS-LIVE`. Targeted contract/security regression is green (29 rerank
-and search tests; 19 source-discovery tests), while the core data and 821 Qdrant
-points remain unchanged.
-
-This section supersedes older Phase G-M numbers where they differ. The core closed
-loop remains `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE`; no main-chain safety or
-grounding behavior was changed.
-
-| Gate | Current evidence | Status |
-|---|---|---|
-| Attachment parsing | 123 total, 0 pending, 0 parsed, 77 failed, 46 unsupported; all terminal with explicit errors/reasons | PASS-LOCAL |
-| Attachment OCR | 0 success, 1 `OCR_UNAVAILABLE`, 123 URL-only and 0 local bytes | PARTIAL / external bytes + provider required |
-| RAG performance | 3 real runs, 6 measured samples; P50 734.236 ms, P95 5121.708 ms, P99 5121.708 ms | PARTIAL / target not met |
-| Human-review infrastructure | artifact-tool workbook, strict dry-run importer, 14 focused tests | PASS-LOCAL |
-| Human evaluation | 100 rows, 0 reviewed, 0 verified; no final verified JSON | BLOCKED-HUMAN |
-| Core corpus/index | documents 182, approved 101, chunks 821, Qdrant exact points 821 | PASS-LIVE retained |
-| Backend regression | 399 passed; application Ruff/format and mypy 164 files pass | PASS-LOCAL |
-
-The performance benchmark is instrumentation-only because the dataset is not human
-verified. Direct LLM and query embedding are the measured slow stages; no top-k,
-evidence, grounding, citation, or timeout relaxation was applied. Remote Rerank and
-Brave were not invoked.
-
-## Phase K-L current checkpoint (2026-08-13)
-
-- Phase K historical baseline: 69 RAG traces, all-RAG P50/P95/P99-max `1556/7184/8041 ms`; answered `5873/7424/7424 ms`; refused `1465/5099/8041 ms`. `RAG_P95_LT_5000MS=FAIL-LIVE`. No quality-affecting optimization was applied.
-- Migration `0010_query_trace_stage_timings` is applied to real PostgreSQL with no Alembic drift. The minimally rebuilt backend exposes the field and persisted non-empty, non-negative stage maps for both a supported real Direct LLM/citation query and an insufficient-evidence refusal. `POSTGRESQL_MIGRATION_0010=PASS-LIVE` and `QUERY_TRACE_STAGE_TIMINGS=PASS-LIVE`.
-- Phase L local runtime is healthy but production engineering is **PARTIAL / NOT PRODUCTION ACCEPTED**. Backup/PITR, Qdrant snapshot/restore, Redis HA/recovery, retention, resource/log limits, external alert routing, TLS/secret manager and registry provenance remain blockers.
-- Supporting reports: [`PERFORMANCE_REPORT.md`](PERFORMANCE_REPORT.md), [`DISASTER_RECOVERY_REPORT.md`](DISASTER_RECOVERY_REPORT.md), [`SECURITY_READINESS_REPORT.md`](SECURITY_READINESS_REPORT.md).
-
-## Phase M final acceptance (2026-08-13)
-
-Final verdict is **NOT PRODUCTION ACCEPTED** while `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5 PASS-LIVE` remains true. Backend `370 passed`, Ruff/Ruff format/mypy/Black pass, frontend lint/type-check/Vitest `18/18`/production build/Playwright `10 passed, 1 expected skip` pass, both npm audit modes report `0 vulnerabilities`, real PostgreSQL migration `0010` and QueryTrace stage persistence pass live, and the runtime/Qdrant/8080 evidence remains healthy. The complete blocker list and verification scope are recorded in [`FINAL_ACCEPTANCE_REPORT.md`](FINAL_ACCEPTANCE_REPORT.md). Git checkpoint creation remains `BLOCKED-LOCAL-PERMISSION` because the single staging attempt could not create `.git/index.lock`; this local repository permission issue is not presented as product or production acceptance.
-
-## Phase C C3 final checkpoint: 2026-08-13
-
-本次 C3 只通过正常认证业务路径推进：Source/Column → `CrawlTask` → Coze `batch_crawl` → 自动质量判断 → 人工 approve → 真实 OpenAI Embedding → Qdrant。没有使用 fixture、Local provider、直接 SQL 插入、降低质量门、修改 source trust 或改写历史数据。C3 在恰好 100 篇合格官方文档处停止；第 101 篇候选保留为 `pending_manual_review`，没有越过上限。
-
-| Gate | Expected | Actual | Status |
-| --- | --- | --- | --- |
-| qualified corpus | 100 government/official documents with valid region | 100, across 31 source rows and 10 official domains | PASS-LIVE |
-| global persistence | database and audit counts retained | current after Phase G: documents 182; approved 101; rejected 35; pending 46; tasks 221; reviews 296; lineage 1053 | PASS-LIVE |
-| index consistency | PostgreSQL chunks = direct Qdrant exact points | 821 = 821; `odirag_chunks` green | PASS-LIVE |
-| approved dedupe | canonical/source URL and content hashes = 0 duplicates | 0 / 0 | PASS-LIVE |
-| content gate | valid title, non-empty content, valid URL, non-corrupt region, indexed chunks | all zero-error checks; word count 180–6408; no approved document lacks chunks | PASS-LIVE |
-| repeat reindex | point IDs/count unchanged and cache reused | document 181: 4 chunks, 0 new embeddings, 4 cache hits; global points remained 821 | PASS-LIVE |
-| disk guard | stop below 50 GiB free | D: 106.86 GiB free | PASS |
-| attachment/OCR | parsed attachment evidence | Phase G audit: 77 `failed`, 46 `unsupported`, 0 parsed; one OCR failure | **NOT ACCEPTED** |
-
-Tasks 210–221 initially hit a simultaneous Coze network timeout after roughly 195 seconds. Serial retries recovered 210–218; 219–221 remain explicit failed evidence and did not contribute documents. A separate PowerShell 5.1 UTF-8 serialization error created Source 39 with `??` metadata; its rows were not approved or counted, and no historical row was silently repaired. Sources 40–45 were created with explicit UTF-8 request bytes and PostgreSQL byte verification before tasks were run.
-
-The current Phase M live regression remains PASS-LIVE: five real Qdrant retrieval hits, Direct `gpt-4.1-mini`, one exact MIIT citation, and safe pre-LLM refusal for the no-evidence and three adversarial queries. Backend `370 passed`; Ruff, Ruff format, mypy and source-scoped Black passed; frontend lint/type-check, Vitest `18/18`, build and Playwright `10 passed, 1 skipped` passed. All eight Compose services are healthy, PostgreSQL accepts connections, Redis returns PONG, Qdrant healthz and 8080/API health return HTTP 200.
-
-## Phase C C2 checkpoint: 2026-08-12
-
-正式 Coze HTTP deployment 已与 Preview 对齐：对 `https://www.scsia.org/newslist/1.html` 的 bounded 请求（`max_pages=1,max_articles=5`）返回 HTTP 200、`workflow_version=batch_crawl-v1`、discovered/fetched/articles `5/5/5`，且五个 URL 均为不同详情页。随后只通过现有 authenticated Source/CrawlTask API、Coze strict batch contract、质量判断、人工审核和真实 reindex 推进；没有 Local provider、fixture、直接 SQL 插入、信任降级或历史记录改写。
-
-| C2 evidence | Live result | Status / remaining risk |
+| Layer | Status | Accepted evidence |
 | --- | --- | --- |
-| Corpus | 98 documents; 51 approved; 21 rejected; 26 pending manual review | 其中恰好 50 篇为 region 正常的 `government/official`；历史 scsia association 文档和 `region='??'` 保持不变 |
-| Sources | 28 source rows; 14 approved official source rows; 11 approved official domains | government/official 域包括四川财政、发改、生态环境、住建、科技、自然资源及国家部委；信任字段仍依赖既有治理流程 |
-| Index | 393 PostgreSQL chunks; 393 direct Qdrant exact points; collection green | 所有当前 chunks 均 indexed；document 98 重复 reindex 后文档 points 4→4、全局 393→393 |
-| Deduplication | approved canonical URL duplicates 0; approved content-hash duplicates 0 | 只证明当前已批准集合的 URL/content-hash 去重，不替代语义近重复评估 |
-| Crawl operations | tasks 38-128: 91 bounded tasks; 88 discovered/fetched; 0 provider item failures | 26 文档仍等待审核；空结果不是 provider failure，也未被计为成功文档 |
-| Attachments/OCR | 52 attachments downloaded; 52 remain `parse_status=pending`; one `requires_ocr=true` | **NOT ACCEPTED** for attachment parsing/OCR coverage；本次 C2 仅接受可由主 HTML 正文通过质量门的文档 |
-| Cost/latency | crawl average 218735 ms; P95 368467 ms | provider API/embedding cost未形成完整可核账记录；不得推断成本或 SLA 已通过 |
-
-C2 Data Quality Gate 为 **PASS-LIVE**，但仅代表 50 篇真实政府/官方主正文语料已通过现有业务链与去重/索引一致性检查，不代表附件型材料、OCR、成本或生产 SLA 已接受。C3 可继续到 100；D: 当前可用 107.29 GiB，高于 50 GiB 停止阈值。
-
-2026-08-12 regression：后端 `356 passed`，Ruff、mypy 通过；前端 lint/type-check、Vitest `18/18`、build 通过，fixture Playwright `10 passed, 1 skipped`。八个 Compose 服务 healthy，Alembic 无漂移，Redis PONG，8080 首页与 `/api/system/health` 均为 HTTP 200。真实 Evidence Sufficiency 回归返回五个 retrieval hits、Direct `gpt-4.1-mini`、一个可追溯 MIIT citation；无证据和三条 adversarial query 均在 LLM 前安全拒答。Black 本轮不能标记通过：Windows venv 中的 `black.exe` 连 `--version` 也会卡死；生产 runtime 刻意不含 pip，builder-stage `pip check` 的历史通过证据仍保留。
-
-## Phase B checkpoint: 2026-08-10
-
-| Area | Implementation | Verification status | Remaining risk |
-| --- | --- | --- | --- |
-| Rerank failure policy | Dedicated timeout; `open` preserves fusion and reports `rerank_applied=false`; `closed` raises | VERIFIED-LOCAL, 348 backend tests including provider and retrieval failure cases | A real remote provider is not configured |
-| Remote response contract | Strict JSON/index/score validation; redacted stable error codes; numeric usage only; unknown cost is `null/not_available` | CONTRACT-VERIFIED with MockTransport | Provider-specific billing and rate-limit behavior are unverified live |
-| Trace and monitoring | `query_traces.rerank_metadata_json`; admin debug API; RAG metrics for assessed/applied/failures/latency | VERIFIED-LOCAL plus real PostgreSQL migration and local container smoke | No sustained production telemetry window |
-| Four-mode evaluation | Actual `bm25`, `vector`, `hybrid`, `hybrid_rerank` mode/top-k propagation and `/api/evaluations/matrix` common-snapshot runs | FIXTURE-VERIFIED; report records denominator scope | No real remote-rerank quality comparison |
-| Container rollout | Backend image rebuilt, migration `0008_rerank_observability` applied, backend/worker/scheduler/frontend recreated | VERIFIED-LOCAL: eight services healthy; 8080 and health API 200; `alembic check` clean | Staging/production rollout remains separate |
-
-The running local configuration is `rerank_provider=none`, `configured=false`, model `rerank-v3.5`, timeout `30.0`, failure policy `open`. A real debug search returned five Hybrid hits and `rerank_applied=false` with the explicit disabled warning. This is correct degradation evidence, not remote rerank acceptance. Real rerank acceptance is **BLOCKED-LIVE** until a reachable endpoint and `ODIRAG_RERANK_API_KEY` are configured; no credentials are recorded in this report.
-
-## Phase C checkpoint: bounded official corpus expansion (2026-08-10)
-
-### Generalized-crawl implementation checkpoint
-
-The local deterministic crawler and the strict Coze transport boundary were extended without changing the accepted RAG/indexing path. HTML anchors are normalized and scored with same-site and navigation/asset exclusions; pagination supports explicit/`rel=next`/text/page-parameter signals with visited-page and no-new guards; detail URLs use common government selectors; SPA/API hints and typed `site_rules` can be configured; attachments and image/OCR-required metadata are retained; and diagnostics preserve candidate links, page classification, pagination/API events and stable failure codes. Relative Coze image/attachment URLs are resolved against the article URL in a deep validation copy only, so raw provider JSON remains unchanged and strict Pydantic validation still rejects malformed schemes. **Historical local verification** recorded backend `356 passed`, Ruff, Black and mypy; the later Phase M regression is authoritative (`370 passed`, source-scoped Black `PASS-LOCAL`). A read-only public-URL smoke from the backend container was rejected by the existing resolver as `UnsafeUrlError` for the four tested government domains; no SSRF rule was weakened and no database write was made. These results are **VERIFIED-LOCAL/fixture-verified**, not live corpus acceptance.
-
-The live baseline remains the following normal authenticated tasks. The original tasks 24-27 are retained as historical negative evidence; tasks 28-34 are the post-generalization canaries.
-
-The starting PostgreSQL baseline was 6 documents, 2 approved/indexed documents, 14 chunks and 14 Qdrant points. The run was bounded to the requested `max_pages=1` and `max_articles=5` and used only the authenticated `coze`/`batch_crawl` business path.
-
-| Task | Source column | Live result | Review result | Evidence / risk |
-| --- | ---: | --- | --- | --- |
-| 24 | 4, gov.cn JSON | HTTP 200, completed, discovered/fetched/documents `0/0/0` | none | `no_articles`; no corpus change |
-| 25 | 5, JXT official list | HTTP 200, completed, `1/1/1` | rejected `1`, quality `0.0` | Coze treated the directory page as the article; no approved document |
-| 26 | 3, KJT official list | HTTP 200, completed, `1/1/1` | rejected `1`, quality `0.0` | Same directory-page decision; no approved document |
-| 27 | 2, KJT existing detail | HTTP 200, failed | failed `1` | `COZE_CONTRACT_MISMATCH`; no document |
-
-All four invocations and normalized results are persisted in PostgreSQL. These are live failures/negative evidence, not fixture success. Task 27's strict error was specifically six relative `image_urls`; the new parser can normalize that transport representation on a future invocation, but the historical row is immutable. **At this 2026-08-09 checkpoint**, the deployed Coze workflow did not expand the tested list pages and C1 was blocked pending a fresh authenticated canary. The later 2026-08-12 five-article endpoint canary and C1/C2/C3 expansion resolved that blocker without relabeling these historical rows.
-
-### Post-generalization live canaries (2026-08-10)
-
-All tasks below used the normal authenticated `coze`/`batch_crawl` path with `max_pages=1,max_articles=5`; raw and normalized invocation records remain persisted.
-
-| Task | Column | Result | Review / indexing | Interpretation |
-| --- | ---: | --- | --- | --- |
-| 28 | 2, KJT detail | HTTP 200, strict schema, `1/1/1` | approved document 9; 9 chunks and 9 Qdrant points | One qualified new official document |
-| 29 | 5, JXT list | `1/1/1` | directory page rejected | No detail expansion |
-| 30 | 3, KJT list | `1/1/1` | directory page rejected | No detail expansion |
-| 31 | 4, gov.cn JSON | `0/0/0` | no document | Empty API result |
-| 32 | 6, KJT policy list | `1/1/1` | directory page rejected | No detail expansion |
-| 33 | 7, MIIT list | `0/0/0` | no document | Empty list result |
-| 34 | 8, gov.cn HTML list | `0/0/0` | no document | Empty list result |
-
-Task 28 metadata is real and uncorrupted (`government/official`, `region=四川省`, HTML, word count 1619, quality 0.85). Its two downloaded attachments are still `parse_status=pending` with zero parsed text, so attachment content is excluded from the indexing claim. A second reindex returned `cache_hits=9`, `embedded_count=0`, and direct Qdrant count stayed `23`, proving idempotency. **At this 2026-08-10 checkpoint**, totals were documents=10 (approved=3, rejected=7), chunks=23, crawl tasks=34, reviews=20, lineage=78 and attachments=3; C1 was therefore blocked. This is retained as historical evidence and was superseded by the 2026-08-12/13 C1/C2/C3 PASS-LIVE checkpoints.
-
-### Redeploy verification (task 35)
-
-After the reported Coze republish, the same KJT notification column (`source_column_id=3`) was run through the authenticated API with `max_pages=1,max_articles=5`. The invocation was HTTP 200/completed with contract `batch_crawl`, but persisted `discovered/fetched/documents=1/1/1`; `articles[]` contained only the directory URL `https://kjt.sc.gov.cn/kjt/gstz/newschild.shtml`, and the quality decision was `rejected` with score `0.0`. The URL was already present, so the task added no document and no chunks. The required canary threshold (`>=2` discovered, fetched and article records, all real detail URLs) failed. This is a new external deployment blocker, not a reason to alter local code or the accepted 5/5 chain.
-
-Task 36 was run once more to distinguish a parser regression from an endpoint mismatch. Its persisted raw `batch_result.articles` array contained one item, `success=true`, and an empty `failed_urls` array; the single item was still the directory URL. The local transport therefore received a one-article result from the deployed endpoint itself. No raw body, token, endpoint URL or credential is copied into this report.
-
-Task 37 repeated the canary with the same source column and confirmed the request contained the expected KJT list URL. Its raw article count was still `1`; task 36 and task 37 had the same endpoint/deployment identifiers and `workflow_version=batch_crawl-v1`. The remaining blocker is endpoint/version alignment between the local runtime and the Coze deployment verified in the console, not crawler parsing or data quality.
-
-## Phase D-E local production checkpoint (2026-08-10)
-
-| Area | Verification | Status / remaining risk |
-| --- | --- | --- |
-| Source-discovery trust boundary | Exact redirect host, HTTP 2xx, HTTPS and trusted suffix are required; sibling-host redirect regression added | VERIFIED-LOCAL; Brave live search remains blocked without `ODIRAG_SOURCE_DISCOVERY_API_KEY` |
-| Source-discovery workflow | Gap detection excludes disabled sources; candidate validation, column discovery, trial crawl, quality score, manual approval, activation, retry and queue-failure paths | 19 focused tests passed; frontend shows official-validation evidence; no live candidate or source was fabricated |
-| npm dependency audit | Full and production-only `npm audit --json` | 0 vulnerabilities |
-| Backend dependency consistency | Fresh Docker builder installed Alembic `1.18.5`; `python -m pip check` | PASS-LOCAL; the production runtime intentionally omits pip |
-| Docker Scout backend | Current digest `b41a63d5b943`, 133 packages | 0C/0H/0M/0L |
-| Docker Scout frontend | Current digest `7dcc62cebccd`, 87 packages | 0C/0H/0M/3L in Alpine `libxml2 2.13.9-r2`; all listed CVEs have no fixed version, no high/critical finding |
-| Compose and migrations | `docker compose config --quiet`; Alembic `0008_rerank_observability (head)` and `check`; PostgreSQL, Redis, Qdrant, worker ping, scheduler, Nginx, backend, frontend and 8080 | PASS-LOCAL; all eight services healthy |
-| Operational alert | Persisted alert `latency_regression` | OPEN-HIGH: RAG P95 `7184 ms` exceeds the configured `5000 ms`; retain it until measured provider/latency remediation exists |
-
-Scout was run against image SBOM/component metadata only. It did not receive repository source, `.env`, provider keys, prompts, crawled content or database data. The frontend low findings remain an explicit base-image risk; no destructive or major dependency upgrade was applied. Scout emitted a local temporary-archive cleanup warning after each successful scan; this does not change the CVE result and no manual deletion was attempted while a process held the file.
-
-## Phase F live matrix checkpoint (2026-08-10)
-
-The authenticated `POST /api/evaluations/matrix` endpoint created two verified `phase-f-live` questions and executed the same snapshot in all four actual retrieval modes. The support question targets the existing official MIIT APP-filing document (`868a6c55-5806-4237-875c-40163fa5b8e5`) and expected chunk (`d7353b15-4d57-5a81-a034-708b616e93e6`); the second question has no supporting corpus evidence. This is real PostgreSQL/Qdrant/remote embedding/Direct LLM execution, not a fixture.
-
-| Run | Result | Verification status / remaining risk |
-| --- | --- | --- |
-| 1, BM25 | Expected document and chunk retrieved; no-evidence question safely refused; support question was conservatively refused with `answer_contains_unsupported_relation` | PASS-LIVE retrieval/refusal, not an answer-quality pass |
-| 2, vector | Expected document and chunk retrieved; no-evidence question safely refused; support question was conservatively refused with `answer_contains_unsupported_relation` | PASS-LIVE retrieval/refusal, not an answer-quality pass |
-| 3, hybrid | Expected document and chunk retrieved; no-evidence question safely refused; support question was conservatively refused with `answer_contains_unsupported_relation` | PASS-LIVE retrieval/refusal, not an answer-quality pass |
-| 4, hybrid_rerank | Expected official chunk retrieved; Direct `gpt-4.1-mini` returned a non-empty answer with exact chunk citation; no-evidence question safely refused | PASS-LIVE grounded-answer plumbing. Trace warning is `rerank_provider_disabled`, so this is not remote-rerank quality acceptance |
-
-The support answer in run 4 was `未履行备案手续的APP主办者不得从事APP互联网信息服务。` and cited real chunk `d7353b15-4d57-5a81-a034-708b616e93e6` from the MIIT title/URL already stored in Qdrant. The answer-point metric is `0.5` because the verified historical expected string requires contiguous wording without the generated subject `APP主办者`; that run record remains immutable rather than being edited to improve a metric. The matrix has only two questions and cannot establish corpus-level quality, cost, or SLA. The deterministic evidence gate remains fail-closed; no threshold or grounding rule was weakened to turn the three conservative refusals into successes.
-
-Final local regression after Phases D-F: backend `350 passed`; Ruff, Black (203 files), and mypy (155 source files) passed. Frontend lint, type-check, Vitest `18/18`, and the production build passed; Playwright reported `10 passed, 1 skipped` (the intentionally skipped live-stack case is not a Live Acceptance claim). The current eight-service Compose stack remained healthy, and both the 8080 root page and `/api/system/health` returned HTTP 200.
-
-## 0. 2026-08-09 official-source 最终门禁
-
-### Task 23 最终 PASS-LIVE
-
-| Evidence | Result |
-| --- | --- |
-| source/article | 工业和信息化部；`https://www.miit.gov.cn/zwgk/zcwj/wjfb/tz/art/2023/art_920db564162e4312916a01bed6540ad8.html`；region `全国`；government/official |
-| bounded Coze task | task 23；`max_pages=1`、`max_articles=5`；HTTP 200；1 attempt/0 retries；raw/normalized persisted |
-| strict contract | raw PostgreSQL JSON re-parsed by current `parse_batch_crawl_response`；schema valid；`articles[]` count 1；discovered/fetched 1/1；accepted 1；failed 0 |
-| content | title `工业和信息化部关于开展移动互联网应用程序备案工作的通知`；HTML；2,614 characters；`needs_ocr=false`；quality 0.95 |
-| manual review | document 6 / UUID `868a6c55-5806-4237-875c-40163fa5b8e5`；manual `approve`；final `approved`；task completed/pending 0 |
-| real index | 6 chunks；6 remote `text-embedding-3-small` embeddings；6 Qdrant points；payload contains `document_id/chunk_id/title/source_url/content/official_status=official` |
-| idempotency | second reindex 6 cache hits/0 new embeddings；same six point IDs；global Qdrant 14 points |
-| Hybrid + Direct | BM25/vector/fusion/final 14/14/8/5；all final hits official；Direct `gpt-4.1-mini` used 3,339 tokens；`refusal=false` |
-| grounded answer | 存量 APP 备案阶段为 2023 年 9 月至 2024 年 3 月；已完成网站备案手续的 APP 仅需补充完善 APP 信息，无需重复填报主办者真实身份信息；无网站备案信息的按规定履行备案手续。 |
-| citation | 1 citation；chunk `0bf55b37-7bf1-5ce9-834a-f46754e84fec`；title/URL/chunk exactly match real retrieval and Qdrant payload |
-| safe refusal | `广东省2025年新能源汽车购置补贴标准是什么？` -> 0 hits、`refusal=true`、`insufficient_retrieved_evidence`、0 citations、no model token usage |
-
-### 当前 official 判定
-
-- Chat-time grounding 只检查检索 hit 元数据中的 `official_status`，其值忽略大小写后必须等于 `official`。
-- `organization_type`、政府域名后缀、`source_type`、`trust_level`、`official_source` 和 domain-verification 证据不参与当前 chat-time 判定；后四个字段也不是 `Source` 模型字段。
-- 索引服务把 `Source.official_status` 复制到 chunk/Qdrant/BM25 metadata，因此只有经正常索引传播的 `official_status=official` 文档能通过现有门禁。
-- 自动来源发现另有更严格的 HTTPS、同 host、可信域名后缀和官网标识验证，并在激活时写入 `government/official`。手工 `SourceCreate` 目前允许直接提交任意 `official_status`，这是剩余信任治理风险；本轮通过浏览器核验真实政府站点，未以修改规则掩盖该风险。
-
-### 真实来源与任务证据（19-22 为重新发布前历史失败，23 为当前通过）
-
-| Source / URL | persisted trust metadata | Task | Coze result | Persisted downstream |
-| --- | --- | --- | --- | --- |
-| 四川省科学技术厅政策法规 / `https://kjt.sc.gov.cn/kjt/zcfg/newszwxxgkzcfg.shtml` | region `四川省`, government/official | 19 | HTTP 200, 1 page, `NO_ARTICLES`, discovered/fetched 0/0 | documents/chunks/task-points 0/0/0 |
-| 工业和信息化部通知 / `https://www.miit.gov.cn/zwgk/zcwj/wjfb/tz/index.html` | region `全国`, government/official | 20 | HTTP 200, 1 page, `NO_ARTICLES`, 0/0 | 0/0/0 |
-| 中国政府网最新政策 / `https://www.gov.cn/zhengce/zuixin/` | region `全国`, government/official | 21 | HTTP 200, 1 page, `NO_ARTICLES`, 0/0 | 0/0/0 |
-| 工信部移动互联网应用程序备案通知正文 / `https://www.miit.gov.cn/zwgk/zcwj/wjfb/tz/art/2023/art_920db564162e4312916a01bed6540ad8.html` | region `全国`, government/official | 22 | HTTP 200, 1 page, `NO_ARTICLES`, 0/0 | 0/0/0 |
-| 同一工信部正文（重新发布后） | region `全国`, government/official | 23 | HTTP 200, schema-valid article 1, discovered/fetched 1/1 | document/approved/chunks/task-points 1/1/6/6 |
-
-Tasks 19-22 的 invocation 均持久化 raw/normalized response，是重新发布前的真实失败证据。重新发布后 task 23 对同一 MIIT 正文成功产出并严格解析 1 篇文章，证明云端 article-input 分支已修复；本地代码、official 规则、scsia association 和历史 `region='??'` 均未修改。
-
-### 闭环结论
-
-| Gate | Result |
-| --- | --- |
-| official source created and metadata verified | PASS-LIVE for source records and public pages |
-| official document crawled / reviewed / approved | PASS-LIVE: task 23 document 1 / approved 1 |
-| official chunks / Qdrant points | PASS-LIVE: 6/6; global 14/14 |
-| Hybrid hit for official document | PASS-LIVE: 5 final official hits |
-| formal `/api/chat` Direct LLM citation | PASS-LIVE: non-empty answer, 3,339 real tokens, one exact citation |
-| no-evidence safety | PASS-LIVE for zero-hit, non-empty irrelevant, and same-topic unsupported relation/scope retrieval. Mars/dinosaur trace `b38598b2-89a3-4cd2-92b3-ee733b013f71` plus cancellation/original-numeric-penalty/scope traces `e07f742b-fa91-4e52-bd5f-cd7de42d96fc` / `7b1434b2-a01f-4005-872c-bf98ce314667` / `99cba6de-53db-42f1-8fbf-e127f9858fd9` each had 5 candidates, `refusal=true`, 0 citations/tokens/cost. |
-| `KNOWLEDGE_BASE_LIVE_CLOSED_LOOP` | **5/5** |
-
-知识库真实闭环无需新的外部动作，task 23 已完成 5/5。Phase A 已关闭本轮有界样例中的非空无关、同主题错误关系、缺失金额和错误适用范围误答风险；Phase C 已完成 100 篇合格官方文档的阶段门，Phase F 已留下两题真实矩阵基线。更广泛的统计保证仍依赖代表性人工评测集。后续仅继续 external gates：真实 remote rerank、Brave、生产工程、附件解析/OCR 和完整 RAG evaluation；不得回退 official-only 或篡改历史数据。
-
-## 1. 状态定义
-
-| 状态 | 含义 |
-| --- | --- |
-| VERIFIED-LOCAL | 真实本地代码执行通过，不依赖伪造结果；只证明该本地边界 |
-| FIXTURE-VERIFIED | SQLite、内存实现、确定性 provider、静态 HTML/文件或 Playwright route fixture 通过 |
-| CONTRACT-VERIFIED | 使用 MockTransport/FakeClient 验证请求和响应契约，未连接真实服务 |
-| PARTIAL | 核心实现存在，但指南的一部分缺失或只有降级路径 |
-| UNVERIFIED-LIVE | 代码存在，但没有目标服务/真实凭据执行证据 |
-| FAIL | 已执行且行为不符合要求 |
-
-任何 FIXTURE-VERIFIED、CONTRACT-VERIFIED、PARTIAL 或 UNVERIFIED-LIVE 都不能转换为 PASS-LIVE。
-
-## 2. 关键审计结论
-
-1. **当前 development 运行态健康且应用配置一致。** 八服务 healthy；backend、worker、scheduler 已滚动到同一应用镜像，三者均加载 remote `text-embedding-3-small` 配置。task 14 已验证 bounded Coze crawl、OCR re-extraction、quality re-evaluation、approval 和 acceptance-summary。生产 registry provenance、签名和 CI green 仍未完成。
-2. **测试真实性边界清晰但很窄。** backend/tests/conftest.py 统一使用 SQLite memory、InMemoryEmbeddingCache、InMemoryVectorStore、DeterministicEmbeddingProvider 和 DeterministicRerankProvider。
-3. **Coze crawl/OCR/review/embedding/index/retrieval 已取得分层 PASS-LIVE。** task 9 保留为首个 bounded persistence checkpoint；task 13 保留为竞态失败证据；task 14 完成 OCR/review。remote embedding、Redis cache、PostgreSQL chunks、Qdrant payload/idempotent upsert 和 hybrid retrieval 均有真实证据。Direct LLM 严格 AnswerResult provider 调用也已 live 通过；尚未通过的是 official 文档的正式 `/api/chat` cited answer、rerank 和 Brave。
-4. **LLM token/cost 已支持真实响应透传，但仍需 live 验收。** Direct/Coze 适配器现在读取响应中的 usage/cost（若 provider 返回），Chat trace 持久化规范化 token 字段；缺失 usage 或价格时明确标记 `not_available`，cost 保持 0 作为 schema 兼容的“未知”值。真实 provider 方言、价格字段、计费和异步语义仍未验收。
-5. **Coze 存在高风险契约假设。** CozeAdapter 假设 POST /v3/chat 的同步响应直接包含 answer messages；真实 Chat v3 可能需要轮询会话和单独读取消息，必须 live 验证后才能接受。
-6. **共享限流代码已完成，目标环境仍未验收。** 非 test 环境默认使用 RedisFixedWindowRateLimiter；Redis 故障 fail-closed 返回结构化 503，不能静默退回进程内计数；Redis 连接/读写有依赖超时。限流身份只使用 IP，伪造 Bearer 不能分裂桶；只有显式可信代理 CIDR 才读取单跳 `X-Forwarded-For`。本地 Compose 已观察到真实 `odirag:ratelimit:*` key 和限流响应头，但 Redis ACL、故障转移、ingress 策略和多副本公平性仍需目标环境验证。
-7. **分布式锁为部分满足。** crawl/source-discovery 通过数据库条件 UPDATE、唯一约束和恢复任务避免重复 claim，但没有通用 Redis distributed lock；worker 文档保存阶段另有条件状态推进，避免并发取消覆盖终态。
-8. **前端功能成立，但偏离指定依赖栈。** Vue 3/TypeScript/Vite/Vue Router、安全 Markdown 已实现；package.json 未使用指南列出的 Pinia、Axios、Element Plus/Naive UI、ECharts。现有 typed fetch/custom components 能工作，但属于架构偏差。backend 明确以 UID 10001 运行；frontend/reverse-proxy Nginx 当前仍由基础镜像 root master 启动、worker 降权，非 root 容器边界不能扩大表述。
-9. **配置文件结构不完全一致。** sites.yaml、filters.yaml、chunking.yaml、prompts 已使用；指南目标中的 knowledge_schema.yaml、retrieval.yaml、rerank.yaml、monitoring.yaml 不存在，相应参数主要通过环境变量/代码 schema 管理。Compose 显式透传 provider 配置，真实 Coze batch Token 仅在 ignored `.env` 中存在且不得写入仓库。
-10. **OCR 后内容可用性重判和 official 回答均已通过代表样例。** Task 14 保留 OCR/association 证据，task 23 提供 government/official 正文和完整 cited answer。Phase A 又证明非空无关检索会在 Direct LLM 前拒答；当前阻塞已转为 Phase B-F 的规模、provider 和生产工程验收。
-11. **扫描 PDF 只有 OCR 标志。** requires_ocr 可追踪，但没有 OCR engine；这不违反 Phase 3 的“标志”要求，却限制扫描件生产覆盖。
-12. **前端 high 已闭环，当前容器扫描已更新。** Playwright 依赖精确升级至 1.55.1 后两种 npm audit 均为 0。当前 backend `b41a63d5b943` Scout 为 0C/0H/0M/0L；frontend `7dcc62cebccd` 为 0C/0H/0M/3L，三项 Alpine libxml2 low 均无修复版本。目标 registry 仍必须重新产生 SBOM、CVE、签名和 provenance 证据。
-13. **Git 基线和审计检查点已建立，但还不是正式发布标签。** `85d4bdb feat: complete Coze batch crawl readiness` 是批量抓取实现基线，`14bbf40 docs: record production audit checkpoint` 是审计文档检查点；最终发布仍需干净且经复核的 release checkpoint、签名 tag、CI green、SBOM 和镜像 digest。
-14. **本地高优先级竞态与数据边界已回归验证。** Local/Coze worker 在保存前使用条件状态推进，取消或远端失败不会覆盖 `cancelled`；审核提交锁定关联任务并在无 pending 文档时收敛为 `completed`；LLM cost 拒绝非有限/负数/超 Numeric(18,8) 范围值并量化到数据库精度。上述证据仍是 SQLite/fixture 边界，不替代 PostgreSQL 并发演练。
-15. **Coze 任务关联与状态推进现在 fail-closed。** strict task ID 与 response matching 保留；task 13 的 `TASK_STATE_CHANGED` 证明竞态被拒绝，source-column/row locking 与 queued→running 处理修复后 task 14 成功，未覆盖错误终态。
-16. **真实失败已进入监控。** task 8 后生成 `high_failure_rate`、severity `high`、status `open` 的本地告警，observed `0.4` 超过 threshold `0.2`。这证明当前本地规则能检测失败率，不证明生产告警投递、升级、确认或恢复闭环。
-17. **acceptance-summary 空/非空 collection 均已 live 验证。** 历史空状态返回 HTTP 200、`collection_exists=false`、points 0；索引后 task 14 返回 HTTP 200、5 documents、8 chunks、`collection_exists=true`、8 points，并与 Qdrant REST 直查一致。
-18. **真实 official 检索和正式 Direct answer 已通过。** Task 23 query 返回 BM25/vector/fusion/final 14/14/8/5，final hits 均来自真实 MIIT government/official 文档。正式 `/api/chat` 调用 Direct `gpt-4.1-mini`，使用 3,339 tokens，返回非空回答和一个与 Qdrant 完全一致的 citation。历史 scsia association 与损坏 `??` region 未被静默修改。
-
-## 3. Phase 0-15 需求到代码追踪矩阵
-
-### Phase 0 - Repository Audit
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| 检查现有文件、识别可复用代码、保留已有工作 | IMPLEMENTATION_STATUS.md；仓库审计日志 | 初始目录/工具链命令记录 | VERIFIED-LOCAL | 审计时目录为空，无法证明历史代码来源 |
-| 创建持续更新的状态文档与 phase checklist | IMPLEMENTATION_STATUS.md | 文档结构检查 | VERIFIED-LOCAL | 最终状态须与本报告同步 |
-| 记录假设 | IMPLEMENTATION_STATUS.md | 人工审阅 | VERIFIED-LOCAL | 假设需部署负责人确认 |
-| 验证 Python、Node、Docker、Git | IMPLEMENTATION_STATUS.md | version 命令；Docker Compose health | VERIFIED-LOCAL | 生产主机版本、镜像 provenance 和发布权限仍需目标环境验收 |
-| 每阶段 lint/type/test/checkpoint | IMPLEMENTATION_STATUS.md command log；Git `85d4bdb`、`14bbf40` | 历史命令记录；实现与审计 checkpoint | PARTIAL | 历史阶段没有逐阶段 commit，正式发布仍需 clean review、CI/tag |
-
-### Phase 1 - Infrastructure and Core Backend
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| FastAPI application factory | backend/app/main.py | backend/tests/unit/test_core_api.py | FIXTURE-VERIFIED | 目标 ASGI/进程管理未压测 |
-| Pydantic 环境配置与生产安全 gate | backend/app/config.py；.env.example | backend/tests/unit/test_config.py；fresh Compose CSV/JSON/empty container checks | VERIFIED-LOCAL | 外部 secret manager、生产密钥轮换和目标环境注入仍未验收 |
-| PostgreSQL + SQLAlchemy async | backend/app/database/*；backend/app/models/* | SQLite integration suite；local Compose PostgreSQL health/identity/count queries | VERIFIED-LOCAL | 生产规模事务、锁竞争、连接池耗尽和恢复未验收 |
-| Alembic core migrations | backend/alembic/versions/0001_core_schema.py；backend/requirements.lock；Dockerfile.backend | fresh PostgreSQL upgrade -> downgrade -> upgrade；Alembic 1.18.5 `check`；existing DB `current/heads/check` | VERIFIED-LOCAL | 生产业务库 downgrade 是需审批的破坏性演练；目标数据量、备份保留和恢复窗口仍未验收 |
-| Redis abstraction | backend/app/cache/embedding.py；backend/app/tasks/celery_app.py；backend/app/rate_limit.py | local Redis PING/SET/GET/DEL；backend Redis ping；worker task；shared rate-limit key/header | VERIFIED-LOCAL | ACL、持久化、故障转移和跨副本限流未在目标环境验收 |
-| 结构化日志与错误 | backend/app/logging.py；backend/app/errors.py | core API tests | FIXTURE-VERIFIED | 集中日志/PII 脱敏未在部署环境验证 |
-| dependency health endpoint | backend/app/services/health.py；backend/app/api/routes/system.py | backend/tests/unit/test_core_api.py；`/api/system/health` real Compose response | VERIFIED-LOCAL | 只证明当前开发实例；生产网络/TLS/告警策略未验收 |
-| admin auth/refresh/me | backend/app/security.py；services/auth.py；routes/auth.py | security/core API tests | FIXTURE-VERIFIED | 生产 hash、密钥轮换、外部身份源未 live 验证 |
-| Compose/.env/Makefile/CI skeleton | docker-compose.yml；Makefile；.github/workflows/ci.yml | `docker compose config --quiet`；local Compose health | VERIFIED-LOCAL | GitHub Actions、生产镜像签名和发布凭证未验收 |
-| 所有 Phase 0-15 core models/migrations | backend/app/models/*；0001-0004 migrations | model tests + SQLite migration | FIXTURE-VERIFIED | PostgreSQL constraints/index plans 未验证 |
-
-### Phase 2 - Source Management and Crawling
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| YAML source configuration | config/sites.yaml；services/source_config.py | test_sources_and_crawler.py | FIXTURE-VERIFIED | 只验证样例配置 |
-| Source CRUD/test | api/routes/sources.py；services/sources.py；repositories/sources.py | test_sources_and_crawler.py | FIXTURE-VERIFIED | PostgreSQL FK/cascade 未 live 验证 |
-| generic crawler + adapter registry | crawler/generic.py；crawler/adapters.py；crawler/registry.py | test_crawler_adapters.py；test_fixture_crawl.py | FIXTURE-VERIFIED | 真实站点 DOM/反爬变化未知 |
-| retry/timeout/rate/encoding/pagination/URL normalization | crawler/fetcher.py；crawler/urls.py；crawler/generic.py | crawler/http security tests | FIXTURE-VERIFIED | DNS、代理、TLS、真实限流未验收 |
-| task state machine + inline/async execution + retry/cancel + provider-aware paths + structured unsafe-URL/queue errors | crawler/state.py；crawler/providers.py；services/crawl.py；repositories/crawl.py；tasks/crawl.py；routes/crawl_tasks.py | fixture regressions；task 13 HTTP200→`TASK_STATE_CHANGED` history；task 14 completed after row/state locking fixes | VERIFIED-LOCAL + PASS-LIVE bounded Coze path | local direct crawl remains DNS/SSRF-blocked；broker interruption recovery still needs target exercise |
-| queue failure 可恢复 | services/crawl.py；routes/crawl_tasks.py | test_crawl_queue_failure_is_persisted_and_retryable | FIXTURE-VERIFIED | Redis broker outage live 未演练 |
-| raw HTML/list/detail/attachment download | services/crawl.py；crawler/storage.py | test_fixture_crawl.py | FIXTURE-VERIFIED | 仅 fixture 站点；下载存储为本地卷 |
-| HTML/PDF/DOCX/XLSX/TXT/ZIP 类型入口 | parsers/*；allowed attachment extensions | parser unit suite | FIXTURE-VERIFIED | full crawl fixture 主要覆盖 HTML/TXT；其他格式单独测试 |
-| repeated-run idempotency | repositories/crawl.py；services/crawl.py；0003 migration | test_fixture_crawl.py；test_crawl_reliability.py | FIXTURE-VERIFIED | 多 worker + PostgreSQL 并发未验收 |
-| 可达真实站点至少 10 篇 | authenticated Coze tasks through 221；C1/C2/C3 corpus checkpoints | 100 qualifying government/official documents across 31 source rows and 10 domains；821 indexed chunks/points | PASS-LIVE | 内容分布仍非代表性人工评测集；123 个附件尚未解析 |
-
-### Phase 3 - Parsing, Cleaning, Deduplication, Versioning
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| HTML headings/paragraphs/lists/tables/boilerplate | parsers/html.py；cleaners/text.py | test_parsers_cleaning_dedup.py | FIXTURE-VERIFIED | 复杂真实模板未知 |
-| PDF pages/header-footer/OCR flag | parsers/pdf.py | parser tests/sample files | FIXTURE-VERIFIED | OCR engine 未实现；扫描件只标记 |
-| DOCX headings/tables/hyperlinks | parsers/docx.py | parser tests | FIXTURE-VERIFIED | 大文件/损坏文件未压测 |
-| XLSX sheets/headers/Markdown/JSON/row split | parsers/xlsx.py | parser tests | FIXTURE-VERIFIED | 宏、公式、超大 workbook 未覆盖 |
-| canonical URL/SHA256/SimHash near dedup | crawler/urls.py；deduplication/core.py；services/versioning.py | algorithms/parser tests | VERIFIED-LOCAL | 中文短文本阈值需真实数据校准 |
-| authoritative source selection | deduplication/core.py | test_parsers_cleaning_dedup.py | VERIFIED-LOCAL | 优先级规则需业务复核 |
-| change detection/version/stale/changed fields | services/versioning.py；services/document_index.py | test_versioning_lineage.py；test_read_support_api.py | FIXTURE-VERIFIED | Qdrant 删除只在 memory store 通过 |
-| lineage records | models/observability.py；services/versioning.py | lineage integration tests | FIXTURE-VERIFIED | PostgreSQL cascade/审计保留期未验证 |
-
-### Phase 4 - Filtering, LLM Review, Structured Knowledge
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| hard reject/soft score/reason codes/thresholds | filters/rules.py；config/filters.yaml | test_filters_prompts_llm.py | VERIFIED-LOCAL | 阈值只在样例数据校准 |
-| versioned immutable prompts | services/prompts.py；config/prompts/* | prompt tests | FIXTURE-VERIFIED | 生产 prompt 发布流程未验收 |
-| Coze adapter | llm/adapters.py | MockTransport contract tests | CONTRACT-VERIFIED | Chat v3 异步/消息获取未 live 验证 |
-| Direct LLM adapter | llm/adapters.py | strict-schema/error/citation tests；真实 OpenAI AnswerResult diagnostic | PASS-LIVE provider boundary | 正式 `/api/chat` official cited answer 被上游 official 文档缺失阻塞；限流/计费仍需目标环境验收 |
-| strict JSON/retry/raw response | llm/protocols.py；services/review.py | filter/LLM + review integration tests | FIXTURE-VERIFIED | 真实模型 schema 稳定性未知 |
-| manual review state/API | routes/reviews.py；services/review.py | test_review_pipeline.py | FIXTURE-VERIFIED | 操作审计身份仅 admin |
-| 12 个结构字段 + evidence/provenance | config/prompts/document_review_v1.txt；models/document.py；services/review.py | review integration tests | FIXTURE-VERIFIED | 真实模型抽取准确率未评估 |
-
-### Phase 5 - Chunking, Embedding, Indexing
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| heading/paragraph/list/table chunking + fallback | chunking/heading.py；config/chunking.yaml | test_indexing_components.py | VERIFIED-LOCAL | token estimator 简化，真实模型窗口需校准 |
-| target/min/max/overlap configurable | config/chunking.yaml；app/config.py | chunker/config tests | VERIFIED-LOCAL | 配置热更新未实现 |
-| embedding protocol/remote/deterministic | embedding/providers.py | deterministic tests + MockTransport + 2026-08-09 OpenAI live reindex | PASS-LIVE（selected provider） | 仅 `text-embedding-3-small`/1536 已验；限流、账单和替代 provider 未验 |
-| batching/cache/retry/rate/model/version/cost metadata | embedding/batcher.py；cache/embedding.py | indexing/provider tests；first reindex 0 hits/8 embedded；second 8 hits/0 embedded | PASS-LIVE（cache/idempotency） | cost 配置为 0，未证明 provider 真实账单；Redis ACL/failover 未验 |
-| Qdrant collection/index/upsert/delete/reindex/version | vector_store/store.py；services/indexing.py；document_index.py | FakeClient + memory integration；direct REST 1 collection/14 points；task 23 six stable point IDs | PASS-LIVE（upsert/payload/idempotency） | live delete/compensation failure drill 未执行；client/server version warning remains |
-| BM25 index/rebuild/snapshot | bm25/index.py；services/bm25.py；scripts/rebuild_bm25.py | BM25 round-trip/integration | VERIFIED-LOCAL | snapshot 多实例同步与锁未解决 |
-
-### Phase 6 - Retrieval Engine
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| query analysis + metadata filters | retrieval/analysis.py；router/query_router.py | test_retrieval_phase6.py | VERIFIED-LOCAL | 实体/同义词覆盖有限 |
-| BM25 top-k + vector top-k | retrieval/engine.py；bm25/index.py；vector_store/store.py | retrieval/search tests | FIXTURE-VERIFIED | vector 路径为 memory/deterministic |
-| RRF | retrieval/rrf.py | algorithm/retrieval tests | VERIFIED-LOCAL | 参数需生产数据校准 |
-| rerank + validation | rerank/providers.py；retrieval/engine.py | deterministic + MockTransport tests | CONTRACT-VERIFIED | remote rerank 未 live 验证 |
-| score threshold/final context | retrieval/engine.py | retrieval tests | FIXTURE-VERIFIED | 阈值非生产校准 |
-| BM25/vector/hybrid/hybrid+rerank 四模式 | schemas/search.py；retrieval/engine.py | test_retrieval_phase6.py；test_search_api.py | FIXTURE-VERIFIED | PostgreSQL/Qdrant provider 组合未跑 |
-| readable POST /api/search/debug trace | routes/search.py | test_search_api.py | FIXTURE-VERIFIED | trace 大小/敏感字段生产策略未验证 |
-
-### Phase 7 - SQL/RAG/Composite Router
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| SQL/RAG/SQL+RAG classification | router/query_router.py | test_chat_grounding.py | VERIFIED-LOCAL | 规则分类器覆盖面有限 |
-| safe SQL templates/query builder | repositories/chat.py；services/chat.py | search/chat integration tests | FIXTURE-VERIFIED | 目前结构化查询只覆盖 approved document count |
-| 禁止 unrestricted LLM SQL | router/repository boundary | injection-related security tests | VERIFIED-LOCAL | 新增 SQL 用例必须继续白名单化 |
-| 指南三个示例路由 | router tests + chat API | test_chat_grounding.py；test_search_api.py | FIXTURE-VERIFIED | SQLite 语义，不是 PostgreSQL 验收 |
-
-### Phase 8 - Grounded Answering, Conflict, Refusal, Citations
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| evidence sufficiency/question coverage | rag/grounding.py | test_chat_grounding.py | VERIFIED-LOCAL | coverage heuristic 需真实问答评估 |
-| official source validation | rag/grounding.py | grounding tests | FIXTURE-VERIFIED | official_status 数据质量依赖来源治理 |
-| contradiction detection | rag/grounding.py | grounding tests | FIXTURE-VERIFIED | 规则级冲突，不是完整语义推理 |
-| newer/outdated policy handling | rag/grounding.py | grounding tests | FIXTURE-VERIFIED | 日期缺失和跨来源优先级风险 |
-| refusal rules | rag/grounding.py；services/chat.py | grounding/search API tests | FIXTURE-VERIFIED | 真实 LLM 仍需拒答回归 |
-| citation stored identity/title/source/date/URL/page/quote | rag/grounding.py；repositories/chat.py | chat/search/lineage tests | FIXTURE-VERIFIED | PostgreSQL/Qdrant 一致性未 live 验证 |
-| LLM 不得生成 URL | services/chat.py；rag/grounding.py | unknown chunk/URL rejection tests | FIXTURE-VERIFIED | remote LLM live 未验收 |
-
-### Phase 9 - Evaluation and Benchmark
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| manually verified questions schema | models/evaluation.py；schemas/evaluation.py | evaluation unit/API tests | FIXTURE-VERIFIED | demo question 数量很小 |
-| Recall@1/5/10、MRR、nDCG、doc/chunk hit | evaluation/metrics.py | test_evaluation_phase9.py | VERIFIED-LOCAL | 生产数据集未运行 |
-| answer coverage/citation accuracy/completeness/refusal | evaluation/metrics.py；runner.py | evaluation tests | FIXTURE-VERIFIED | hallucination 仅验证 citation claims |
-| hallucination rate | evaluation/metrics.py | evaluation tests | PARTIAL | 定义范围有限，非自由文本事实核验 |
-| P50/P95 latency | evaluation/metrics.py；reports.py | deterministic benchmark | FIXTURE-VERIFIED | 本地毫秒值不是生产容量 |
-| tokens/cost | models/query trace；services/chat.py；llm/adapters.py | adapter MockTransport usage/cost test；chat trace persistence test | PARTIAL | 真实 provider 可能不返回统一 usage/cost；价格配置/计费与 live 响应未验收 |
-| JSON/CSV/Markdown/chart-ready reports | evaluation/reports.py | evaluation report tests | VERIFIED-LOCAL | artifact store 仅本地文件 |
-| demo data real evaluation path | data/evaluation/*；scripts/seed_demo.py | test_evaluation_api.py；test_demo_seed.py | FIXTURE-VERIFIED | demo/确定性 provider，不是 live provider benchmark |
-| 禁止硬编码 metric values | evaluation runner/metrics | tests compare calculated outputs | VERIFIED-LOCAL | 需 code review 保持 |
-
-### Phase 10 - Experiment Framework and Regression
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| chunk size/overlap variants | experiments/config.py；experiments/odirag.py | experiment unit/API tests | FIXTURE-VERIFIED | 仅小数据 |
-| embedding model/top-k/RRF/filter/rerank/threshold/prompt variants | experiments/*；data/experiments/* | test_experiments_phase10.py | FIXTURE-VERIFIED | remote variants 未 live 执行 |
-| executable run_experiment command | scripts/run_experiment.py | historical command + unit tests | VERIFIED-LOCAL | trusted runner plugin 需供应链控制 |
-| comparison reports | experiments/reports.py | experiment tests | VERIFIED-LOCAL | artifacts 本地文件 |
-| regressions/failed cases/conclusion | experiments/comparison.py | degraded candidate integration test | FIXTURE-VERIFIED | gate 阈值需业务确认 |
-
-### Phase 11 - Trace, Lineage, Monitoring, Alerts
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| full query trace through retrieval/prompt/answer/citation/refusal/latency | services/chat.py；models/observability.py；llm/adapters.py | search/chat/lineage tests；usage/cost propagation tests | PARTIAL | 真实 provider usage/cost 方言、价格和异步生命周期未 live 验证 |
-| answer→citation→chunk→version→crawl→source traversal | repositories/observability.py；routes/chat.py | test_versioning_lineage.py | FIXTURE-VERIFIED | PostgreSQL join/cascade 未 live 验证 |
-| crawler/knowledge/RAG/dependency/cost metrics | metrics.py；services/observability.py | test_metrics.py；monitoring tests | FIXTURE-VERIFIED | 多实例聚合/Prometheus 未实现 |
-| 六类 persisted alerts | services/observability.py；tasks/monitoring.py | test_monitoring_alerts.py；task 8 后真实 `high_failure_rate` high/open 告警 | VERIFIED-LOCAL + FIXTURE-VERIFIED | task 8 证明本地 failure-rate 规则以 observed 0.4 / threshold 0.2 打开告警；生产投递、升级、确认、恢复与多实例聚合未验证 |
-| scheduled refresh + lifecycle + opt-in source-gap scan | tasks/celery_app.py；tasks/source_discovery.py；routes/system.py | test_tasks.py；source-discovery task tests；monitoring tests；本地 scheduler 日志 | VERIFIED-LOCAL | 目标环境 beat 长期运行、broker 故障和多副本调度仍未验收；自动扫描默认关闭 |
-
-### Phase 12 - Vue Frontend
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| Dashboard/Sources/Crawl/Documents/Detail/Review/Chat/Evaluation/Experiments/Monitoring/Feedback | frontend/src/views/*；router/index.ts | Vitest + Playwright fixture suite | FIXTURE-VERIFIED | 真实生产栈浏览器未验收 |
-| real API-connected pages | frontend/src/api/client.ts；resources.ts；views/CrawlTaskDetailView.vue；views/SourcesView.vue | 本地无拦截 live-stack against SQLite/deterministic；验收摘要与 legacy/batch 状态 Vitest/E2E | FIXTURE-VERIFIED | 不是 PostgreSQL/Qdrant/remote provider |
-| no hard-coded metrics | DashboardView.vue；MonitoringView.vue；resources.ts | static audit + fixture contract | VERIFIED-LOCAL | fixture metrics 仅存在 e2e tests |
-| typed API clients | frontend/src/api/types.ts；resources.ts | vue-tsc | VERIFIED-LOCAL | 使用 fetch，不是指南指定 Axios |
-| loading/error states/accessibility | components/AsyncState.vue；views/* | Playwright critical journeys | FIXTURE-VERIFIED | 完整 WCAG 审计未执行 |
-| responsive design | frontend/src/styles/*；layouts/* | 历史 mobile/desktop QA | FIXTURE-VERIFIED | 当前轮未做全页视觉基线 |
-| safe Markdown | marked + DOMPurify usage | frontend tests/static audit | VERIFIED-LOCAL | CSP 仍依赖部署入口 |
-| 指定 Pinia/Axios/UI kit/ECharts | frontend/package.json | dependency audit | PARTIAL | 四类依赖未采用；属于指南架构偏差 |
-| Playwright critical journeys | frontend/e2e/*.spec.ts；playwright.config.ts | fixture 9 passed/1 live skipped；独立真实 8080 live-stack 1 passed；Vitest 18 passed | VERIFIED-LOCAL + FIXTURE-VERIFIED | live-stack 证明 UI/证据卡/Trace 可达，不证明 official Direct cited answer；后者仍待 official 文档 |
-
-### Phase 13 - Feedback Loop
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| helpful/not helpful + 五类问题反馈 | schemas/feedback.py；services/feedback.py | test_feedback_api.py；Playwright chat | FIXTURE-VERIFIED | 用户角色只有 admin |
-| verified feedback → evaluation question | services/feedback.py；repositories/feedback.py | feedback integration tests | FIXTURE-VERIFIED | “verified”依赖当前管理员操作，无双人复核 |
-| frontend feedback/logs | ActivityView.vue；ChatView.vue | Vitest + Playwright | FIXTURE-VERIFIED | 生产事件量分页/性能未验收 |
-
-### Phase 14 - Security, Reliability, Performance
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| authentication/authorization/token revoke | security.py；dependencies.py；services/auth.py | security/auth tests | FIXTURE-VERIFIED | 外部 IdP/RBAC 未实现 |
-| rate limiting | rate_limit.py；main.py；config.py；docker-compose.yml | test_rate_limit.py（共享计数/故障 fail-closed）；本地 Compose Redis key 与 `X-RateLimit-*` header | VERIFIED-LOCAL | 目标 Redis ACL、故障转移、跨副本公平性和 ingress 限流未验收 |
-| file limits/allowlist/path safety | crawler/storage.py；fetcher.py；config.py | HTTP/storage security tests | FIXTURE-VERIFIED | 恶意压缩包资源消耗需额外沙箱 |
-| SQL injection protection | safe repository templates | security/router tests | VERIFIED-LOCAL | 新查询需持续审查 |
-| XSS/CORS/secrets/error codes | DOMPurify；CORSMiddleware；config.py；errors.py | frontend/static/config/API tests | FIXTURE-VERIFIED | CSP/TLS/secret manager 未 live 验收 |
-| retries/timeouts/idempotency | fetcher/services/indexing/crawl | reliability tests | FIXTURE-VERIFIED | 外部故障组合未演练 |
-| distributed locks | conditional DB UPDATE；unique constraints | concurrency-oriented SQLite tests | PARTIAL | 无共享 Redis lock；SQLite 不等于 PostgreSQL 并发 |
-| cache/batch embedding | cache/embedding.py；embedding/batcher.py | memory cache tests | FIXTURE-VERIFIED | Redis/remote provider 未 live |
-| task recovery | tasks/recovery.py；0003 migration | test_crawl_reliability.py | FIXTURE-VERIFIED | worker kill/visibility timeout 未 live 演练 |
-| migration/backup documentation | DEPLOYMENT.md；SECURITY.md；PRODUCTION_ACCEPTANCE_CHECKLIST.md | 独立临时 PostgreSQL 容器/卷 restore；9 表 count 对比 | VERIFIED-LOCAL | 当前小型 development 数据通过；目标生产数据量、加密、保留策略和定期调度未验收 |
-| lightweight load test + actual metrics | scripts/load_test.py；performance.py | deterministic local run | FIXTURE-VERIFIED | 不是生产容量/SLA；外部依赖为空 |
-| search/chat/DB P95 goals | data/load-tests ignored artifacts；IMPLEMENTATION_STATUS.md | 20+20 local deterministic requests | FIXTURE-VERIFIED | 需生产规模重跑 |
-
-### Phase 15 - Docker, CI/CD, Open-source Handoff
-
-| Requirement | Implementation files | Tests / evidence | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| backend/frontend/postgres/redis/qdrant/worker/scheduler/nginx services | docker-compose.yml；Dockerfiles；deployment/*.conf | `docker compose config`、final image `compose ps`、8 个 health checks、Nginx `/healthz`/首页/API/浏览器登录 | VERIFIED-LOCAL | development 栈已恢复；生产 secret/TLS、registry provenance、目标主机持久化和灾备仍未验收 |
-| optional prometheus/grafana | 无 | 无 | PARTIAL | 指南允许 if feasible，不是核心 blocker |
-| backend lint/type/test/coverage CI | .github/workflows/ci.yml | YAML parse；本地等价命令 | CONTRACT-VERIFIED | GitHub Actions 未实际跑 |
-| frontend lint/test/build/Playwright CI | .github/workflows/ci.yml | YAML parse；本地 npm commands | CONTRACT-VERIFIED | Actions/浏览器镜像未实际跑 |
-| Docker build CI | .github/workflows/ci.yml；Dockerfile.backend；Dockerfile.frontend | fresh backend/frontend runtime build；fresh builder stages；current Compose health；Docker Scout 0/0 | CONTRACT-VERIFIED | GitHub Actions、签名镜像、registry provenance 和目标 registry 复扫未实际跑 |
-| README/architecture/API/eval/experiments/deployment/security/contribution/roadmap/license | 根目录文档 | link/path/structure audit | VERIFIED-LOCAL | 需随最终测试结果同步 |
-| honest demo seed | scripts/seed_demo.py；data/evaluation/* | test_demo_seed.py；deterministic pipeline | FIXTURE-VERIFIED | demo URLs/data 不代表真实来源 |
-| one-command startup | scripts/start_demo.ps1；scripts/start_demo.sh | 脚本本身有历史 smoke；当前恢复中 `up -d` 被中断，修复依赖网络别名并定向启动后 health 通过 | PARTIAL | 需要在保留数据前提下重新执行 clean startup 验收；fresh build、生产环境变量、备份恢复、发布流程未实测 |
-| 12+ learning/defense docs | docs/learning/*；docs/*.md | structure audit | VERIFIED-LOCAL | Phase16 learning doc另行新增 |
-| release/checkpoint history | .git | `git log --oneline`；`git diff --check` | PARTIAL | 已有实现基线 `85d4bdb` 和审计检查点 `14bbf40`；尚无经外部门禁确认的签名 release tag/CI/SBOM |
-
-## 4. Required API Surface
-
-OpenAPI 生成结果包含指南要求的 auth、sources、crawl-tasks、documents（含 PUT/DELETE/reparse/attachments/versions/lineage）、reviews、search/chat、evaluations/experiments、feedback 和 system endpoints。新增 document mutation 在 services/document_index.py 中同步清理向量和重建 BM25，并由 test_read_support_api.py 覆盖；真实性边界仍是 SQLite + InMemoryVectorStore。
-
-状态：**FIXTURE-VERIFIED**。风险：未在 PostgreSQL/Qdrant 上验证 DELETE/PUT/reparse 的跨存储补偿和事务失败路径。
-
-## 5. 占位、mock、硬编码和 demo 审计
-
-执行了针对 TODO、FIXME、pass、NotImplementedError、placeholder、mock、demo、固定 metrics 和异常吞噬的全仓检索。
-
-- runtime app 目录没有 TODO、FIXME、NotImplementedError 或空 pass。
-- Alembic script.py.mako 中的 pass 是“空迁移模板”生成表达式，不是 runtime required functionality。
-- Protocol 方法体使用 ...，属于类型接口声明，不是空实现。
-- tests 中的 MockTransport、FakeClient、fixture 和 vi.mock 均限定在测试目录。
-- DeterministicEmbeddingProvider、DeterministicRerankProvider、InMemoryEmbeddingCache、InMemoryVectorStore 明确为 test/demo；staging/production 配置现在拒绝这些 provider。
-- NoRerankProvider 是指南要求的显式 no-rerank mode；检索 trace 会写 rerank_provider_disabled warning。
-- DisabledCandidateDiscoveryProvider 显式返回 provider unavailable，不伪造候选。
-- scripts/seed_demo.py 使用 demo 数据和 demo URL，只在显式 demo/seed 路径使用；测试确认它不会预填 chunks、trace、alert 或虚假评估结论。
-- Dashboard/Monitoring 数据来自 API；硬编码指标只出现在 Playwright fixture 中。
-- ChatService 在没有 provider usage/cost 时写入 `measurement=not_available` / `cost_measurement=not_available` 与 cost=0；有 provider 响应时持久化规范化 token 和 provider_reported cost。cost=0 不能被解释为真实计费成功。
-
-## 6. 仅在 SQLite / fixture / fake provider 验证的功能
-
-| Boundary | Current evidence | Not proven |
-| --- | --- | --- |
-| 所有 backend integration tests | SQLite in-memory via backend/tests/conftest.py | PostgreSQL SQL/JSONB/locking/pool behavior |
-| embedding | deterministic SHA256 vectors；remote MockTransport | remote auth/quota/dimension/cost/latency |
-| rerank | deterministic token overlap；remote MockTransport | remote score contract/rate limits |
-| vector store | InMemoryVectorStore；Qdrant FakeClient | real collection/index/persistence/delete/backup |
-| cache | InMemoryEmbeddingCache；local Redis connectivity only | Redis-backed cache TTL/ACL/persistence/failure behavior |
-| rate limiting | RedisFixedWindowRateLimiter unit contract；local Compose Redis counter and response headers | target Redis ACL/failover, multi-replica fairness, ingress interaction |
-| crawling | fixtures；local SSRF rejection；real Coze tasks through 221；schema-valid multi-article canary；OCR/version/review evidence | PASS-LIVE for bounded Coze crawl and 100 approved government/official documents；attachment parsing/OCR coverage remains open |
-| LLM | Direct/Coze MockTransport | real model JSON stability, Coze async lifecycle, token/cost |
-| evaluation/experiments/load | tiny deterministic demo | representative corpus, production latency/cost/quality |
-| frontend E2E | Playwright route fixtures；local SQLite/deterministic 无拦截 smoke；Nginx/frontend HTTP smoke | deployed HTTPS、真实内容/引用、remote provider |
-| worker/scheduler | Celery task registration/schedule config tests；local worker ping/task and scheduler logs | queued crawl/source-discovery completion、故障恢复和生产 beat 长期运行 |
-| containers/CI | 当前 backend/frontend `--pull --no-cache` build；builder stage tag；fresh runtime start/health；worker/scheduler 复用 backend tag；trusted-proxy 容器回归；npm/Scout 均为 0 | GitHub Actions、生产 registry 复扫、镜像签名/provenance；frontend/reverse-proxy root master 仍需目标环境 hardening 评估 |
-
-## 7. Phase 16 - Autonomous Source Discovery
-
-原仓库缺少完整来源池扩展工作流，因此新增 Phase 16。实现链路严格为：
-
-content gap detection → candidate official-site discovery → official-status validation → column discovery → bounded trial crawl → quality scoring → manual approval → source activation
-
-| Requirement | Implementation files | Tests | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| content gap detection | services/source_discovery.py；repositories/source_discovery.py | test_source_discovery_stops_when_database_coverage_has_no_gap | FIXTURE-VERIFIED | ILIKE topic 匹配较简单，真实语义缺口需校准 |
-| candidate official-site discovery | source_discovery/providers.py；config.py | test_source_discovery.py | CONTRACT-VERIFIED | Brave token/配额/真实结果未验证 |
-| official validation | services/source_discovery.py；crawler/fetcher.py | unverified-domain integration test | FIXTURE-VERIFIED | suffix/HTTPS/marker policy可能误判；需业务白名单 |
-| column discovery | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | selector heuristics对 JS 网站有限 |
-| trial crawl | services/source_discovery.py | fixture workflow test | FIXTURE-VERIFIED | 只抓 bounded HTML；真实反爬/附件未验证 |
-| explicit Local Provider crawl contract | crawler/providers.py；services/crawl.py；crawler/state.py；repositories/crawl.py | test_fixture_crawl.py；test_crawl_reliability.py；provider unit tests；review convergence test | FIXTURE-VERIFIED | 仅确定性 fixture；真实公网 DNS/反爬和附件质量未验证；审核完成后等待任务会收敛为 completed |
-| Coze batch invocation/raw response/persistence | crawler/providers.py；services/crawl.py；schemas/coze.py；routes/crawl_tasks.py | strict-ID/schema regressions；real tasks 4-14 | PASS-LIVE | task 14 HTTP 200/completed, 1 attempt/0 retries, strict BatchCrawlResult, 5 discovered/fetched/docs, 1 accepted/4 rejected/0 pending/failed |
-| acceptance-summary after crawl completion | routes/crawl_tasks.py；Qdrant count adapter；scripts/live_accept_coze_batch.py | task 9 historical 503；task 14 and task 23 live rechecks | PASS-LIVE | task 23 returns HTTP 200/1 document/6 chunks/collection true/6 task points and matches direct Qdrant REST；global points 14；production topology still unverified |
-| quality scoring | services/source_discovery.py；config thresholds | source discovery integration tests | FIXTURE-VERIFIED | 权重是启发式，未用生产标注集校准 |
-| manual approve/reject | routes/source_discovery.py；repository atomic update | integration + Playwright tests | FIXTURE-VERIFIED | 只有 admin，没有双人审批 |
-| activation to Source/SourceColumn | services/source_discovery.py；models/source.py | integration + Playwright tests；activation compensation test | FIXTURE-VERIFIED | PostgreSQL uniqueness/并发未 live；激活后不自动启动 crawl；异常补偿路径尚未在真实 PostgreSQL 演练 |
-| queue/worker/retry | tasks/source_discovery.py；celery_app.py | queue failure + retry reuse tests；local worker ping/task and scheduler logs | FIXTURE-VERIFIED | 真实 source-discovery queued run、故障恢复和长期 beat 仍未验收 |
-| database migration | 0004_source_discovery.py；0005_coze_crawl_provider.py；0006_coze_task_operations.py；models/source_discovery.py；models/source.py | SQLite round-trip；专用 PostgreSQL fresh upgrade→downgrade 0003→upgrade；existing DB current/check；隔离 backup/restore | VERIFIED-LOCAL | 未对生产业务库直接 downgrade；目标数据量、锁等待、RPO/RTO 仍未验收 |
-| APIs | routes/source_discovery.py；schemas/source_discovery.py | test_source_discovery_api.py | FIXTURE-VERIFIED | production rate/authorization角色有限 |
-| frontend | SourceDiscoveryView.vue；typed API/router/nav | source-discovery.spec.ts | FIXTURE-VERIFIED | live Brave workflow浏览器验收缺失 |
-| monitoring/audit | source_discovery_events；metrics API/UI | metrics/events integration + Playwright | FIXTURE-VERIFIED | 未接入全局 Alert rule |
-| docs/learning | API.md/ARCHITECTURE.md/DEPLOYMENT.md 等；docs/learning/13_source_discovery.md；docs/learning/13_source_discovery_auto_schedule.md | doc structure audit | VERIFIED-LOCAL | 学习材料已生成；仍需将目标环境证据回填 |
-
-Brave 被选为当前 live provider，因为 Microsoft 已宣布 Bing Search APIs 于 2025-08-11 完全退役。实现不再依赖退役 endpoint；Brave 仍只为 contract-verified。参考：[Microsoft Bing Search API retirement](https://learn.microsoft.com/en-us/lifecycle/announcements/bing-search-api-retirement)、[Brave Search API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get)。
-
-### 7.1 无人值守调度补充
-
-| Requirement | Implementation files | Tests | Status | Remaining risk |
-| --- | --- | --- | --- | --- |
-| opt-in topic scheduler, CSV/JSON/empty configuration, minimum interval, active-run/cooldown guard, queue failure audit, no automatic activation | `backend/app/config.py`; `backend/app/repositories/source_discovery.py`; `backend/app/tasks/celery_app.py`; `backend/app/tasks/source_discovery.py`; `.env.example`; `docker-compose.yml`; `DEPLOYMENT.md`; `docs/learning/13_source_discovery.md` | `backend/tests/unit/test_config.py`; `backend/tests/unit/test_tasks.py`; `backend/tests/integration/test_source_discovery_scheduler.py` | FIXTURE/SQLite VERIFIED | Real Celery Beat delivery remains unverified；active/cooldown check is not an atomic cross-Beat lock，production must run a single scheduler；external Brave credentials are required |
-
-The scheduler is intentionally a proposal mechanism. It creates and queues a run only after a
-database gap check, skips active or recently-created same-topic runs, and leaves approval/activation
-to the existing manual API path.
-
-## 8. 修复内容
-
-本轮审计中修复了以下生产缺陷，而非增加无关功能：
-
-- 补齐指南要求但缺失的 document PUT、DELETE、reparse、attachments、versions、lineage API。
-- document PUT/reparse/delete 清理历史 Qdrant point IDs、标 stale 并重建/原子保存 BM25；PUT 创建不可变版本/lineage，拒绝未知字段。
-- crawl task 入队失败不再永久 pending，改为持久 failed、记录 error type 并允许 retry。
-- production Compose 的空 optional secret 可规范化为 None，同时仍拒绝非空明文 admin password。
-- staging/production 拒绝 deterministic embedding/rerank、memory cache/vector store 和 deterministic source discovery。
-- Phase16 retry 复用并重置同一候选，避免 unique constraint 造成重试死路。
-- Phase16 activation 异常或 IntegrityError 会回滚并将候选置为 failed，写入 `source_activation_failure` 审计事件，避免永久停留在 activating。
-- production Brave source-discovery endpoint 限制为官方 `https://api.search.brave.com` host，避免把 API key 发送到任意配置地址。
-- Bing provider 被替换为仍可用的 Brave Search API。
-- 新增 fixture-backed Playwright 和显式 E2E_LIVE live gate，并接入 CI。
-- inline crawl 的 `UnsafeUrlError` 现在映射为 `422 CRAWL_SOURCE_UNSAFE` 并返回 task ID/error type，底层任务保持 failed/retryable；未知异常仍交由全局 `500 INTERNAL_ERROR` 处理，避免把数据库故障或程序缺陷误分类为上游服务故障。
-- 对齐 `QueryTrace.prompt_snapshot_json` 与 `Alert.details_json` 的 ORM `server_default` 和 `0002` 迁移定义，修复 PostgreSQL `alembic check` 检出的 default drift。
-- 生产/staging 默认启用使用单 key Lua 原子脚本的 `RedisFixedWindowRateLimiter`，Redis 不可用时返回 `RATE_LIMIT_BACKEND_UNAVAILABLE` 503，不再静默使用进程内限流；test 环境仍显式使用 memory limiter。
-- 限流身份改为 IP-only，伪造 Bearer 不再分裂桶；只有显式可信代理 CIDR 才读取单跳 `X-Forwarded-For`，Redis 连接/读写使用依赖超时。
-- 将已有 `LocalCrawlProvider` 接入 `CrawlService.execute(provider=local)` 的完整持久化路径，保留 `pending_review` / `waiting_review` 语义，以 `local_extraction` 保存真实来源，并排除 scheduler stale-worker 误重抓。
-- 本地/Coze worker 在启动、远端阶段和进入文档保存前使用条件状态推进；取消请求也按观察到的状态做 CAS，旧请求不能覆盖新 worker 阶段；文档审核完成后关联 `waiting_review` 任务按 lineage 原子收敛。
-- LLM provider cost 拒绝非有限、负数和超出 `Numeric(18,8)` 范围的值，并量化到数据库精度；Phase 16 验收清单验证候选事件严格顺序。
-- 对栏目任务显式拒绝 `legacy_single_article`，返回 `COZE_LEGACY_SINGLE_ARTICLE_ONLY`；legacy 部署继续用于单篇兼容/连通性回归，避免误把旧工作流当批量任务执行。
-- 前端任务详情消费后端验收摘要（数据库文档/分块/Qdrant 点数），来源页分别展示 legacy 与 batch 配置状态；新增 Vitest 与 Playwright fixture 断言。
-
-## 9. 最终本地验证
-
-## Phase G 数据质量检查点（2026-08-13）
-
-Phase G 在真实 PostgreSQL 上完成了 `0009_attachment_parsing_audit` 迁移和幂等清理。当前结果为 182 documents、101 approved、35 rejected、46 pending manual review、821 chunks。Qdrant 仍为 `odirag_chunks`，821 points；既有 5/5 PASS-LIVE 主链与 100 篇 Phase C 合格官方文档未被改动。Phase G 前的 `34 rejected/47 pending` 是历史快照，不是当前计数。
-
-123 个历史附件全部离开 `pending`：77 `failed`、46 `unsupported`、0 `parsed`。其中 76 个缺少本地下载字节，1 个需要 OCR 但当前无 OCR provider；这些是明确失败状态，不是解析成功。16 个 `region='??'` 仅新增不可变 `unresolved` correction audit，未修改历史记录。46 个文档仍需人工审核，系统没有用规则重放绕过人工门禁。
-
-该历史 Phase G 验证：backend 364 passed，Ruff PASS，mypy PASS，真实 PostgreSQL Alembic check PASS；当时 Black 为 `UNVERIFIED-LOCAL`。Phase M 后续已用隔离缓存和明确源码范围取得 `BLACK=PASS-LOCAL`。八个 Compose 服务 healthy，8080 和 `/api/system/health` 返回 200，database/Redis/Qdrant healthy。D 盘可用 106.7 GiB。
-
-Remote rerank 当前 `configured=false`；宿主 Settings、Compose 配置和运行中 backend 均为 `provider=none`，因此 Phase H 为 `BLOCKED-EXTERNAL-RERANK-KEY`，不能声称 remote PASS-LIVE。Provider 合同、超时、HTTP 错误（含 429/500/503）、非法响应、错误脱敏、fail-open/fail-closed、metadata 与 retrieval 回归在当前 checkpoint 共 82 项通过。Brave provider 已实现但 `configured=false`，Phase I 为 `BLOCKED-EXTERNAL-BRAVE-KEY`；候选归一化、provider errors、content-gap、official validation、HTTPS/redirect defenses、manual approval/activation、retry/scheduler/API 共 25 项测试通过。没有创建真实 Brave run 或 CrawlTask，也没有把 fixture 结果标为 live。详见 [`DATA_QUALITY_REPORT.md`](DATA_QUALITY_REPORT.md)。
-
-Phase J 已从真实 approved/indexed official corpus 生成 100 条 `DRAFT_EVAL_SET`：93 个不同 document/chunk、11 个官方域名、18/18 类别覆盖、10 条安全/拒答案例。由于人工确认数为 0，状态是 `BLOCKED-HUMAN-EVAL-REVIEW`，`evaluation_results.json` 中所有正式质量指标保持 null。不能把历史一题/两题 plumbing gate 替代为代表性评测。详见 [`RAG_EVALUATION_REPORT.md`](RAG_EVALUATION_REPORT.md)。
-
-以下表格是 2026-08-09 审计检查点的历史结果。当前 Phase M 结果以本报告顶部为准：pytest/Ruff/mypy/Black 均已重跑通过，不能把下表的历史数字当作当前测试计数。
-
-| Check | Result | Boundary |
-| --- | --- | --- |
-| `backend/.venv/Scripts/ruff.exe check app tests` | PASS | 本地源代码/测试静态检查 |
-| `backend/.venv/Scripts/black.exe --check app tests alembic` | PASS；206 files unchanged | 本地格式检查 |
-| `backend/.venv/Scripts/mypy.exe app` | PASS；155 source files | 本地类型检查 |
-| `backend/.venv/Scripts/python.exe -m pytest`（从 `backend` 目录） | PASS；324 passed in 17.84s | 当前完整回归；SQLite、内存实现和确定性 provider 测试不替代上文单列的真实依赖验收；81.33% 是历史 coverage baseline |
-| `backend/.venv/Scripts/pytest.exe tests/unit/test_sources_and_crawler.py -q` | PASS；8 passed | fixture；含 unsafe inline crawl 结构化错误 |
-| Phase 16/config/API 定向测试 | PASS；28 passed | fixture/contract |
-| Alembic fresh upgrade → downgrade → upgrade | PASS-LOCAL；锁定 Alembic 1.18.5；专用 PostgreSQL 从空库升至 `0006`、降至 `0003`、再升至 `0006`，最终 `check` 无漂移 | 未对生产业务库直接 downgrade；目标数据量、锁等待和维护窗口仍未验收 |
-| frontend lint/type-check/Vitest/build | PASS；18 Vitest tests，Vite 1850 modules | 本地 Node toolchain（Vitest/build 使用提升权限启动 esbuild） |
-| `npm audit` / `npm audit --omit=dev` | PASS；两种模式均为 0 vulnerabilities | 只证明当前 lockfile；目标 CI/registry 仍需复扫 |
-| fresh builder `python -m pip check` | PASS；No broken requirements found；Alembic 1.18.5 | 只验证依赖一致性，不是 CVE 扫描 |
-| Playwright fixture suite | PASS；9 passed，1 live test skipped | route fixture；live gate 未开启 |
-| real Compose `live-stack.spec.ts` | PASS-LOCAL；2026-08-09 单独启用 `E2E_LIVE=1` 指向 8080，1 passed | 只验证登录、核心页面、证据卡与 Trace；不把 association refusal 解释为 official cited-answer pass |
-| isolated Uvicorn API smoke | PASS；health/login/Coze status/sources/crawl-tasks 均 HTTP 200；health 为 database healthy、Redis unavailable、Qdrant disabled | 临时 SQLite + deterministic providers；不证明 Docker、PostgreSQL、Redis、Qdrant 或外部 provider |
-| most recent local Docker Compose service/worker/scheduler acceptance | PASS-LOCAL（2026-08-10）；8 services healthy；8080/API/dependencies healthy；backend/worker/scheduler 使用同一 `sha256:b41a63d5b943f200304f9ee6a1d208d7fee62ff3920b4f77a19c97f5f0ccf163` | 当前证据只覆盖 development 运行态，不代表生产 secret/TLS/容灾 |
-| historical Phase B local PostgreSQL Alembic | PASS-LOCAL at that checkpoint；Alembic 1.18.5；existing DB was `0008_rerank_observability (head)`，`check` 无漂移；既有专用库 round-trip 通过 | Superseded by the current real PostgreSQL `0010_query_trace_stage_timings (head)` no-drift result；未对生产业务库直接 downgrade |
-| isolated PostgreSQL backup/restore | PASS-LOCAL；156,455-byte custom dump；SHA-256 留档；独立 `--network none` 容器和临时卷恢复；9 表 count 一致；临时资源已清理 | 当前小型 development 数据；未证明生产规模、加密备份、RPO/RTO 和定期调度 |
-| current local Nginx/frontend/API/browser smoke | PASS-LOCAL；Nginx 1.30.4 `nginx -t` 通过；捕获并修复滚动 backend 后缓存旧 IP 的 502；Docker DNS 动态 `resolve` 加载后重建 backend，Nginx 未重启且代理 health 15/15 次均为 200；`/healthz`、`/`、`/api/system/health` 均 200；API database/redis/qdrant 均 healthy；管理员页面登录成功并渲染仪表盘；浏览器控制台无 warning/error；安全响应头存在 | HTTP development 入口和交互式本地浏览器证据；自动化 live Playwright、HTTPS、多副本滚动发布和 remote provider 门禁未验证 |
-| current Docker/WSL control-plane check | PASS-LOCAL；交互式启动后 WSL、Docker Client/Server 29.6.2、Compose v5.3.1 均响应，8080 及项目端口可用，八服务 healthy | 仍未验证目标主机的自动启动、生产 secret/TLS、容灾和 registry provenance；未删除 VHD、容器、Volume 或数据库 |
-| last scanned hardened image build | PASS-LOCAL；current backend `b41a63d5b943` Scout is 0C/0H/0M/0L and frontend `7dcc62cebccd` is 0C/0H/0M/3L with no fixed libxml2 version | Target registry must still be scanned, signed and given provenance; do not treat the frontend low findings as resolved |
-| current real Compose Playwright | PASS-LOCAL；fixture suite 10 passed/1 explicit live-stack skip；formal live API evidence separately retained | HTTPS/target browser and production identity policy remain unverified |
-| authenticated API / crawl-task evidence | PASS-LIVE；tasks through 221；100 qualifying official documents；formal Direct citation plus zero-hit/non-empty irrelevant refusal passed | Historical failed/pending tasks remain audit evidence and are not counted |
-| Qdrant live local state | PASS-LIVE；direct REST collection `odirag_chunks` green with exact count 821, matching 821 PostgreSQL chunks；repeat reindex reused cache without point growth | live delete/compensation drill、备份与生产拓扑仍未验 |
-| Coze batch/OCR/live official checkpoint | PASS-LIVE；task 14 preserves OCR evidence；task 23 preserves the official 5/5 baseline；C3 adds 100 clean approved government/official documents | 123 downloaded attachments remain parse-pending; one requires OCR |
-
-### scsia.org 实验记录（分层 PASS-LIVE）
-
-该实验明确区分了浏览器/公开 API 可见内容、本地 SSRF 边界、Coze transport 和真正的内容验收：
-
-- 独立公开 API 检查通过：`https://scsia.org/portal/news/264?pageNum=1&pageSize=5` 返回 HTTP 200 JSON、`total=69`、五行；首条 ID 为 `7587`。`https://scsia.org/portal/new/7587` 返回 data，`newsContent` 长度为 995。这里只记录状态、结构和长度，不保存正文。页面路由本身是只加载 JavaScript bundle 的 SPA 外壳。
-- 本地 API 创建了显式协会实验来源（`source_id=1`、`column_id=1`、`official_status=association`），没有绕过 Phase 16 的官方来源校验，也没有把协会域名标记为政府官方站点。
-- `POST /api/sources/1/test` 返回 `reachable=false`、`error_type=UnsafeUrlError`；本机 DNS 将 `scsia.org` 解析为 `198.18.0.208`，属于代理/拦截地址，后端 SSRF 防护按设计拒绝。
-- 本地 tasks 1-3 持久化为 `failed`，抓取计数和文档数均为零；接口返回 `422 CRAWL_SOURCE_UNSAFE`。这个结果只证明安全边界。
-- tasks 4-8 确立了 string ID、transport wrapper 和 SPA failure diagnostics。用户再次发布 Coze 后，task 9 以 `max_pages=1`、`max_articles=5` 执行：task/current stage/provider status 均 completed，无 provider error；invocation HTTP 200/completed、one attempt/zero retries、22,757 ms，raw/normalized 均持久化，normalized task ID 是 string `"9"`。
-- 当前 backend 容器从 PostgreSQL 读取 raw response 并用 `parse_batch_crawl_response` 重新校验：Pydantic schema passed，5 articles/discovered/fetched。统计为 accepted 0/rejected 5/pending 0/failed 0，provider failed URLs 0；task、normalized 与 5 条 persisted result 决策一致。PostgreSQL 为 5 documents、5 lineage、0 chunks、1 invocation。
-- 首篇“关于公布四川省2026年第六批软件企业及软件产品评估结果的通知”（`https://www.scsia.org/portal/new/7587`）为 image extraction、9 images、needs OCR、content length 0、rejected、index pending。五篇中三篇 image-only/needs-OCR/content length 0；另两篇 content length 349/203；全部 rejected。这里只记录元数据，不记录正文。
-- Task 9 当时的 acceptance-summary 503 保留为历史：不存在的 collection count 被映射为 provider unavailable。该问题后来修复。
-- Task 13 保留为竞态失败证据：Coze HTTP 200 后本地状态变为 `TASK_STATE_CHANGED`。修复 source-column/row locking 与 queued→running 处理后，task 14 成功完成。同期修复了 `image_ocr` schema、重复 URL 版本刷新和人工审核幂等。
-- Task 14 (`max_pages=1`, `max_articles=5`) 保留为 association/OCR checkpoint：Coze HTTP 200/completed，strict BatchCrawlResult passed；5 discovered/fetched/docs，1 accepted/4 rejected/0 pending/failed。Task 23 是当前 official 5/5 checkpoint：1 discovered/fetched/accepted/approved official document、6 chunks/6 task points、正式 Direct citation 和 zero-hit refusal。
-- Document 3 version history is v1 length 0/image/rejected/score 0 → v2 length 5,358/image_ocr/accepted/score 0.70. `POST /reviews/3/approve` then made it approved; task 14 remained completed/pending 0. After index acceptance, summary returns HTTP 200, `collection_exists=true`, 8 chunks and 8 points.
-- Two pre-credential attempts and one malformed-credential attempt remain historical failures. After correction, the first successful reindex returned 8 remote embeddings and 8 chunks. Qdrant direct REST returned collection `odirag_chunks`, 8 points, and required payload fields; a missing explicit `chunk_id` found during direct inspection was fixed and live backfilled. The second reindex returned 8 cache hits/0 embeddings and left the 8 point IDs unchanged.
-- Real hybrid search for `2026年第四批软件产品评估结果通知列出了哪些附件` returned 8 BM25, 8 vector, 8 fusion and 5 final hits. The first hit title/URL match document 3 and source is `bm25+vector`. A query containing `四川省` returned zero because the persisted region is the corrupt literal `??`; this is a recorded data-quality defect.
-- Formal Chat retrieves the historical association chunks but refuses with `official_source_required` before Direct invocation, as required. Phase A now enforces `refusal => citations=[]` on every branch and the evaluation adapter no longer hides violations. The association identity and historical region remain unchanged.
-
-Task 14 保留 OCR/association 证据；task 23 已完成 government/official 正常业务闭环；Phase A 已对本轮有界的非空无关、同主题错误关系/范围和拒答残留 citation 风险完成 Live 验收。Citation precision/recall 已排除正确拒答样本，answer grounding rate 改为独立 citation-claim 检查，避免被测门控循环自证。下一步是 Phase B 的真实 Rerank 与可重复检索评估，不需要重新设计已验收主链。
-
-八服务 healthy，task 23 主链与 Phase A evidence gate 均 PASS-LIVE；当前全局为 182 documents、101 approved、821 chunks 和 821 Qdrant points，其中恰好 100 篇符合本轮 government/official、region 正常的 C3 资格门。`KNOWLEDGE_BASE_LIVE_CLOSED_LOOP=5/5`。Phase C 已完成，Phase B/D/E 已完成本地门禁，Phase F 有两题真实矩阵证据；在 remote rerank、Brave、代表性完整评估、附件解析/OCR、生产 TLS/secret、CI/registry provenance 完成前，整体发布结论仍保持 **NOT PRODUCTION ACCEPTED**。
-
-### 9.1 本轮调度回归补充
-
-`backend/.venv/Scripts/python.exe -m pytest -q --cov=app --cov-report=term` completed with
-`257 passed` and `81.33%` total coverage. The added scheduler and Coze-state coverage includes disabled/no-topic
-short-circuiting, CSV/JSON/empty environment parsing, same-topic active-run skipping, minimum-interval
-cooldown, successful enqueue, queue failure persistence, redacted error observability, deployed response-wrapper parsing, strict string task IDs, pre-network invalid-request rejection, fail-closed main/retry response-ID matching, and distinct no-article/partial-failure timestamps. **Historical** Ruff,
-Black, and mypy (155 source files) pass; the later Phase M source-scoped Black check also passes. Frontend lint/type-check/build pass,
-Vitest reports 18 passed tests, and fixture Playwright reports 9 passed plus 1 explicit live skip.
-
-## 10. 发布门禁
-
-生产发布至少还需要：
-
-1. 在目标 Docker/Kubernetes/VM 环境完成 PostgreSQL、Redis、Qdrant、worker、scheduler、Nginx、Alembic 与 live Playwright。
-2. 对尚未通过的 Brave、Coze/Direct LLM 和 rerank provider 完成凭据、限流、错误、计费和数据保留验收；已通过的 Embedding 仍需在目标环境补做限流、账单和数据保留审查。
-3. 补真实官方站点至少 10 篇抓取，并审核 robots/条款、selector、幂等和内容质量。
-4. 用代表性数据重跑 evaluation、experiment 和 load test；保存真实 token/cost/latency。
-5. 在目标环境验证共享 Redis/ingress 限流的 ACL、故障转移、跨副本公平性和恢复行为；代码已默认使用 Redis，不能以单副本作为未验证的替代结论。
-6. 在目标 registry/CI 对已发布 digest 重新执行 `docker scout cves ... --exit-code`，保存 SBOM、签名和 provenance。本机 fresh rebuild、npm audit 和本地 Scout 已通过，但不能替代目标发布链证据。
-7. 建立 Git commit/tag、CI green 证据、SBOM/镜像 digest、备份恢复演练和发布审批记录。
+| Runtime and data | PASS-LIVE | 182 documents, 821 chunks, active/rollback Qdrant collections healthy, 60 parsed attachments, 69 attachment files. |
+| Provider chain | PASS-LIVE | Bailian 1536-dimensional embedding, BM25/vector fusion, Cohere rerank, DeepSeek grounded answer and fail-closed refusal. |
+| Disaster recovery | PASS-LIVE | PostgreSQL logical/physical/PITR, Qdrant, Redis, attachment restores, off-host copy, measured RPO/RTO. |
+| Observability | PASS-LIVE | Prometheus/Grafana/Alertmanager, 12/12 targets, public HTTPS Blackbox probes and alert rules. |
+| Software supply chain | PASS-LIVE | Private GitHub repository, CI, GHCR immutable digests, SPDX SBOM, BuildKit provenance, deterministic deploy/rollback. |
+| Public ingress | PASS-LIVE | DNS, UFW, Nginx, Let's Encrypt, TLS 1.2/1.3, HTTP redirect, security headers. |
+| Public application | PASS-LIVE | Real browser frontend/API, Grounded RAG, citation/support validation, out-of-scope refusal. |
+| Attack surface | PASS-LIVE | Only 80/443/22022 externally reachable; application internals, state stores, monitoring and exporters remain private. |
+| Engineering regression | PASS-LIVE | 531 backend tests, Ruff, Black, mypy, frontend lint/type/unit/E2E/build, Compose/Nginx/workflow validation. |
+
+## Frozen Data Invariants
+
+```text
+documents=182
+chunks=821
+parsed_attachments=60
+attachment_files=69
+attachment_sha256_matches=69
+duplicate_chunk_id=0
+duplicate_document_chunk_index=0
+active_collection=odirag_chunks_bailian_v4
+active_points=821
+active_dimensions=1536
+active_distance=cosine
+active_status=green
+rollback_collection=odirag_chunks
+rollback_points=821
+rollback_dimensions=1536
+rollback_distance=cosine
+rollback_status=green
+duplicate_active_qdrant_payload_chunk_id=0
+postgres_qdrant_id_set_equal=true
+```
+
+## Public Service Contract
+
+- DNS A record: `rag.suzheodirag.top -> 45.192.110.8`.
+- HTTP permanently redirects to the exact trusted HTTPS hostname.
+- HTTPS root, liveness, readiness, and gateway health return 200.
+- Trusted certificate: Let's Encrypt, SAN `rag.suzheodirag.top`, valid through
+  2026-11-14T18:04:45Z.
+- TLS 1.0/1.1 rejected; TLS 1.2/1.3 accepted.
+- Automatic renewal timer and Nginx reload hook are installed and tested.
+- Public ports: 80 and 443. Management: 22022, public-key only.
+- Databases, Qdrant, backend, Prometheus, Grafana, Alertmanager, Blackbox, and
+  exporters are not publicly reachable.
+- Temporary passwordless production sudo has been revoked; `sudo -n true` returns
+  non-zero while deploy SSH public-key access remains available.
+
+## Operational Boundaries
+
+Production is accepted with these visible boundaries:
+
+- single-node recovery architecture rather than high availability;
+- no third-party paid uptime or paging service, while continuous internal
+  Blackbox-through-public-path and independent external verification are active;
+- SSH source-CIDR restriction awaits a stable management CIDR;
+- Qdrant client/server versions should be aligned in a future controlled release;
+- one-day HSTS is intentionally conservative for the initial public observation
+  window;
+- historical unsupported attachment/OCR cases remain outside the accepted parsed
+  60-file set and were not altered during production engineering;
+- the Phase 5 final commit is retained locally on `codex/phase5-final-acceptance`;
+  remote synchronization requires explicit approval because the local safety
+  boundary rejected both default-branch and isolated-branch pushes.
+
+These items are documented operational risks. They do not contradict the real
+health, security, recovery, release, public E2E, or data-integrity evidence used for
+the final `PRODUCTION_READINESS=PASS-LIVE` decision.

@@ -1,0 +1,24 @@
+groups:
+  - name: odirag-public-https
+    rules:
+      - alert: PublicHttpsProbeScrapeDown
+        expr: up{job="blackbox-public-https"} == 0
+        for: 2m
+        labels: {severity: critical, service: public-ingress}
+        annotations:
+          summary: Public HTTPS probe cannot be scraped
+          description: Prometheus cannot obtain the public HTTPS probe result.
+      - alert: PublicHttpsProbeFailed
+        expr: probe_success{job="blackbox-public-https"} == 0
+        for: 2m
+        labels: {severity: critical, service: public-ingress}
+        annotations:
+          summary: Public HTTPS endpoint validation failed
+          description: DNS, TCP, trusted TLS, redirect, or HTTP validation failed for a public target.
+      - alert: PublicTlsCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-public-https"} - time() < 21 * 24 * 60 * 60
+        for: 15m
+        labels: {severity: warning, service: public-ingress}
+        annotations:
+          summary: Public TLS certificate expires within 21 days
+          description: The trusted certificate observed through the public HTTPS path is nearing expiry.

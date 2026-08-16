@@ -42,7 +42,6 @@ scrape_configs:
     static_configs:
       - targets: [backend:8000]
 
-  # Probe internal service health only. Public HTTPS monitoring is Phase 5.
   - job_name: blackbox-http
     metrics_path: /probe
     params:
@@ -52,6 +51,22 @@ scrape_configs:
           - http://backend:8000/health/live
           - http://backend:8000/health/ready
           - http://nginx/healthz
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-public-https
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://rag.suzheodirag.top/
+          - https://rag.suzheodirag.top/health/ready
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
