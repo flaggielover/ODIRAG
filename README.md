@@ -175,13 +175,15 @@ scripts/              startup, seed, experiment, BM25, and load-test commands
 
 ## Known Limits
 
-The local Docker/Qdrant/PostgreSQL/Redis development stack was verified with the previous base
-images; the current hardened images remain unverified until Docker Desktop recovers and rebuilds
-them. Target production TLS, ACLs, backup/restore, and failure drills remain pending. Live government-site access and
-remote LLM/embedding/rerank providers require network approval and credentials. Redis-backed
-rate limiting is the non-test default and fails closed when Redis is unavailable; OCR execution
-is not bundled, and application URL checks should be paired with network egress controls. See
-`ROADMAP.md` for release gates.
+The one-command local Docker demo is a reference development environment; it does not reproduce
+the complete production ingress, monitoring, backup/restore, disaster-recovery, or immutable
+release workflow. Accepted live-production evidence and current operational boundaries are
+recorded in [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). Live
+government-site access and remote LLM/embedding/rerank providers require network approval and
+credentials. Redis-backed rate limiting is the non-test default and fails closed when Redis is
+unavailable; OCR execution is not bundled, production remains single-node rather than highly
+available, and application URL checks should be paired with network egress controls. See
+`ROADMAP.md` for future work.
 
 ## License
 
