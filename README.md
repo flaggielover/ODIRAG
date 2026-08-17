@@ -15,7 +15,7 @@ ODIRAG（Official Document Intelligence and Retrieval-Augmented Generation，官
 - FastAPI、Celery、PostgreSQL、Redis、Qdrant、Vue 3 与 Nginx 组成的完整应用栈。
 - 可观测性、告警、备份恢复、不可变发布、事务恢复、可验证回滚、CI、SBOM 和供应链验证。
 
-项目已经完成从基础设施、灾难恢复、监控告警、发布回滚到公网 HTTPS 验收的完整生产工程流程。各阶段均以真实执行证据记录，当前生产就绪结论及边界见 [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md)。
+项目已经完成基础设施、灾难恢复、监控告警、发布回滚等主要生产工程阶段，并通过当前公网 HTTPS 验收。各阶段均以真实执行证据记录，当前生产就绪结论及持续边界见 [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md)。
 
 ## English Overview
 
