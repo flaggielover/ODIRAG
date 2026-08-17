@@ -1,5 +1,24 @@
 # ODIRAG
 
+## 中文简介
+
+ODIRAG（Official Document Intelligence and Retrieval-Augmented Generation，官方文档智能与检索增强生成平台）是一套面向政府公文、产业政策和企业知识库等高可信知识场景的企业级 RAG 系统。它将来源管理、网页采集、附件处理、内容解析、人工审核、版本治理、索引构建、混合检索、生成回答、证据校验和引用溯源整合为一条完整、可审计的生产流程。
+
+项目强调“有证据才回答”。系统通过 BM25 与向量检索召回候选内容，经过融合和重排序后判断证据是否充分：证据足够时生成带引用的回答，证据不足或问题超出知识库范围时安全拒答，避免将模型推测包装成事实。对于 RAG 问答，系统可以追踪检索候选、最终证据、引用来源和各处理阶段，便于审核、评测与故障定位。
+
+### 核心能力
+
+- 官方信息源管理、自动采集、附件下载审计，以及面向 SSRF、DNS 和重定向风险的安全控制。
+- HTML、PDF、DOCX、XLSX、TXT 与 ZIP 元数据解析，支持清洗、去重、版本快照和内容血缘追踪。
+- BM25、向量检索、混合召回、RRF 融合与远程重排序，并保留完整检索 Trace。
+- 基于证据充分性的 Grounded RAG、证据绑定引用、安全拒答、反馈闭环和人工评测。
+- FastAPI、Celery、PostgreSQL、Redis、Qdrant、Vue 3 与 Nginx 组成的完整应用栈。
+- 可观测性、告警、备份恢复、不可变发布、事务恢复、可验证回滚、CI、SBOM 和供应链验证。
+
+项目已经完成基础设施、灾难恢复、监控告警、发布回滚等主要生产工程阶段，并通过当前公网 HTTPS 验收。各阶段均以真实执行证据记录，当前生产就绪结论及持续边界见 [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md)。
+
+## English Overview
+
 ODIRAG is an Official Document Intelligence and Retrieval-Augmented Generation platform. It
 implements the complete path from source management and crawling through parsing, review,
 versioning, indexing, hybrid retrieval, grounded answers, citations, feedback, evaluation,
@@ -156,13 +175,15 @@ scripts/              startup, seed, experiment, BM25, and load-test commands
 
 ## Known Limits
 
-The local Docker/Qdrant/PostgreSQL/Redis development stack was verified with the previous base
-images; the current hardened images remain unverified until Docker Desktop recovers and rebuilds
-them. Target production TLS, ACLs, backup/restore, and failure drills remain pending. Live government-site access and
-remote LLM/embedding/rerank providers require network approval and credentials. Redis-backed
-rate limiting is the non-test default and fails closed when Redis is unavailable; OCR execution
-is not bundled, and application URL checks should be paired with network egress controls. See
-`ROADMAP.md` for release gates.
+The one-command local Docker demo is a reference development environment; it does not reproduce
+the complete production ingress, monitoring, backup/restore, disaster-recovery, or immutable
+release workflow. Accepted live-production evidence and current operational boundaries are
+recorded in [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). Live
+government-site access and remote LLM/embedding/rerank providers require network approval and
+credentials. Redis-backed rate limiting is the non-test default and fails closed when Redis is
+unavailable; OCR execution is not bundled, production remains single-node rather than highly
+available, and application URL checks should be paired with network egress controls. See
+`ROADMAP.md` for future work.
 
 ## License
 
