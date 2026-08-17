@@ -83,7 +83,9 @@ Source/SourceColumn
 - 附件失败但文档成功：附件记录标为 failed，文档记录保留，这是设计行为。
 - 重复任务投递：第二个 worker 得到 `TASK_ALREADY_CLAIMED`，Celery 包装将其当作安全 no-op。
 - worker 崩溃：任务保持 running，恢复任务稍后重置；达到最大恢复次数后失败。
-- DNS rebinding 时间窗：当前代码在请求前解析和校验，但没有把实际连接固定到已校验 IP；生产还应配合网络出口策略或固定解析传输。
+- DNS rebinding/出口边界：source-discovery 与 attachment 路径在配置 trusted DoH 时
+  使用已校验 IP 的 pinned transport；通用 crawler 路径和其他出站调用仍需逐项审阅，
+  并用网络出口策略作为纵深防御。
 
 ## 8. 调试步骤
 

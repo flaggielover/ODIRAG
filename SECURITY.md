@@ -32,9 +32,10 @@
 ## Rate Limiting
 
 Authentication, expensive search/chat/evaluation operations, and default API traffic have separate
-fixed-window limits. A 429 response includes `Retry-After` and `X-RateLimit-*` headers. The current
-limiter is in-process. Before running multiple API replicas, use a Redis-backed limiter or enforce
-equivalent limits at a trusted ingress so counters are shared.
+fixed-window limits. Production and other non-test environments use the shared Redis-backed limiter
+and fail closed when Redis is unavailable; the in-memory implementation is test-only. A 429
+response includes `Retry-After` and `X-RateLimit-*` headers. Any future multi-replica deployment
+must revalidate shared-counter capacity, trusted-proxy identity, and ingress behavior.
 
 ## Secrets
 
@@ -58,21 +59,25 @@ It accepts a JSON string array, the legacy comma-separated form, or an empty val
 fail closed during configuration loading, and validation output suppresses the supplied value so
 an accidentally pasted proxy credential is not copied into startup logs.
 
-Application URL checks reduce SSRF risk but cannot completely eliminate DNS rebinding between
-validation and connection. Production crawling should also use an egress proxy/firewall that
-blocks private and cloud metadata ranges and, ideally, pins the validated destination IP while
-preserving TLS SNI.
+Source-discovery and attachment fetching can combine trusted DoH resolution with a pinned
+transport so the validated public IP is the connection target. That protection is path- and
+configuration-scoped; general crawling and other outbound integrations still require review.
+An egress proxy/firewall that blocks private and cloud-metadata ranges remains defense in depth.
 
 Source-discovery official status is a policy signal, not a legal attestation: a trusted domain suffix
 and reachable homepage do not prove that every linked document is authoritative. Operators must
-review candidates and configure an appropriate suffix allowlist for their jurisdiction. Brave API
-availability, search ranking quality, and live government-site reachability remain external gates;
-missing credentials are surfaced as `503`, never replaced by fixture results.
+review candidates and configure an appropriate suffix allowlist for their jurisdiction. One bounded
+Brave campaign was live-verified, but every future campaign still depends on external API/network
+availability, search quality, jurisdiction policy, and an accountable reviewer. Missing credentials
+are surfaced as `503`, never replaced by fixture results.
 
-The Compose file is a development/reference topology. Before production use, add TLS termination,
-external secret injection, resource limits, authenticated stateful services, backup/restore
-automation, centralized logs/metrics, distributed rate limiting, image/dependency scanning, and a
-deployment-specific security review.
+The root Compose file is a development/reference topology. The accepted production topology in
+`deploy/production/compose.yml` adds TLS ingress, protected runtime configuration, resource limits,
+private service networking, Redis authentication, backup/restore controls,
+Prometheus/Grafana/Alertmanager, shared Redis rate limiting, immutable release/rollback controls,
+CI, SPDX SBOMs, and BuildKit provenance. See
+[`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). Production remains single-node
+rather than highly available, and the crawler egress boundary above remains applicable.
 
 ## Data, Logs, and Privacy
 

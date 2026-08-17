@@ -1,5 +1,11 @@
 # Phase N-Q Final Acceptance Report
 
+> Historical scope report: Phase N-Q and the later Attachment/OCR closure are preserved below.
+> Older production-security, provider, and human-evaluation blockers in this file were superseded
+> by subsequent live work. The current overall verdict is Phase 1-5 and
+> `PRODUCTION_READINESS=PASS-LIVE` in `PRODUCTION_READINESS_REPORT.md`; the Gold quality and OCR
+> limitations remain as documented rather than being promoted to pass.
+
 ## Attachment / OCR Production Closure (2026-08-15, latest authoritative)
 
 This section supersedes older attachment, backend-test, backend-image, and

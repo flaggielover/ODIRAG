@@ -4,6 +4,11 @@
 
 部署模块把后端、前端、PostgreSQL、Redis、Qdrant、Celery worker、scheduler 和 Nginx 组合为可重复启动的平台，并在 CI 中验证代码质量、迁移、测试、镜像和非 root 运行。
 
+根 `docker-compose.yml` 是开发/demo 拓扑；`deploy/production/compose.yml` 与 release
+脚本构成生产拓扑。当前 `v0.1.0-r6` 已在 Linux 主机完成 8/8 健康、TLS、监控、DR、
+不可变镜像、事务部署/回滚和公网 E2E 验收。当前证据以
+`PRODUCTION_READINESS_REPORT.md` 为准。
+
 ## 2. 输入与输出
 
 输入包括 `.env`/环境变量、Docker build args、Compose profiles、镜像标签、管理员密码和持久卷。
@@ -49,6 +54,12 @@ worker/scheduler 设置 `ODIRAG_RUN_MIGRATIONS=false` 并依赖 backend healthy�
 - `scripts/start_demo.ps1`、`scripts/start_demo.sh`：跨平台一键启动。
 - `scripts/seed_demo.py`：幂等 demo 基础记录，可选真实 index/evaluate pipeline。
 - `.github/workflows/ci.yml`：backend、frontend、containers 三个 job。
+- `.github/workflows/release.yml`、`production-deploy.yml`：GHCR digest、SBOM/provenance、
+  生产部署与回滚门禁。
+- `deploy/production/compose.yml`、`deploy/production/scripts/`、
+  `deploy/production/monitoring/`：生产网络、资源、秘密挂载、监控、备份恢复和不可变
+  release transaction。
+- `runbooks/`：部署、回滚、监控、告警、备份恢复、灾备和事件响应。
 - `.env.example`：可配置部署参数模板。
 
 ## 5. 主要设计决策
@@ -83,7 +94,8 @@ worker/scheduler 设置 `ODIRAG_RUN_MIGRATIONS=false` 并依赖 backend healthy�
 - Nginx 502：backend 或 frontend 不 healthy、upstream 名错误或 profile 未启动。
 - Windows 脚本环境污染：脚本在 finally 恢复临时 demo 环境变量。
 - CI 能构建但本机不能：镜像、端口、Docker Desktop 和文件共享环境不同，需要实际运行日志。
-- 当前基础镜像按 tag 而非 digest 固定；Python 只有版本区间，没有 lock file。
+- 根 demo Compose 允许 tag override，不能作为生产身份；生产 release 以 GHCR digest 固定。
+  Python 生产与开发依赖均有 lock 文件，更新时必须由 CI 重新验证。
 
 ## 8. 调试步骤
 
@@ -122,7 +134,9 @@ Node 只在 builder 阶段编译，运行镜像只有 Nginx 和静态文件，�
 
 ### 10.1 Docker Compose 是否已经在当前机器验收？
 
-没有。当前环境未安装/不可用 Docker，因此只完成了配置和代码层验证；实际镜像与完整八服务启动需由 CI 或有 Docker 的环境确认，不能宣称本机通过。
+开发工作站状态不能替代生产证据。根 demo Compose 曾在本地验收；更重要的是生产 Linux
+主机已运行 `v0.1.0-r6`，8/8 服务健康，Phase 1-5 为 `PASS-LIVE`。答辩时必须区分本地
+demo、CI 镜像 smoke 和真实生产三类证据。
 
 ### 10.2 CI 具体验证了什么？
 
@@ -130,7 +144,10 @@ Ruff、Black、mypy、迁移升降级、pytest coverage；前端 lint/type/test/
 
 ### 10.3 当前是否达到生产部署标准？
 
-这是可运行的开源/演示基线。尚缺 TLS 终止、secret manager、资源限制、镜像 digest、真实 PostgreSQL/Redis/Qdrant CI E2E、备份自动化和 Prometheus/Grafana。
+达到当前声明的单节点生产标准：TLS、受保护运行时 secrets、资源限制、私网依赖、
+Redis 限流、Prometheus/Grafana/Alertmanager、DR、GHCR digest、SBOM/provenance、事务发布和
+回滚均有 live evidence。它不是 HA，也没有第三方持久 paging/SLA；Gold 回答质量仍为
+`PARTIAL / FAIL-LIVE-QUALITY`。
 
 ### 10.4 demo 数据是否硬编码评估成功指标？
 
@@ -138,7 +155,10 @@ Ruff、Black、mypy、迁移升降级、pytest coverage；前端 lint/type/test/
 
 ### 10.5 如何备份和恢复？
 
-PostgreSQL 用 `pg_dump/pg_restore`，Qdrant 用 snapshot，app-data 和 BM25/artifacts 需配套保存；恢复后应运行 migration、重建/核验索引并执行固定 benchmark。自动化备份任务仍是后续工作。
+仓库已有 PostgreSQL logical/base/WAL/PITR、Qdrant snapshot、Redis、attachment、manifest
+和跨组件演练脚本，恢复只进入隔离资源。Phase 2 实测 RPO/RTO 并验证 821-ID 与 69 个
+attachment checksum。调度和 retention deletion 仍由 operator 驱动，首个 off-host sink
+也不是 immutable/object-locked。
 
 ## 11. 代码阅读路线
 
@@ -149,8 +169,13 @@ PostgreSQL 用 `pg_dump/pg_restore`，Qdrant 用 snapshot，app-data 和 BM25/ar
 5. `scripts/start_demo.sh`、`start_demo.ps1`
 6. `deployment/initialize-demo.sh`、`scripts/seed_demo.py`
 7. `.github/workflows/ci.yml`
-8. `backend/app/services/health.py` 和各 healthcheck
+8. `.github/workflows/release.yml`、`production-deploy.yml`
+9. `deploy/production/compose.yml`、release/backup/restore scripts
+10. `runbooks/` 与 `backend/app/services/health.py`
 
 ## 12. 实践修改练习
 
-增加可演练的备份/恢复脚本：生成 PostgreSQL dump、Qdrant snapshot 和 app-data manifest；恢复到新的 Compose project 名；运行 Alembic、重建 BM25、检查文档/chunk/point 数并执行 demo benchmark。脚本必须支持 dry-run、校验目标目录，不能覆盖未知备份。
+在不改变现有单节点生产的前提下，设计一个 disposable 第二主机恢复演练：只读取现有
+manifest 和 off-host artifacts，恢复 PostgreSQL/Qdrant/Redis/attachments，验证 182/821/69
+不变量与 Provider smoke，记录 RPO/RTO，并确保任何失败都不会接触生产卷或 active Qdrant
+collection。

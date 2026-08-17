@@ -34,8 +34,11 @@ npm run build
 ```
 
 Run focused tests while developing and the complete suite at checkpoints. Changes to prompts,
-chunking, embedding, retrieval, reranking, routing, grounding, or refusal must also run the fixed
-demo benchmark. Migration changes require fresh upgrade and downgrade/upgrade smoke checks.
+chunking, embedding, retrieval, reranking, routing, grounding, citations, or refusal must run the
+focused deterministic benchmark and, when production answer quality can change and the required
+live environment is available, the current 100-question Gold evaluation and quality guard. Any
+external check that did not run must be reported as `UNVERIFIED`. Migration changes require fresh
+upgrade and downgrade/upgrade smoke checks.
 
 ## Change Rules
 
@@ -57,4 +60,3 @@ provider, real-site, or performance check as passed unless it actually ran in th
 
 Do not open a public issue containing exploitable details or credentials. Follow `SECURITY.md` and
 contact the repository owner privately until a dedicated security contact is published.
-

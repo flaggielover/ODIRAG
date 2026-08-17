@@ -16,7 +16,7 @@
 
 网络层禁用自动重定向，每一跳都检查 DNS 和公网 IP，并在读取前检查 Content-Length、读取时检查累计字节。附件还要经过扩展名和路径边界检查。worker 丢失后，Beat 会把 stale running 任务恢复或在超过次数后失败。
 
-解析器统一返回 `ParsedArtifact`。HTML、PDF、DOCX、XLSX、TXT 和 ZIP metadata 都有真实实现。PDF 扫描件目前只标记 `requires_ocr`，我不会声称已经 OCR。内容变化时创建 `DocumentVersion`、记录 changed fields，并把索引标成 stale。
+解析器统一返回 `ParsedArtifact`。HTML、PDF、DOCX、XLSX、TXT 和 ZIP metadata 都有真实实现。附件闭环已解析 60 个非 OCR 文件；生产 OCR Provider 仍未配置，所以扫描件只会明确标记 OCR 边界，我不会声称已完成 OCR。内容变化时创建 `DocumentVersion`、记录 changed fields，并把索引标成 stale。
 
 审查先跑可解释规则，再调用 Direct LLM 或 Coze 的严格 JSON adapter。结构化字段必须在白名单中，每个 evidence quote 必须真实出现在正文。模型不可用时文档进入 pending_llm，不会自动批准；边界样本由人工审核。”
 
@@ -62,9 +62,9 @@ PostgreSQL 保存 chunk 和血缘，Qdrant 保存向量与 metadata payload，BM
 
 “认证使用 access/refresh token，refresh rotation 和 logout 会递增用户 token_version，使旧 token 立即失效。生产配置拒绝默认密钥、明文管理员密码、debug、非 HTTPS CORS 和关闭限流。
 
-监控同时记录路由与数据库 P50/P95/P99、抓取失败、索引失败、RAG 延迟、拒答、token、成本、评估回归和依赖健康。告警持久化并支持 acknowledge/resolve。
+监控同时记录 HTTP、数据库、Provider 和 RAG 指标，以及抓取、索引、拒答、token、成本、评估回归和依赖健康。生产 Prometheus、Grafana、Alertmanager、exporters 与 public-path Blackbox 已 live-verified；应用告警仍持久化并支持 acknowledge/resolve。
 
-当前非 test 固定窗口限流使用 Redis Lua 原子脚本并在 Redis 故障时 fail-closed；路由指标仍按进程采样。生产还要验证 Redis ACL、故障转移、网关协同和多副本公平性。应用层 SSRF 仍存在 DNS 校验到 socket 连接的时间窗，生产还要配置容器出口网络策略。这些都在文档中明确记录。”
+当前非 test 固定窗口限流使用 Redis Lua 原子脚本并在 Redis 故障时 fail-closed；Prometheus 汇总进程指标。多副本仍要验证 Redis 故障转移、网关协同、BM25/cache/task 一致性和公平性。source-discovery 与 attachment 路径支持 trusted DoH + pinned transport，其他出站路径仍需要网络出口策略做纵深防御。这些都在文档中明确记录。”
 
 画面建议：Monitoring 页面，指出 DB P95、依赖状态和告警操作。
 
@@ -74,9 +74,9 @@ PostgreSQL 保存 chunk 和血缘，Qdrant 保存向量与 metadata payload，BM
 
 CI 运行 Ruff、Black、mypy、迁移升降级、pytest coverage、前端 lint/type/test/build、Compose/Nginx 校验、镜像构建和非 root 登录 smoke。
 
-最新 Phase 14 检查记录为后端 119 tests passed、82.87% coverage，前端 6 tests passed，并通过 type-check、lint 和 production build。一次本地 deterministic demo 负载测试使用每场景 20 请求、并发 4、warmup 2：search P95 29.49ms，chat P95 345.95ms，数据库 P95 183.83ms。它们低于指南工程目标，但只代表本机小样本，不是生产 SLA。
+最终 Phase 5 工程回归为后端 531 tests passed，并通过 Ruff、Black、mypy、前端 lint/type/Vitest/Playwright/build、Compose、Nginx 与 workflow 校验。生产 `v0.1.0-r6` 的 8/8 服务、TLS、Provider、监控、DR、发布与回滚均有 live evidence。
 
-当前机器没有 Docker，因此我不能声称完整 Compose 已在本机运行通过；容器实际验收依赖有 Docker 的环境和 CI。外部 LLM、Embedding、Rerank 凭据也需要部署者提供。我的结论是：项目已经形成可运行、可测试、可追溯的完整工程链，同时保留并公开了尚未完成的生产化边界。”
+我不会把工程验收说成回答质量已经完成。最新 100 题 Gold 结果仍是 `PARTIAL / FAIL-LIVE-QUALITY`，exact citation P/R 为 `0.288069/0.433333`，Supported Answer Recall 为 `0.644444`。生产还是单节点、没有第三方持久 paging/SLA，也没有生产 OCR Provider。我的结论是：项目已形成真实可运行、可恢复、可观测、可发布的生产链，同时把质量和运维边界公开保留。”
 
 ## 演示失败时的备用说明
 
@@ -94,7 +94,7 @@ CI 运行 Ruff、Black、mypy、迁移升降级、pytest coverage、前端 lint/
 
 ### Docker 无法启动
 
-“展示 Compose、entrypoint 和 CI smoke 配置，但明确说本次环境没有完成运行验收。绝不把静态配置校验描述为容器已运行。”
+“若本次本地 demo 启动失败，就展示 Compose、entrypoint 和 CI smoke，并明确区分本次演示失败与已有生产 Phase 1-5 evidence；绝不把静态配置校验冒充新一次运行结果。”
 
 ## 高频追问的一句话回答
 
@@ -104,4 +104,5 @@ CI 运行 Ruff、Black、mypy、迁移升降级、pytest coverage、前端 lint/
 - 为什么用 RRF？BM25 与向量分数不可比，排名融合无需分数校准。
 - 如何撤销 JWT？refresh/logout 递增 token_version，旧 token 版本不再匹配。
 - 如何发现回归？固定评估集、实验 baseline/candidate、失败案例和 feedback 转题。
-- 项目最大真实限制？外部服务和完整 Docker 栈尚需目标环境验证，多副本限流/指标仍需共享基础设施。
+- 项目最大真实限制？生产是单节点而非 HA，Gold supported answer/citation 质量仍不足，
+  没有生产 OCR 与第三方持久 paging，多副本和长期容量尚未验收。

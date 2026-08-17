@@ -2,8 +2,31 @@
 
 ODIRAG is an official-document ingestion, retrieval, grounded-answering, and evaluation platform.
 The implemented system uses FastAPI and Vue, PostgreSQL as the business source of truth, Redis for
-cache/task infrastructure, Qdrant for vectors, Celery for asynchronous crawling, and Nginx as the
-local edge proxy.
+cache/task/rate-limit infrastructure, Qdrant for vectors, Celery for asynchronous crawling, and
+Nginx for development ingress and the accepted production TLS/proxy chain.
+
+## Current Production Status
+
+The current accepted deployment is release `v0.1.0-r6` at
+<https://rag.suzheodirag.top/>. Phase 1 through Phase 5 and the final production
+readiness decision are `PASS-LIVE`; the authoritative evidence is
+[`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md).
+
+- Eight application services are healthy behind public HTTPS, while databases, Qdrant,
+  backend management ports, monitoring, and exporters remain private.
+- PostgreSQL contains 182 documents and 821 chunks. The active and rollback Qdrant
+  collections each retain 821 points at 1536 dimensions with exact PostgreSQL/Qdrant
+  chunk-ID equality.
+- The accepted provider chain uses Bailian `text-embedding-v4` embeddings, hybrid BM25/vector
+  retrieval, Cohere `rerank-v3.5`, and DeepSeek `deepseek-v4-flash` grounded
+  generation/refusal.
+- Prometheus, Grafana, Alertmanager, Blackbox probes, backup/restore drills, immutable
+  GHCR image identity, SBOM/provenance, and transactional deploy/rollback are live-verified.
+
+Production engineering acceptance does not imply high availability or a completed answer-quality
+program. The service is single-node, and the latest 100-question Gold evaluation remains
+`GOLD_EVALUATION_QUALITY=PARTIAL` with `QUALITY_GUARD=FAIL-LIVE-QUALITY`; see
+[`EVALUATION.md`](EVALUATION.md).
 
 ## End-to-End Flow
 
@@ -86,10 +109,13 @@ document records, so generated text cannot introduce a new URL.
   delivery and worker loss.
 - Access/refresh tokens include a user token version. Refresh rotates the version; replay and
   logout invalidate older tokens.
-- API rate limiting returns a unified 429 contract. The current limiter is process-local and must
-  be replaced or enforced at ingress for a horizontally scaled deployment.
-- Route and SQLAlchemy engine metrics keep bounded samples and report P50/P95/P99 without an
-  external metrics store.
+- API rate limiting returns a unified 429 contract. Non-test environments use a shared
+  Redis fixed-window limiter and fail closed when Redis is unavailable; the in-memory
+  implementation is test-only. A future multi-replica deployment must revalidate counter
+  capacity, trusted-proxy identity, and the rest of the stateful runtime.
+- The application exposes low-cardinality Prometheus metrics for HTTP, database, provider,
+  and RAG stages. Persisted operational alerts remain available through the application API,
+  while production Prometheus/Grafana/Alertmanager provide scrape, dashboard, and alert lifecycle.
 
 ## Frontend
 
@@ -101,23 +127,31 @@ document/chat content is rendered as text, not trusted HTML.
 
 ## Deployment Topology
 
-`docker-compose.yml` defines backend, frontend, PostgreSQL, Redis, Qdrant, worker, scheduler, and
-Nginx. The backend image runs as UID/GID 10001, owns `/app/data`, and applies Alembic migrations in
-the API container entrypoint with retry. Worker and scheduler wait for the healthy API and do not
-race migrations. The `app-data` volume persists BM25, evaluation/experiment artifacts, parsed
-files, attachments, and scheduler state.
+The root `docker-compose.yml` is the reproducible development/demo topology. It defines backend,
+frontend, PostgreSQL, Redis, Qdrant, worker, scheduler, and Nginx. The backend image runs as
+UID/GID 10001, owns `/app/data`, and applies Alembic migrations in the API container entrypoint
+with retry. Worker and scheduler wait for the healthy API and do not race migrations. The
+`app-data` volume persists BM25, evaluation/experiment artifacts, parsed files, attachments, and
+scheduler state.
+
+The accepted production topology is defined by `deploy/production/compose.yml` and related
+versioned release files. It adds private service networks, resource and process limits, secret-file
+injection, Redis authentication, log rotation, persistent data mappings, internal health probes,
+host TLS termination, monitoring, and digest-bound release activation. Production release and
+rollback operations preserve PostgreSQL, Redis, Qdrant, attachment, and monitoring volumes.
 
 The one-command demo uses deterministic embeddings and reranking with real Qdrant storage. That
-mode is explicitly for reproducible local validation; production providers and credentials remain
-deployment choices.
+mode is explicitly for reproducible local validation. It does not reproduce the production ingress,
+provider, monitoring, recovery, or release topology.
 
 ## Observability and Evaluation
 
 Every chat answer persists route, filters, retrieval stages, prompt snapshot, model, citations,
 latency, tokens, cost, refusal, and result. Lineage traverses citation -> chunk -> document version
 -> crawl task -> source and can include evaluation-run linkage. Monitoring aggregates crawler,
-knowledge, RAG, dependency, route, database, and cost signals into persisted alerts with
-acknowledge/resolve lifecycle.
+knowledge, RAG, dependency, route, database, provider, and cost signals. Production Prometheus,
+Grafana, Alertmanager, exporters, and public-path Blackbox probes complement the persisted
+acknowledge/resolve alert lifecycle.
 
 Evaluation calls the real chat service and writes JSON, CSV, Markdown, and chart-ready artifacts.
 Experiments build isolated variants and compare metric direction/tolerance rather than using
@@ -125,8 +159,21 @@ hard-coded conclusions.
 
 ## Deliberate Limitations
 
-Docker and live PostgreSQL/Redis/Qdrant were not executable on the implementation workstation, so
-container runtime claims remain CI/external validation work. Remote LLM, embedding, and rerank
-providers require credentials. Application-layer DNS validation still benefits from network-level
-egress rules to close DNS rebinding time-of-check/time-of-use risk. See `ROADMAP.md` and
-`IMPLEMENTATION_STATUS.md` for the current evidence and remaining production gates.
+- Production is a single-node recovery architecture, not a highly available deployment.
+- The latest 100-question Gold run still has low exact citation precision/recall and only
+  `0.644444` Supported Answer Recall; 32/90 supported questions were refused.
+- No paid third-party uptime or paging service is configured. Internal/public-path monitoring and
+  independent external verification do not provide an external SLA.
+- SSH source-CIDR restriction awaits a stable management CIDR. Qdrant client/server versions also
+  remain scheduled for a controlled alignment.
+- HSTS is intentionally one day without `includeSubDomains` during the initial observation window.
+- Attachment parsing accepted 60 files, but unsupported legacy formats, unavailable source bytes,
+  and the absence of a production OCR provider remain explicit boundaries.
+- Source-discovery and attachment paths close their application-level validation/connection window
+  when trusted DNS and pinned transports are configured. Coverage remains path/configuration
+  scoped; network-level egress controls are still desirable for other outbound paths.
+- Horizontal API/worker scaling requires new capacity, scheduling, cache/index, and failure-mode
+  validation; the accepted evidence is for the current single-node topology.
+
+See [`ROADMAP.md`](ROADMAP.md), [`EVALUATION.md`](EVALUATION.md), and
+[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for current evidence and future work.

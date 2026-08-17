@@ -1,5 +1,11 @@
 # RAG Evaluation Report
 
+> Historical checkpoint: this 2026-08-13 report documents the pre-human-review draft state. Its
+> `BLOCKED-HUMAN-EVAL-REVIEW` and remote-rerank-blocked conclusions were superseded by the final
+> human-verified run 16 and live provider work. Current quality status is still not a pass:
+> `GOLD_EVALUATION_QUALITY=PARTIAL` and `QUALITY_GUARD=FAIL-LIVE-QUALITY`. See `EVALUATION.md` and
+> `GOLD_EVALUATION_FAILURE_ANALYSIS.md`; the body below remains historical evidence.
+
 Last updated: 2026-08-13
 
 ## Verdict
