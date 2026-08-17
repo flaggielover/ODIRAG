@@ -1,5 +1,11 @@
 # ODIRAG Production Acceptance Checklist
 
+> Historical cumulative checklist: later Phase 1-5 execution reached
+> `PRODUCTION_READINESS=PASS-LIVE`; see `PRODUCTION_READINESS_REPORT.md`. Older unchecked provider,
+> TLS, recovery, monitoring, and release items below are retained as checkpoint history, not current
+> blockers. The still-open Gold quality, OCR, unsupported attachment, and other explicitly current
+> boundaries remain valid.
+
 ## Attachment / OCR closure gate (2026-08-15, latest authoritative)
 
 - [x] Re-read real PostgreSQL before implementation and persisted

@@ -1,5 +1,11 @@
 # Disaster Recovery Report
 
+> Historical checkpoint: this 2026-08-13 read-only audit records the state before Production
+> Phase 2. Its `PRODUCTION-DR-NOT-ACCEPTED` verdict and missing-restore statements are superseded by
+> `PRODUCTION_PHASE_2_REPORT.md`, which live-verified PostgreSQL logical/physical/PITR, Qdrant,
+> Redis, attachment, manifest, off-host-copy, and cross-component recovery. The body below is
+> preserved as before-state evidence.
+
 Date: 2026-08-13
 Status: **LOCAL-RUNTIME-VERIFIED / PRODUCTION-DR-NOT-ACCEPTED**
 

@@ -1,6 +1,11 @@
 # ODIRAG Master Execution Guide for Codex
 ## Build the Production-Grade Official Document Intelligence & RAG Platform
 
+> Historical implementation brief: this document records the original build mandate and must not
+> be read as current project status. The implemented and accepted state is summarized in
+> `PRODUCTION_READINESS_REPORT.md`; remaining work is in `ROADMAP.md`; current answer-quality
+> evidence is in `EVALUATION.md`.
+
 > Project: **ODIRAG — Official Document Intelligence & RAG Platform**  
 > Mode: **Autonomous, phased, test-driven implementation**  
 > Goal: **Deliver a genuinely runnable enterprise-grade flagship project, not a scaffold or visual demo**  

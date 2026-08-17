@@ -1,5 +1,11 @@
 # Security Readiness Report
 
+> Historical checkpoint: this 2026-08-13 pre-production security audit is intentionally retained
+> unchanged below. Its `PRODUCTION-SECURITY-NOT-ACCEPTED` verdict was superseded by the live Phase
+> 1-5 acceptance in `PRODUCTION_READINESS_REPORT.md` and `PRODUCTION_PHASE_5_REPORT.md`. Residual
+> risks documented by the later reports, including single-node architecture, SSH CIDR, Qdrant
+> version alignment, conservative HSTS, external paging, and attachment/OCR boundaries, remain.
+
 Date: 2026-08-13
 Status: **DEVELOPMENT-STACK-VERIFIED / PRODUCTION-SECURITY-NOT-ACCEPTED**
 

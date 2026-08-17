@@ -212,21 +212,30 @@ Dockerfile 创建 UID/GID 10001 的 `odirag` 用户；CI smoke 运行 `id -u` �
 
 ### 50. 本地性能数字能否当生产 SLA？
 
-不能。当前记录来自 deterministic demo、小样本和本机环境；指南的 search/chat/DB P95 是目标，报告必须给实际样本量、并发和环境。
+不能。仓库同时保留 deterministic demo、Gold 延迟、有界生产观测和故障注入样本；它们
+各自证明特定链路，不构成长周期容量或外部 SLA。报告必须给样本量、并发、环境、
+Provider 模式和置信度。
 
 ## 七、当前最重要的真实限制
 
 ### 51. 当前最重要的后端限制有哪些？
 
-多副本限流/指标未共享；OCR 未接入；近重复归并未贯通；部分长任务未队列化；外部模型与真实基础设施需要目标环境验收；Python 依赖无锁文件。
+生产是单节点而非 HA；OCR Provider 未接入；近重复归并未完全贯通；部分长任务仍在
+请求路径；多副本下 BM25/cache/task/连接池和 Redis 公平性尚未验收；通用出站路径仍需
+网络层纵深防御。Python 生产与开发依赖已有 lock 文件，不能再列为缺失项。
 
 ### 52. 当前最重要的前端限制有哪些？
 
-没有 Playwright E2E；大部分页面缺组件测试；类型未从 OpenAPI 生成；sessionStorage 不跨标签页；列表分页和 i18n 不完整；未采用目标栈中的 Pinia/Axios/UI/ECharts。
+已有 Vitest、fixture Playwright 和公网 headless Chrome 验收，但大部分页面仍缺独立组件
+测试，production-backend E2E 覆盖有限；类型未从 OpenAPI 生成；sessionStorage 不跨标签
+页；列表分页和 i18n 不完整；未采用 Pinia/Axios/UI/ECharts。
 
 ### 53. 当前最重要的部署限制有哪些？
 
-当前机器没有 Docker，完整 Compose 未在本机实际运行；基础镜像未按 digest 固定；无 TLS/secret manager/资源限制/自动备份；真实 PostgreSQL/Redis/Qdrant 的 CI 全流程仍可加强；Prometheus/Grafana 未实现。
+当前生产已完成 Docker、TLS、受保护 secrets、资源限制、DR、Prometheus/Grafana、
+不可变 digest 发布和回滚验收。剩余限制是单节点、无第三方持久 paging/SLA、SSH 稳定
+来源 CIDR 未收紧、Qdrant client/server 版本待对齐、HSTS 仍为一天，以及备份调度/保留
+删除由 operator 驱动且首个 off-host sink 不是 immutable/object-locked。
 
 ### 54. 答辩时最不应该说什么？
 

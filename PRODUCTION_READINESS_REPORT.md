@@ -45,10 +45,10 @@ application_services=8/8 healthy
 | Layer | Status | Accepted evidence |
 | --- | --- | --- |
 | Runtime and data | PASS-LIVE | 182 documents, 821 chunks, active/rollback Qdrant collections healthy, 60 parsed attachments, 69 attachment files. |
-| Provider chain | PASS-LIVE | Bailian 1536-dimensional embedding, BM25/vector fusion, Cohere rerank, DeepSeek grounded answer and fail-closed refusal. |
+| Provider chain | PASS-LIVE | Bailian `text-embedding-v4` at 1536 dimensions, BM25/vector fusion, Cohere `rerank-v3.5`, and DeepSeek `deepseek-v4-flash` grounded answer/fail-closed refusal. |
 | Disaster recovery | PASS-LIVE | PostgreSQL logical/physical/PITR, Qdrant, Redis, attachment restores, off-host copy, measured RPO/RTO. |
 | Observability | PASS-LIVE | Prometheus/Grafana/Alertmanager, 12/12 targets, public HTTPS Blackbox probes and alert rules. |
-| Software supply chain | PASS-LIVE | Private GitHub repository, CI, GHCR immutable digests, SPDX SBOM, BuildKit provenance, deterministic deploy/rollback. |
+| Software supply chain | PASS-LIVE | Public GitHub repository, CI, GHCR immutable digests, SPDX SBOM, BuildKit provenance, and authenticated transactional deploy/rollback. |
 | Public ingress | PASS-LIVE | DNS, UFW, Nginx, Let's Encrypt, TLS 1.2/1.3, HTTP redirect, security headers. |
 | Public application | PASS-LIVE | Real browser frontend/API, Grounded RAG, citation/support validation, out-of-scope refusal. |
 | Attack surface | PASS-LIVE | Only 80/443/22022 externally reachable; application internals, state stores, monitoring and exporters remain private. |
@@ -105,10 +105,7 @@ Production is accepted with these visible boundaries:
 - one-day HSTS is intentionally conservative for the initial public observation
   window;
 - historical unsupported attachment/OCR cases remain outside the accepted parsed
-  60-file set and were not altered during production engineering;
-- the Phase 5 final commit is retained locally on `codex/phase5-final-acceptance`;
-  remote synchronization requires explicit approval because the local safety
-  boundary rejected both default-branch and isolated-branch pushes.
+  60-file set and were not altered during production engineering.
 
 These items are documented operational risks. They do not contradict the real
 health, security, recovery, release, public E2E, or data-integrity evidence used for

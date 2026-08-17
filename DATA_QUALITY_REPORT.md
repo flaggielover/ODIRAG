@@ -1,5 +1,11 @@
 # Data Quality Report
 
+> Historical checkpoint: this Phase G report predates the attachment production closure. Its
+> corpus cleanup evidence remains valid, but attachment outcome counts in the body were superseded
+> by `ATTACHMENT_OCR_REPORT.md` and the latest section of `IMPLEMENTATION_STATUS.md`: 60 parsed,
+> 8 failed, 55 unsupported, 0 pending, and 69 stored attachment files. No historical row below has
+> been rewritten.
+
 Last updated: 2026-08-13
 
 ## Scope and verdict

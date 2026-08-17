@@ -21,7 +21,8 @@
 - 统一的 `ErrorResponse`；
 - 结构化日志、请求延迟和数据库延迟指标；
 - `ApplicationRuntime` 中可复用的分块、Embedding、向量库、BM25、重排和 LLM 对象；
-- `/api/system/health`、`/api/system/metrics` 和告警数据。
+- `/health/live`、`/health/ready`、内部 `/metrics`、`/api/system/health`、
+  `/api/system/metrics` 和告警数据。
 
 ## 3. 数据流
 
@@ -114,7 +115,9 @@
 
 ### 9.5 当前限流方案的扩展瓶颈是什么？
 
-计数存放在应用进程内。单实例内有 `asyncio.Lock`，但多个 Uvicorn worker 或多容器之间不会共享窗口，需要替换为 Redis 原子计数或网关限流。
+非 test 环境已经使用 Redis Lua 原子固定窗口，多进程/多容器共享计数，Redis
+不可用时 fail-closed。扩展瓶颈转为 Redis 容量与故障转移、受信代理的客户端身份、
+热点 key、公平性，以及整个 BM25/cache/task/runtime 的多副本一致性，而不是进程内计数。
 
 ## 10. 答辩问题与参考答案
 
@@ -132,7 +135,9 @@
 
 ### 10.4 如何定位一次慢请求？
 
-先按请求 ID 查日志，再查看 `/api/system/metrics` 的路由 P50/P95/P99 和数据库 P95，随后结合 `query_traces` 中的各检索阶段耗时判断是 DB、Embedding、向量检索还是重排。
+先按请求 ID 查日志，再查看内部 `/metrics`、Grafana/Prometheus 和
+`/api/system/metrics`，随后结合 `query_traces` 中的各检索阶段耗时判断是 HTTP、DB、
+Embedding、向量检索、重排还是 Direct LLM。
 
 ### 10.5 数据库迁移与自动建表有什么区别？
 
@@ -151,4 +156,6 @@
 
 ## 12. 实践修改练习
 
-实现一个 `/api/system/readiness` 管理员接口：只有 database、Redis、Qdrant 均为 healthy 时返回 200，否则返回 503；保留现有 `/health` 的 degraded 语义。要求新增 Pydantic 响应模型、Service 测试和 API 集成测试，并说明为什么 readiness 与 liveness 不应混为一谈。
+扩展现有 `/health/ready` 诊断：保持 database、Redis、Qdrant 必须全部 healthy
+才返回 200，不泄露连接串或异常文本；为超时、Qdrant disabled、Redis 限流后端故障和
+探针限流旁路补测试，并说明为什么 `/health/live` 不能依赖外部服务。

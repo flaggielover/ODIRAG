@@ -133,7 +133,10 @@ sessionStorage 生命周期更短且按标签页隔离，降低长期残留；�
 
 ### 10.5 前端测试覆盖是否充分？
 
-已有 client、auth、Markdown、status 和 Activity 的 6 个测试，以及人工桌面/移动浏览器 QA；尚缺全流程 Playwright 和多数业务页面组件测试。
+最终验收记录包含 18 个 Vitest 测试、10 个 fixture Playwright 场景、1 个明确跳过的
+live-stack 场景，以及公网 HTTPS 的真实 headless Chrome 验收。覆盖仍不算充分：多数业务
+页面缺少独立组件测试，类型尚未从 OpenAPI 生成，生产后端全流程也不应由 fixture E2E
+替代。
 
 ## 11. 代码阅读路线
 

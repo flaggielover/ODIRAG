@@ -2,12 +2,12 @@
 
 ## Verification Status
 
-Compose, CI, shell/PowerShell startup logic, Alembic upgrade/downgrade, demo API flow, and container
-configuration have been statically or locally validated. Docker is installed on the implementation
-workstation, and the previous-base-image stack completed a historical local multi-service run. The
-current hardened images have not been rebuilt or started because Docker Desktop cannot mount its WSL
-data VHD (`WSL_E_USER_VHD_ALREADY_ATTACHED`). Do not reuse the historical result as evidence for the
-current images; recover WSL, rebuild serially, and rerun the production acceptance checklist.
+The root Compose stack remains the development/demo topology. The production topology in
+`deploy/production/compose.yml` is live and accepted at release `v0.1.0-r6`, with 8/8 application
+services healthy and public HTTPS, provider, monitoring, recovery, and release gates passing live
+verification. See [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md) for current
+evidence. The historical workstation WSL failure remains in implementation history and is not the
+current production status.
 
 ## One-Command Development Demo
 
@@ -93,23 +93,33 @@ Review every revision and take a PostgreSQL backup before schema changes. Downgr
 smoke tool, not a universal production rollback. Restore the previous application image and a
 tested database backup when a migration is not safely reversible.
 
-## Backup Baseline
+The accepted production release path uses immutable GHCR digests, versioned release directories,
+transaction journals, provider/data verification, and authenticated deploy/rollback workflows.
+Use [`runbooks/release-deployment.md`](runbooks/release-deployment.md) and
+[`runbooks/rollback.md`](runbooks/rollback.md); do not replace that transaction with an ad hoc tag
+switch or `docker compose down`.
 
-- Schedule PostgreSQL snapshots/logical backups and perform restore drills.
-- Back up accepted raw evidence and attachments according to retention policy.
-- Snapshot Qdrant with collection/version metadata when recovery time matters; vectors can also be
-  rebuilt from approved chunks if provider versions remain available.
-- Preserve selected evaluation/experiment artifacts needed for release evidence.
-- Redis persistence supports recovery but does not replace PostgreSQL backups.
+## Production Backup and Recovery
 
-No platform-specific backup command is certified by this repository; production operators must
-document and test their own recovery objectives.
+Production backup and isolated recovery validation are `PASS-LIVE` for PostgreSQL
+logical/physical/PITR recovery, Qdrant, Redis, attachments, manifest verification, an off-host copy,
+and measured RPO/RTO. Use [`runbooks/backup-and-restore.md`](runbooks/backup-and-restore.md),
+[`runbooks/disaster-recovery.md`](runbooks/disaster-recovery.md), and the scripts under
+`deploy/production/scripts/`; [`PRODUCTION_PHASE_2_REPORT.md`](PRODUCTION_PHASE_2_REPORT.md) is the
+authoritative execution record.
+
+Redis remains runtime state rather than the source of truth. The first verified off-host copy is a
+recovery sink, not immutable/object-locked storage. No restore procedure may overwrite production
+data without a separately approved recovery operation; accepted drills restore into isolated
+PostgreSQL volumes, temporary Qdrant collections, temporary Redis resources, and temporary
+attachment directories.
 
 ## Production Configuration
 
-Use `ODIRAG_ENVIRONMENT=production`, JSON logs, an external secret manager, a high-entropy JWT key,
-a precomputed admin password hash, exact HTTPS CORS origins, TLS ingress, private service networks,
-authenticated Redis/Qdrant where supported, resource limits, and distributed rate limiting.
+Use `ODIRAG_ENVIRONMENT=production`, JSON logs, protected external runtime secret files, a
+high-entropy JWT key, a precomputed admin password hash, exact HTTPS CORS origins, TLS ingress,
+private service networks, Redis authentication, Qdrant network isolation/authentication where
+supported, resource limits, and shared Redis rate limiting.
 
 The rate limiter always uses an IP bucket at middleware time; it deliberately does not derive a
 bucket from an unverified Bearer token before FastAPI authentication runs. For the supplied Compose
@@ -128,8 +138,8 @@ configuration error.
 
 Remote embedding/LLM/rerank keys must be backend secrets. If a provider is intentionally absent,
 leave its feature unavailable and rely on health/error reporting; never insert a fake production
-response. Pin and review image tags before release even though the development template exposes
-overrides for convenience.
+response. Production releases use immutable image digests; tag overrides remain development
+conveniences and are not release identity.
 
 Live source discovery additionally requires:
 
@@ -141,11 +151,12 @@ ODIRAG_SOURCE_DISCOVERY_QUALITY_THRESHOLD=0.65
 ODIRAG_SOURCE_DISCOVERY_OFFICIAL_SUFFIXES=[".gov.cn", ".gov", ".edu.cn"]
 ```
 
-The API must return `503 PROVIDER_UNAVAILABLE` when the Brave key/network is absent. Validate a
-deployment with a controlled gap run, inspect `/api/source-discovery/runs/{id}/events`, confirm the
-candidate remains `pending_approval`, approve it manually, then activate it and verify the created
-source/columns. This workstation validated the Brave response contract with an HTTP fixture and the
-workflow with SQLite; it did not execute a live Brave search or PostgreSQL/Redis worker delivery.
+The API must return `503 PROVIDER_UNAVAILABLE` when the Brave key/network is absent. A bounded live
+Phase Z campaign verified Brave search, official-domain validation, trial crawling, manual approval,
+and explicit activation. That evidence does not mean autonomous discovery is enabled in the current
+production release: every deployment still needs its own credential, network approval, suffix
+policy, review owner, and event review. Historical and current evidence is recorded in
+`IMPLEMENTATION_STATUS.md`.
 
 Unattended gap scanning is opt-in and remains a bounded proposal workflow. Set
 `ODIRAG_SOURCE_DISCOVERY_AUTO_ENABLED=true` together with a JSON array (or comma-separated list) in
@@ -159,17 +170,15 @@ official suffix policy, review owner, and alert routing are ready.
 Run exactly one Celery Beat scheduler for this task. The active/cooldown check limits duplicate
 work but is not an atomic distributed lock across multiple Beat replicas.
 
-## Production Gate
+## Production Acceptance and Regression Gate
 
-Before public exposure, require:
+The current public `v0.1.0-r6` release is `PASS-LIVE`; authoritative gate evidence is recorded in
+[`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). Future releases must preserve
+the accepted HTTPS/private-network boundary, secret handling, resource limits, shared rate limiting,
+backup/restore and rollback evidence, monitoring, immutable image identity, SBOM/provenance,
+provider smoke tests, frozen data invariants, and engineering regression checks.
 
-- successful full Compose startup and demo smoke on the target platform;
-- migrations and restore rehearsal;
-- TLS and private dependency networking;
-- secret rotation and non-default credentials;
-- Redis/Qdrant authentication or equivalent network isolation;
-- shared rate limiting and crawler egress controls;
-- a reviewed official-domain suffix policy, Brave credential, and manual source-approval owner;
-- centralized logs/metrics and alert routing;
-- dependency/image scanning and signed/tagged release artifacts;
-- representative evaluation and load measurements on production-like data.
+The current 100-question Gold quality result is still `PARTIAL / FAIL-LIVE-QUALITY`. Single-node
+architecture, external paging, Qdrant version alignment, SSH CIDR, attachment/OCR, and outbound-path
+egress defense remain limitations. Source-discovery and attachment pin validated connections when
+trusted DNS is configured; other outbound paths still require review and network-layer controls.

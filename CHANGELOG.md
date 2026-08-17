@@ -1,12 +1,18 @@
 # Changelog
 
-All notable implementation changes are recorded here. The project has not published a stable
-release yet; entries remain under `Unreleased` until a versioned release is created.
+All notable implementation changes are recorded here. Immutable production release tags exist
+through `v0.1.0-r6`; no stable semantic-version release has been declared. Historical
+implementation entries remain under `Unreleased`.
 
 ## Unreleased
 
 ### Added
 
+- Phase 1-5 production-engineering closure: Redis-backed fail-closed rate limiting, live Bailian /
+  Cohere / DeepSeek provider checks, PostgreSQL/Qdrant/Redis/attachment recovery, Prometheus /
+  Grafana / Alertmanager, immutable GHCR releases with SPDX SBOM and BuildKit provenance,
+  transactional deployment/rollback, and public HTTPS/browser acceptance. Detailed evidence is in
+  `PRODUCTION_READINESS_REPORT.md`; the Gold quality gate remains partial.
 - Phase 16 content-gap driven source-pool expansion with a Brave Search provider, official-domain
   validation, same-site column discovery, bounded trial crawling, evidence-based scoring, manual
   approval, explicit activation, durable events, retry-safe candidates, queue-failure compensation,
@@ -100,7 +106,11 @@ release yet; entries remain under `Unreleased` until a versioned release is crea
 - CI migration, frontend test, non-root image, writable-volume, health, and administrator-login
   smoke checks.
 
-### Verification
+### Historical Verification Checkpoint
+
+The following bullets record the Phase 15 checkpoint and are intentionally retained as historical
+evidence. Current production acceptance is in `PRODUCTION_READINESS_REPORT.md`, and the latest Gold
+quality result is in `EVALUATION.md`.
 
 - Final backend checkpoint: 120 tests passed with 82.89% coverage; Ruff, Black, and mypy passed.
 - Final frontend checkpoint: 5 test files / 6 tests passed; lint, type-check, and production build

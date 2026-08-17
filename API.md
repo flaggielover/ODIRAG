@@ -17,6 +17,10 @@ version. `POST /api/auth/logout` revokes the current token family.
 }
 ```
 
+This credential is for the local development demo only. Production rejects plaintext/default
+administrator bootstrap values; production credentials are deployment-specific and intentionally
+not documented in this repository.
+
 The login and refresh responses contain `access_token`, `refresh_token`, `token_type`, and
 `expires_in`. Do not persist tokens in logs or source control.
 
@@ -81,6 +85,9 @@ server-side and are not returned verbatim. Rate-limited responses include `Retry
 | Experiments | `GET /api/experiments/{id}` | Read an experiment |
 | Experiments | `POST /api/experiments/{id}/run` | Build and evaluate isolated variants |
 | Experiments | `GET /api/experiments/{id}/compare` | Read deltas, regressions, and failed cases |
+| Runtime | `GET /health/live` | Process liveness without dependency checks |
+| Runtime | `GET /health/ready` | Strict PostgreSQL, Redis, and Qdrant readiness; returns 503 unless all are healthy |
+| Runtime | `GET /metrics` | Prometheus exposition for the private monitoring network |
 | System | `GET /api/system/health` | Report database, Redis, and Qdrant state |
 | System | `GET /api/system/metrics` | Return bounded route/DB latency and operational metrics |
 | System | `GET /api/system/alerts` | List persisted alerts |

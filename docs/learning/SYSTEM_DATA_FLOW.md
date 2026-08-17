@@ -250,11 +250,17 @@ Alert: open -> acknowledged -> resolved
 
 ## 17. 诚实限制
 
-- 本机 development Compose 已完成一轮八服务健康验证；生产 TLS、镜像 provenance、备份恢复和长期故障演练仍需目标环境证据。
-- 路由指标在进程内采样后汇总；非 test 环境固定窗口限流写入共享 Redis，单 key Lua 脚本保证计数/过期原子。生产仍需验证 Redis ACL、故障转移和多副本部署策略。
-- DNS 校验与 socket 连接之间仍有 rebinding 时间窗，生产需网络出口策略。
-- PDF 只检测 OCR 需求，没有内置 OCR Provider。
+- Phase 1-5 已真实验证 TLS、provenance、备份恢复、故障注入、不可变发布与公网 E2E；
+  当前架构仍是 single-node recovery，不是 HA 或长期 SLA。
+- Prometheus 汇总各进程指标；非 test 固定窗口限流写入共享 Redis，单 key Lua 保证
+  计数/过期原子。多副本仍需验证 Redis 故障转移、公平性以及 BM25/cache/task 一致性。
+- source-discovery 与 attachment 路径可用 trusted DoH + pinned transport 关闭各自的应用层
+  连接窗口；其他出站路径仍需审阅，并以网络出口策略做纵深防御。
+- 已有 60 个非 OCR attachment 解析成功，但没有生产 OCR Provider；unsupported/404 与
+  OCR 边界仍保留。
 - SimHash 与权威来源选择已实现，但未完整贯通自动近重复归并主链。
 - 前端使用 fetch/reactive module，而不是目标栈中的 Axios/Pinia/UI 框架/ECharts。
-- 当前自动化前端测试有限，缺少 Playwright 全流程 E2E。
-- deterministic Provider 和本地负载结果只能证明工程链路，不代表外部模型或生产容量。
+- 前端已有 Vitest、fixture Playwright 和公网 headless Chrome 验收，但业务页面组件与
+  production-backend E2E 覆盖仍不完整。
+- Bailian/Cohere/DeepSeek Provider 已 live-verified；deterministic demo 与小样本负载仍只
+  能证明工程链路，不代表长期容量或 SLA。最新 Gold 质量仍为 `PARTIAL`。

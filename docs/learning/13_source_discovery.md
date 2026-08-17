@@ -100,7 +100,9 @@ POST /api/source-discovery/runs
 - `queue_failure`：Redis/Celery 不可用；运行必须可 retry，不能停留 pending。
 - 重试候选重复：应复用原 candidate ID 并清理旧 column，不应新增重复候选。
 - 错误审批：候选只有在 `pending_approval` 才能 approve，只有 `approved` 才能 activate。
-- 指标无告警：当前聚合 metrics 已实现，但尚未接入全局 Alert 规则。
+- 指标无专用告警：source-discovery 的数据库聚合 metrics 已实现，但尚未接入专用
+  Prometheus rules；审批 backlog、候选质量和连续失败仍缺少明确告警与 owner。现有
+  Bailian/Cohere/DeepSeek Provider 规则不能冒充 Brave/source-discovery 覆盖。
 
 ## 8. 调试步骤
 
@@ -140,11 +142,16 @@ Repository 按主题和地区统计启用来源与已批准文档，和请求中
 
 ### 10.1 你是否真的调用过 Brave 线上接口？
 
-当前本地验证是 HTTP 协议契约测试，没有配置真实 Brave key，因此不能宣称线上成功。真实 API 缺凭据会返回 503；生产验收清单要求在获批网络和凭据下补证据。
+是。Phase Z 在获批网络和凭据下执行了真实 Brave 搜索，验证四川省经信厅候选、6 个
+栏目、30 个详情、质量评分、人工审批和显式激活，最终创建 Source 46 与 SourceColumn
+191。该有界验收不代表当前生产自动调度已开启，也不保证未来 API 可用性；缺凭据仍
+返回 503。
 
 ### 10.2 Phase 16 哪些部分已经真实实现？
 
-数据库模型、迁移、API、Celery 任务、缺口查询、官网安全校验、栏目解析、试抓、评分、审批、激活、事件和指标都是真实代码；外部搜索和真实官网只做了可替换的 HTTP 契约/fixture 验证。
+数据库模型、迁移、API、Celery 任务、缺口查询、官网安全校验、栏目解析、试抓、评分、
+审批、激活、事件和指标都是真实代码；HTTP 契约/fixture 回归之外，Phase Z 还保留一次
+真实 Brave 与官网有界闭环证据。新的地区、主题和自动任务仍需重新验收。
 
 ### 10.3 如何证明人工门禁有效？
 
@@ -156,7 +163,9 @@ Repository 按主题和地区统计启用来源与已批准文档，和请求中
 
 ### 10.5 当前监控还缺什么？
 
-已有持久事件和聚合 metrics API，前端可以展示 pending、failed、activated 等状态；尚未把审批积压和连续 provider 失败接入全局 Alert 规则，也未验证 Prometheus/集中告警链路。
+已有持久事件、聚合 metrics API 和前端状态展示；Phase 3 已证明整体
+Prometheus/Grafana/Alertmanager 链路，但 source-discovery 指标尚未导出为专用 Prometheus
+series/rules。审批积压、候选质量、连续失败和外部 paging owner 仍是缺口。
 
 ## 11. 代码阅读路线
 

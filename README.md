@@ -17,6 +17,25 @@ ODIRAG（Official Document Intelligence and Retrieval-Augmented Generation，官
 
 项目已经完成基础设施、灾难恢复、监控告警、发布回滚等主要生产工程阶段，并通过当前公网 HTTPS 验收。各阶段均以真实执行证据记录，当前生产就绪结论及持续边界见 [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md)。
 
+## Current Production Status
+
+- Engineering acceptance: Phase 1-5 and `PRODUCTION_READINESS=PASS-LIVE` at
+  <https://rag.suzheodirag.top/>.
+- Runtime: release `v0.1.0-r6`, 8/8 application services healthy, with 182 documents,
+  821 chunks, 60 parsed attachments, and both active/rollback Qdrant collections retained.
+- Live provider path: Bailian `text-embedding-v4` at 1536 dimensions, hybrid BM25/vector
+  retrieval, Cohere `rerank-v3.5`, and DeepSeek `deepseek-v4-flash` grounded answers/refusal.
+- Engineering regression: 531 backend tests plus the recorded frontend, static, container,
+  Compose, Nginx, and workflow checks.
+- Quality boundary: the latest 100-question Gold evaluation is
+  `GOLD_EVALUATION_QUALITY=PARTIAL` and `QUALITY_GUARD=FAIL-LIVE-QUALITY`; production health
+  and provider acceptance do not erase the documented answer-quality gaps.
+- Architecture boundary: the accepted deployment is single-node recovery, not high availability.
+
+Evidence: [`Production readiness`](PRODUCTION_READINESS_REPORT.md) ·
+[`Architecture`](ARCHITECTURE.md) · [`Evaluation`](EVALUATION.md) ·
+[`Deployment`](DEPLOYMENT.md) · [`Security`](SECURITY.md)
+
 ## English Overview
 
 ODIRAG is an Official Document Intelligence and Retrieval-Augmented Generation platform. It
@@ -24,9 +43,11 @@ implements the complete path from source management and crawling through parsing
 versioning, indexing, hybrid retrieval, grounded answers, citations, feedback, evaluation,
 experiments, observability, and a Vue management console.
 
-The implementation and verification record is maintained in
-[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md). Unavailable Docker/provider checks are
-reported as blockers rather than represented by fake success responses.
+Implementation history is maintained in
+[`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md); current live-production acceptance and
+operational boundaries are maintained in
+[`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). Evidence is explicitly
+classified as local, CI, live, historical, partial, blocked, or unverified.
 
 ## One-Command Demo
 
@@ -45,17 +66,18 @@ scheduler, the Vue frontend, and Nginx. The API container applies Alembic migrat
 initializer seeds records and reindexes approved demo documents through the authenticated live
 API. Demo retrieval uses deterministic embeddings and reranking with real Qdrant storage.
 
-Default development login: `admin` / `development-only-admin-password`. Override
-`ODIRAG_ADMIN_PASSWORD` before startup whenever the stack is reachable by anyone else.
+Development/demo credentials are configured locally through `ODIRAG_ADMIN_PASSWORD`. Any bundled
+default is for localhost-only development and is not the public deployment credential. Production
+credentials are never stored in this repository.
 
 - UI: `http://127.0.0.1:8080`
 - API docs: `http://127.0.0.1:8000/api/docs`
 - Health: `http://127.0.0.1:8000/api/system/health`
 
-The one-command workflow has been exercised on the implementation workstation. The last complete
-local acceptance used the previous base images; the hardened Python 3.12 Alpine and Nginx 1.30.4
-images still require a clean rebuild after the workstation's Docker Desktop WSL data-disk mount
-failure. CI performs image, backend non-root, writable-volume, migration, health, and login smoke checks.
+The one-command workflow is a development/demo environment and has been exercised locally. Current
+hardened images are built and verified by CI and are deployed in the accepted `v0.1.0-r6`
+production release. Production acceptance does not make the root demo Compose topology equivalent
+to production.
 
 ## Implemented Capabilities
 
@@ -152,12 +174,14 @@ evidence.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): boundaries, runtime flow, reliability, and data ownership.
 - [`API.md`](API.md): authentication, errors, routes, filters, search, and chat contracts.
-- [`EVALUATION.md`](EVALUATION.md): datasets, metrics, artifacts, and measured demo result.
+- [`EVALUATION.md`](EVALUATION.md): current 100-question Gold evaluation, quality gate, artifacts,
+  and historical deterministic smoke evidence.
 - [`EXPERIMENTS.md`](EXPERIMENTS.md): isolated variants and regression workflow.
 - [`DEPLOYMENT.md`](DEPLOYMENT.md): Compose, migrations, data, backup, and production gate.
 - [`SECURITY.md`](SECURITY.md): implemented controls, residual risks, and secret handling.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development and verification rules.
-- [`ROADMAP.md`](ROADMAP.md): production validation and scale hardening.
+- [`ROADMAP.md`](ROADMAP.md): remaining answer-quality, high-availability, scaling, and operational
+  hardening work.
 - [`docs/learning/`](docs/learning/): module learning routes and defense material.
 
 ## Repository Map
@@ -178,12 +202,15 @@ scripts/              startup, seed, experiment, BM25, and load-test commands
 The one-command local Docker demo is a reference development environment; it does not reproduce
 the complete production ingress, monitoring, backup/restore, disaster-recovery, or immutable
 release workflow. Accepted live-production evidence and current operational boundaries are
-recorded in [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). Live
-government-site access and remote LLM/embedding/rerank providers require network approval and
-credentials. Redis-backed rate limiting is the non-test default and fails closed when Redis is
-unavailable; OCR execution is not bundled, production remains single-node rather than highly
-available, and application URL checks should be paired with network egress controls. See
-`ROADMAP.md` for future work.
+recorded in [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md). The accepted
+production provider chain uses Bailian embeddings, Cohere reranking, and DeepSeek grounded
+generation. Reproducing that chain elsewhere, or enabling optional Brave/government-site
+integrations, requires separately supplied credentials and approved network access. Redis-backed
+rate limiting is the non-test default and fails closed when Redis is unavailable. Attachment
+parsing is accepted for 60 files, but unsupported legacy/source cases and production OCR remain
+open boundaries. Production remains single-node rather than highly available. Source-discovery and
+attachment fetching support trusted DNS plus pinned transports; other outbound paths should still
+be paired with network egress controls. See [`ROADMAP.md`](ROADMAP.md) for future work.
 
 ## License
 

@@ -1,5 +1,30 @@
 # ODIRAG Implementation Status
 
+## Production Engineering Closure (2026-08-17, latest authoritative)
+
+This section supersedes older deployment, provider-availability, security, disaster-recovery,
+observability, release, public-ingress, and overall production-acceptance statements below. It does
+not replace the separate latest Attachment/OCR and Gold quality sections that follow.
+
+- Phase 1 through Phase 5 and final `PRODUCTION_READINESS` are `PASS-LIVE`.
+- Current production is release `v0.1.0-r6` at <https://rag.suzheodirag.top/>, with 8/8
+  application services healthy and public HTTPS/TLS acceptance complete.
+- The live provider path is Bailian `text-embedding-v4` at 1536 dimensions, hybrid BM25/vector
+  retrieval, Cohere `rerank-v3.5`, and DeepSeek `deepseek-v4-flash` grounded answer/refusal.
+- PostgreSQL remains the source of truth with 182 documents and 821 chunks; active and rollback
+  Qdrant collections each retain 821 points, and the accepted attachment state is 60 parsed files
+  with 69 stored attachment files.
+- PostgreSQL/Qdrant/Redis/attachment recovery, measured RPO/RTO, Prometheus/Grafana/Alertmanager,
+  immutable GHCR digests, SPDX SBOM, BuildKit provenance, authenticated deploy/rollback, and public
+  browser/API/RAG checks are live-verified.
+- The engineering regression at final public acceptance is 531 backend tests plus the recorded
+  frontend/static/config checks. Production remains single-node rather than highly available.
+- Answer quality is not promoted by this closure: the latest 100-question Gold result remains
+  `GOLD_EVALUATION_QUALITY=PARTIAL` and `QUALITY_GUARD=FAIL-LIVE-QUALITY`.
+
+Current production evidence and boundaries are in `PRODUCTION_READINESS_REPORT.md`; historical
+checkpoint sections below remain unchanged for auditability.
+
 ## Attachment / OCR Production Closure (2026-08-15, latest authoritative)
 
 This section supersedes older attachment counts, attachment acceptance decisions,

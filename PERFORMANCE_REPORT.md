@@ -1,5 +1,11 @@
 # Phase K Performance Report
 
+> Historical latency and capacity evidence: later Gold run 16 supersedes the Gold quality metrics
+> cited in this report, while the fixed 60-sample performance matrix remains a separate historical
+> measurement. Current quality status is in `EVALUATION.md`; current production acceptance is in
+> `PRODUCTION_READINESS_REPORT.md`. Neither this report nor bounded Phase 5 smoke evidence is a
+> long-term production SLA.
+
 ## Phase AD human-gold performance checkpoint (2026-08-14, authoritative)
 
 The formal human-verified Gold run `6` executed 100 real evaluation questions through
@@ -194,6 +200,6 @@ Every stored value is numeric and non-negative. The refusal trace intentionally 
 
 ## Optimization decision
 
-No candidate-pool reduction, top-k reduction, prompt truncation, cache policy change, timeout reduction, or safety bypass was applied. The 100-case evaluation set is still `DRAFT_EVAL_SET` with zero human-verified cases, so there is no trustworthy same-dataset quality guard for an optimization experiment. The safe next profiling step is to collect a representative volume of stage-complete traces and human-verify the evaluation set before changing runtime behavior.
+No candidate-pool reduction, top-k reduction, prompt truncation, cache policy change, timeout reduction, or safety bypass was applied. At this Phase K checkpoint, the 100-case evaluation set was still `DRAFT_EVAL_SET` with zero human-verified cases, so there was no trustworthy same-dataset quality guard for an optimization experiment. Later human review and Gold runs supersede that dataset-status statement; this paragraph records why no performance optimization was applied at the time.
 
-Remote rerank latency and cost remain `BLOCKED-EXTERNAL-RERANK-KEY`. The current provider is disabled and must not be used as remote-rerank performance evidence.
+At the Phase K checkpoint, remote rerank latency and cost were `BLOCKED-EXTERNAL-RERANK-KEY` and the provider was disabled. Later Cohere acceptance and Gold run 16 supersede provider availability, but do not retroactively create remote-rerank measurements for this earlier performance matrix.
